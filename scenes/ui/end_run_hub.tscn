@@ -1,0 +1,139 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/end_run_hub.gd" id="1_hub"]
+
+[node name="EndRunHub" type="Panel"]
+process_mode = 3
+visible = false
+offset_left = 220.0
+offset_top = 80.0
+offset_right = 1060.0
+offset_bottom = 640.0
+script = ExtResource("1_hub")
+
+[node name="Title" type="Label" parent="."]
+offset_left = 36.0
+offset_top = 24.0
+offset_right = 804.0
+offset_bottom = 62.0
+theme_override_colors/font_color = Color(1, 0.85, 0.35, 1)
+theme_override_font_sizes/font_size = 29
+text = "EXPEDITION COMPLETE"
+horizontal_alignment = 1
+
+[node name="RunReviewTab" type="Button" parent="."]
+offset_left = 34.0
+offset_top = 78.0
+offset_right = 220.0
+offset_bottom = 126.0
+text = "RUN REVIEW"
+
+[node name="ScoreboardTab" type="Button" parent="."]
+offset_left = 228.0
+offset_top = 78.0
+offset_right = 414.0
+offset_bottom = 126.0
+text = "SCOREBOARD"
+
+[node name="HomeTab" type="Button" parent="."]
+offset_left = 422.0
+offset_top = 78.0
+offset_right = 608.0
+offset_bottom = 126.0
+text = "HOME"
+
+[node name="AdventureTab" type="Button" parent="."]
+offset_left = 616.0
+offset_top = 78.0
+offset_right = 806.0
+offset_bottom = 126.0
+text = "ADVENTURE"
+
+[node name="RunReview" type="RichTextLabel" parent="."]
+offset_left = 44.0
+offset_top = 152.0
+offset_right = 796.0
+offset_bottom = 526.0
+theme_override_colors/default_color = Color(0.88, 0.93, 1, 1)
+theme_override_font_sizes/normal_font_size = 19
+bbcode_enabled = true
+
+[node name="Scoreboard" type="Label" parent="."]
+visible = false
+offset_left = 58.0
+offset_top = 166.0
+offset_right = 782.0
+offset_bottom = 516.0
+theme_override_font_sizes/font_size = 20
+text = "No completed runs yet."
+
+[node name="HomeCard" type="Panel" parent="."]
+visible = false
+offset_left = 92.0
+offset_top = 164.0
+offset_right = 748.0
+offset_bottom = 498.0
+
+[node name="Heading" type="Label" parent="HomeCard"]
+offset_left = 28.0
+offset_top = 28.0
+offset_right = 628.0
+offset_bottom = 66.0
+theme_override_colors/font_color = Color(0.72, 0.9, 0.62, 1)
+theme_override_font_sizes/font_size = 26
+text = "THE OLD COUPLE'S HOMESTEAD"
+horizontal_alignment = 1
+
+[node name="Description" type="Label" parent="HomeCard"]
+offset_left = 55.0
+offset_top = 84.0
+offset_right = 601.0
+offset_bottom = 205.0
+theme_override_font_sizes/font_size = 19
+text = "Travel home to store your materials, prepare food,\nand check your equipment before the next expedition."
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TravelHomeButton" type="Button" parent="HomeCard"]
+offset_left = 183.0
+offset_top = 232.0
+offset_right = 473.0
+offset_bottom = 294.0
+theme_override_font_sizes/font_size = 21
+text = "TRAVEL HOME"
+
+[node name="AdventureCard" type="Panel" parent="."]
+visible = false
+offset_left = 92.0
+offset_top = 164.0
+offset_right = 748.0
+offset_bottom = 498.0
+
+[node name="Heading" type="Label" parent="AdventureCard"]
+offset_left = 28.0
+offset_top = 24.0
+offset_right = 628.0
+offset_bottom = 66.0
+theme_override_colors/font_color = Color(0.56, 0.86, 1, 1)
+theme_override_font_sizes/font_size = 26
+text = "CHOOSE A RUN ZONE"
+horizontal_alignment = 1
+
+[node name="ForestButton" type="Button" parent="AdventureCard"]
+offset_left = 76.0
+offset_top = 94.0
+offset_right = 580.0
+offset_bottom = 174.0
+theme_override_font_sizes/font_size = 23
+text = "THE FOREST — BEGIN EXPEDITION"
+
+[node name="FutureZones" type="Label" parent="AdventureCard"]
+offset_left = 76.0
+offset_top = 196.0
+offset_right = 580.0
+offset_bottom = 278.0
+theme_override_colors/font_color = Color(0.55, 0.61, 0.66, 1)
+theme_override_font_sizes/font_size = 18
+text = "Additional destinations will appear here as they are unlocked."
+autowrap_mode = 2
+horizontal_alignment = 1

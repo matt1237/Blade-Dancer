@@ -1,0 +1,207 @@
+[gd_scene format=3 uid="uid://dcfwn0ssxswpm"]
+
+[ext_resource type="Script" uid="uid://dbvnnejpnaetl" path="res://scripts/boss/zungar.gd" id="1_zungar"]
+[ext_resource type="Script" uid="uid://gogqtjuexae5" path="res://scripts/boss/zungar_visual.gd" id="2_visual"]
+[ext_resource type="Texture2D" uid="uid://ct2oieewvnue6" path="res://assets/generated/hd_boss_zungar_charge.png" id="3_a43ft"]
+[ext_resource type="Texture2D" uid="uid://dvr5mp2bnk680" path="res://assets/generated/hd_boss_zungar_executioner_sword.png" id="3_sword"]
+[ext_resource type="Texture2D" uid="uid://dl6xcxg2i6f88" path="res://assets/generated/hd_boss_zungar_idle.png" id="4_p3ign"]
+[ext_resource type="Texture2D" uid="uid://b6myt1k7hgqk2" path="res://assets/generated/hd_boss_zungar_jump.png" id="5_r7uhh"]
+[ext_resource type="Texture2D" uid="uid://6kxxbnhv2nft" path="res://assets/generated/hd_boss_zungar_walk.png" id="6_ludwt"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_v4qgr"]
+atlas = ExtResource("3_a43ft")
+region = Rect2(0, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_3byra"]
+atlas = ExtResource("3_a43ft")
+region = Rect2(512, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lodcx"]
+atlas = ExtResource("3_a43ft")
+region = Rect2(1024, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_0j0xd"]
+atlas = ExtResource("4_p3ign")
+region = Rect2(0, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_cnjmt"]
+atlas = ExtResource("4_p3ign")
+region = Rect2(512, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_i7d6a"]
+atlas = ExtResource("4_p3ign")
+region = Rect2(1024, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_vx5m0"]
+atlas = ExtResource("5_r7uhh")
+region = Rect2(0, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_who4s"]
+atlas = ExtResource("5_r7uhh")
+region = Rect2(512, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_jg7yy"]
+atlas = ExtResource("5_r7uhh")
+region = Rect2(1024, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_dh3wl"]
+atlas = ExtResource("6_ludwt")
+region = Rect2(0, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_a27um"]
+atlas = ExtResource("6_ludwt")
+region = Rect2(512, 0, 512, 512)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l7mqh"]
+atlas = ExtResource("6_ludwt")
+region = Rect2(1024, 0, 512, 512)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_675xr"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_v4qgr")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_3byra")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lodcx")
+}],
+"loop": 1,
+"name": &"charge",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_0j0xd")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_cnjmt")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_i7d6a")
+}],
+"loop": 1,
+"name": &"idle",
+"speed": 3.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_vx5m0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_who4s")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_jg7yy")
+}],
+"loop": 0,
+"name": &"jump",
+"speed": 3.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_dh3wl")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_a27um")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l7mqh")
+}],
+"loop": 1,
+"name": &"walk",
+"speed": 5.0
+}]
+
+[sub_resource type="CapsuleShape2D" id="CapsuleShape2D_y6u05"]
+radius = 24.0
+height = 100.0
+
+[node name="Zungar" type="CharacterBody2D" unique_id=153836176]
+collision_layer = 2
+collision_mask = 6
+script = ExtResource("1_zungar")
+max_health = null
+contact_damage = null
+elite_max_health = null
+duelist_metronome_chance = null
+ranged_initial_cooldown_min = null
+ranged_initial_cooldown_max = null
+chaser_score_value = null
+duelist_score_value = null
+ranged_score_value = null
+charger_score_value = null
+elite_score_value = null
+move_speed = null
+body_pressure_speed_multiplier = null
+body_pressure_contact_distance = null
+charge_recovery_duration = null
+charge_start_distance = null
+charge_cooldown_duration = null
+charger_aim_lead = null
+charger_charge_distance = null
+charger_charge_speed_multiplier = null
+charger_windup_duration = null
+elite_charge_start_distance = null
+elite_charge_min_distance = null
+elite_charge_cooldown_duration = null
+elite_charge_aim_lead = null
+elite_charge_distance = null
+elite_charge_speed_multiplier = null
+elite_charge_windup_duration = null
+chaser_attack_duration = null
+chaser_retreat_duration = null
+duelist_retreat_health_percent = null
+duelist_combat_range = null
+duelist_retreat_duration = null
+duelist_circle_duration = null
+ranged_reposition_interval = null
+ranged_cover_mode_duration = null
+ranged_cover_attempt_chance_per_second = null
+ranged_cover_cooldown_duration = null
+ranged_cover_hide_duration = null
+ranged_cover_peek_distance_past_edge = null
+ranged_cover_movement_speed_multiplier = null
+ranged_cover_aim_duration = null
+ranged_cover_post_shot_exposure_duration = null
+ranged_cover_shot_interval = null
+elite_surround_duration = null
+elite_surround_interval = null
+enemy_separation_distance = null
+enemy_separation_strength = null
+weapon_origin_offset = null
+debug_draw_weapon_collision = null
+parry_enabled = null
+elite_shield_arc_degrees = null
+elite_shield_distance = null
+elite_shield_half_width = null
+elite_shield_bash_extension = null
+elite_shield_tracking_speed = null
+
+[node name="VisualRoot" type="Node2D" parent="." unique_id=977312268]
+script = ExtResource("2_visual")
+
+[node name="BodySprite" type="AnimatedSprite2D" parent="VisualRoot" unique_id=1850949672]
+z_index = 1
+sprite_frames = SubResource("SpriteFrames_675xr")
+animation = &"idle"
+autoplay = "idle"
+
+[node name="WeaponPivot" type="Node2D" parent="VisualRoot" unique_id=191522789]
+
+[node name="ExecutionerSword" type="Sprite2D" parent="VisualRoot/WeaponPivot" unique_id=1819652283]
+texture = ExtResource("3_sword")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=746418574]
+shape = SubResource("CapsuleShape2D_y6u05")
+
+[node name="HealthBar" type="ProgressBar" parent="." unique_id=1112007798]
+z_index = 4
+offset_left = -44.0
+offset_top = -82.0
+offset_right = 44.0
+offset_bottom = -74.0
+theme_override_colors/font_color = Color(0.6495985, 0.015381974, 0.004986779, 1)
+show_percentage = false

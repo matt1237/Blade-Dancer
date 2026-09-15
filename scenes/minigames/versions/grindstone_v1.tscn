@@ -1,0 +1,140 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/minigames/grindstone.gd" id="1_grind"]
+
+[node name="Grindstone" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_grind")
+
+[node name="MusicPlayer" type="AudioStreamPlayer" parent="."]
+
+[node name="HUD" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 360.0
+offset_top = 42.0
+offset_right = 1040.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 34
+text = "GRINDSTONE"
+horizontal_alignment = 1
+
+[node name="Instructions" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 92.0
+offset_right = 1060.0
+offset_bottom = 126.0
+theme_override_colors/font_color = Color(0.72, 0.84, 0.7, 1)
+theme_override_font_sizes/font_size = 16
+text = "Move the mouse for pressure. Click yellow Beats; hold orange Grinds and balance with A / D."
+horizontal_alignment = 1
+
+[node name="Timer" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 70.0
+offset_top = 58.0
+offset_right = 280.0
+offset_bottom = 96.0
+theme_override_colors/font_color = Color(1, 0.84, 0.42, 1)
+theme_override_font_sizes/font_size = 22
+text = "TIME  40"
+
+[node name="Path" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 380.0
+offset_top = 640.0
+offset_right = 610.0
+offset_bottom = 675.0
+theme_override_colors/font_color = Color(0.65, 0.9, 0.8, 1)
+theme_override_font_sizes/font_size = 19
+text = "PATH  0%"
+
+[node name="Rhythm" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 620.0
+offset_top = 640.0
+offset_right = 890.0
+offset_bottom = 675.0
+theme_override_colors/font_color = Color(1, 0.78, 0.32, 1)
+theme_override_font_sizes/font_size = 18
+text = "BEATS  0/0   GRIND 0%"
+horizontal_alignment = 1
+
+[node name="Score" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 930.0
+offset_top = 640.0
+offset_right = 1160.0
+offset_bottom = 675.0
+theme_override_colors/font_color = Color(0.7, 0.92, 0.66, 1)
+theme_override_font_sizes/font_size = 19
+text = "SCORE  0"
+horizontal_alignment = 2
+
+[node name="Status" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 390.0
+offset_top = 450.0
+offset_right = 1010.0
+offset_bottom = 480.0
+theme_override_colors/font_color = Color(0.82, 0.84, 0.78, 1)
+theme_override_font_sizes/font_size = 16
+text = "Follow the line and watch for rhythm markers."
+horizontal_alignment = 1
+
+[node name="Reset" type="Button" parent="HUD"]
+layout_mode = 0
+offset_left = 70.0
+offset_top = 620.0
+offset_right = 175.0
+offset_bottom = 668.0
+text = "RESET"
+
+[node name="Close" type="Button" parent="HUD"]
+layout_mode = 0
+offset_left = 190.0
+offset_top = 620.0
+offset_right = 295.0
+offset_bottom = 668.0
+text = "CLOSE"
+
+[node name="Result" type="Panel" parent="HUD"]
+visible = false
+layout_mode = 0
+offset_left = 430.0
+offset_top = 190.0
+offset_right = 970.0
+offset_bottom = 510.0
+
+[node name="ResultText" type="Label" parent="HUD/Result"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 28.0
+offset_top = 24.0
+offset_right = -28.0
+offset_bottom = -24.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 23
+text = "GRIND COMPLETE"
+horizontal_alignment = 1
+vertical_alignment = 1

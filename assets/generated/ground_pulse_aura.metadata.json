@@ -1,0 +1,58 @@
+{
+	"animation_name": "a_ground_energy_pulse_that_expands_slightly_brightens_on_the_beat_then_settles_and_fades",
+	"animation_style": "",
+	"animation_type": "a ground energy pulse that expands slightly, brightens on the beat, then settles and fades",
+	"columns": 6,
+	"directions": [],
+	"frame_count": 6,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 256,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 256,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 512,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 768,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 1024,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 1280,
+			"y": 0
+		}
+	],
+	"frame_width": 256,
+	"name": "ground_pulse_aura",
+	"prompt": "a ground energy pulse that expands slightly, brightens on the beat, then settles and fades",
+	"rows": 1,
+	"source_image": "res://assets/generated/ground_pulse_aura_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/ground_pulse_aura.png",
+	"spritesheet_width": 1536,
+	"type": "animation"
+}

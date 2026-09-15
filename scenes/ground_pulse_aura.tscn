@@ -1,0 +1,58 @@
+[gd_scene format=3 uid="uid://dq3ref3m5ilpm"]
+
+[ext_resource type="Texture2D" uid="uid://pmatpf5cjiry" path="res://assets/generated/ground_pulse_aura.png" id="1_ib2hn"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_2mcgj"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(0, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_lvhsa"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(256, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_uhhye"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(512, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_plvgk"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(768, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_aoqqj"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(1024, 0, 256, 256)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_l2vn7"]
+atlas = ExtResource("1_ib2hn")
+region = Rect2(1280, 0, 256, 256)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_x1ua2"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_2mcgj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_lvhsa")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_uhhye")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_plvgk")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_aoqqj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_l2vn7")
+}],
+"loop": 0,
+"name": &"a_ground_energy_pulse_that_expands_slightly_brightens_on_the_beat_then_settles_and_fades",
+"speed": 5.0
+}]
+
+[node name="GroundPulseAura" type="AnimatedSprite2D" unique_id=1978270731]
+sprite_frames = SubResource("SpriteFrames_x1ua2")
+animation = &"a_ground_energy_pulse_that_expands_slightly_brightens_on_the_beat_then_settles_and_fades"
+autoplay = "a_ground_energy_pulse_that_expands_slightly_brightens_on_the_beat_then_settles_and_fades"

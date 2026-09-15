@@ -1,0 +1,184 @@
+[gd_scene format=3 uid="uid://cvy0akie2tu3p"]
+
+[ext_resource type="Script" uid="uid://bdrugyj2o7n68" path="res://scripts/minigames/resonance_rush.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://d21bial3peah7" path="res://scripts/minigames/resonance_rush_terrain.gd" id="2_terrain"]
+[ext_resource type="Script" uid="uid://cqay2exu6n4q8" path="res://scripts/minigames/resonance_rush_land_sail.gd" id="3_sail"]
+[ext_resource type="Script" uid="uid://f7qpfs8mkj6x" path="res://scripts/minigames/resonance_rush_ambient.gd" id="4_ambient"]
+[ext_resource type="Script" uid="uid://cdwht4dyl3gji" path="res://scripts/minigames/resonance_rush_clouds.gd" id="5_clouds"]
+[ext_resource type="Texture2D" uid="uid://ckmg7sy6byc73" path="res://assets/generated/resonance_rush_land_sail_frame_0.png" id="6_landsail_tex"]
+[ext_resource type="Texture2D" uid="uid://bxwog834hojqh" path="res://assets/generated/resonance_rush_bg_forest_frame_0.png" id="7_forest_tex"]
+[ext_resource type="Texture2D" uid="uid://dggi8o56u4m7y" path="res://assets/generated/resonance_rush_bg_mountains_frame_0.png" id="8_mountains_tex"]
+[ext_resource type="Texture2D" uid="uid://ci8pgmkdqbux3" path="res://assets/generated/resonance_rush_bg_neon_frame_0.png" id="9_neon_tex"]
+[ext_resource type="Texture2D" uid="uid://ckw5sca374cp8" path="res://assets/generated/resonance_rush_bg_sky_frame_0.png" id="10_sky_tex"]
+[ext_resource type="Texture2D" uid="uid://bij8pg686f182" path="res://assets/generated/resonance_rush_mushroom_v2_frame_0.png" id="11_mushroom_tex"]
+[ext_resource type="Texture2D" uid="uid://btu3wt1857fqc" path="res://assets/generated/resonance_rush_grapple_point_frame_0.png" id="12_grapple_tex"]
+[ext_resource type="Texture2D" uid="uid://bpty4uibstr25" path="res://assets/generated/resonance_rush_bird_frame_0.png" id="13_bird_tex"]
+[ext_resource type="Texture2D" uid="uid://1m6hdunmkd4n" path="res://assets/generated/resonance_rush_cloud_frame_0.png" id="14_cloud_tex"]
+[ext_resource type="Texture2D" uid="uid://ce8iu7pjesny8" path="res://assets/generated/resonance_rush_ground_forest_frame_0.png" id="15_ground_forest_tex"]
+[ext_resource type="Texture2D" uid="uid://dluqt0qydmaku" path="res://assets/generated/resonance_rush_ground_mountains_frame_0.png" id="16_ground_mountains_tex"]
+[ext_resource type="Texture2D" uid="uid://7xap5onsk5l2" path="res://assets/generated/resonance_rush_ground_neon_frame_0.png" id="17_ground_neon_tex"]
+[ext_resource type="Texture2D" uid="uid://cwpee4x0r7cem" path="res://assets/generated/resonance_rush_tree_prop_frame_0.png" id="18_tree_tex"]
+[ext_resource type="Texture2D" uid="uid://qr8668v2ibxn" path="res://assets/generated/resonance_rush_land_sail_glider_frame_0.png" id="19_glider_tex"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_bounce"]
+radius = 30.0
+
+[node name="ResonanceRush" type="Node2D" unique_id=408115112]
+script = ExtResource("1_main")
+
+[node name="ParallaxBackground" type="ParallaxBackground" parent="." unique_id=1016149710]
+
+[node name="SkyLayer" type="ParallaxLayer" parent="ParallaxBackground" unique_id=1028470427]
+motion_scale = Vector2(0.03, 0.03)
+
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxBackground/SkyLayer" unique_id=56751512]
+texture_filter = 1
+position = Vector2(0, -1600)
+scale = Vector2(8, 8)
+texture = ExtResource("10_sky_tex")
+
+[node name="NeonMountainsLayer" type="ParallaxLayer" parent="ParallaxBackground" unique_id=922280903]
+motion_scale = Vector2(0.08, 0.1)
+motion_mirroring = Vector2(3072, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxBackground/NeonMountainsLayer" unique_id=1368696284]
+texture_filter = 1
+position = Vector2(0, -1600)
+scale = Vector2(8, 8)
+texture = ExtResource("9_neon_tex")
+
+[node name="MountainsLayer" type="ParallaxLayer" parent="ParallaxBackground" unique_id=2110079133]
+motion_scale = Vector2(0.18, 0.22)
+motion_mirroring = Vector2(3072, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxBackground/MountainsLayer" unique_id=1519452937]
+texture_filter = 1
+position = Vector2(0, -900)
+scale = Vector2(8, 8)
+texture = ExtResource("8_mountains_tex")
+
+[node name="ForestLayer" type="ParallaxLayer" parent="ParallaxBackground" unique_id=534173786]
+motion_scale = Vector2(0.4, 0.5)
+motion_mirroring = Vector2(3072, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="ParallaxBackground/ForestLayer" unique_id=2066848380]
+texture_filter = 1
+position = Vector2(0, -300)
+scale = Vector2(8, 8)
+texture = ExtResource("7_forest_tex")
+
+[node name="TerrainRoot" type="Node2D" parent="." unique_id=1759091435]
+script = ExtResource("2_terrain")
+mushroom_texture = ExtResource("11_mushroom_tex")
+grapple_point_texture = ExtResource("12_grapple_tex")
+tree_prop_texture = ExtResource("18_tree_tex")
+ground_texture_forest = ExtResource("15_ground_forest_tex")
+ground_texture_mountains = ExtResource("16_ground_mountains_tex")
+ground_texture_neon = ExtResource("17_ground_neon_tex")
+
+[node name="LandSail" type="CharacterBody2D" parent="." unique_id=1928925834]
+script = ExtResource("3_sail")
+
+[node name="Sprite2D" type="Sprite2D" parent="LandSail" unique_id=1848627567]
+texture_filter = 1
+texture = ExtResource("6_landsail_tex")
+offset = Vector2(0, -30)
+
+[node name="GliderSprite" type="Sprite2D" parent="LandSail" unique_id=281825135]
+visible = false
+modulate = Color(1, 1, 1, 0)
+texture_filter = 1
+texture = ExtResource("19_glider_tex")
+offset = Vector2(0, -30)
+
+[node name="GrappleLine" type="Line2D" parent="LandSail" unique_id=102403497]
+width = 3.0
+default_color = Color(0.4, 0.9, 1, 0.9)
+
+[node name="GrappleTip" type="Polygon2D" parent="LandSail"]
+visible = false
+z_index = 6
+polygon = PackedVector2Array(-8, 0, 0, -5, 10, 0, 0, 5)
+color = Color(0.65, 0.95, 1, 1)
+
+[node name="GlideTrail" type="Line2D" parent="LandSail" unique_id=837402215]
+top_level = true
+width = 6.0
+default_color = Color(0.75, 0.95, 1, 0.75)
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BounceDetector" type="Area2D" parent="LandSail" unique_id=897588497]
+collision_layer = 0
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LandSail/BounceDetector" unique_id=1577546963]
+shape = SubResource("CircleShape2D_bounce")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=607267747]
+
+[node name="AmbientSpawner" type="Node2D" parent="." unique_id=1814459833]
+script = ExtResource("4_ambient")
+bird_texture = ExtResource("13_bird_tex")
+
+[node name="Clouds" type="Node2D" parent="." unique_id=1618905300]
+script = ExtResource("5_clouds")
+cloud_texture = ExtResource("14_cloud_tex")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=817248292]
+
+[node name="AltitudeLabel" type="Label" parent="CanvasLayer" unique_id=950038025]
+offset_left = 24.0
+offset_top = 20.0
+offset_right = 260.0
+offset_bottom = 50.0
+theme_override_colors/font_color = Color(1, 0.92, 0.7, 1)
+theme_override_font_sizes/font_size = 22
+text = "ALT  0 m"
+
+[node name="SpeedLabel" type="Label" parent="CanvasLayer" unique_id=387554599]
+offset_left = 24.0
+offset_top = 52.0
+offset_right = 260.0
+offset_bottom = 80.0
+theme_override_colors/font_color = Color(0.85, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "SPEED  0"
+
+[node name="ZoneLabel" type="Label" parent="CanvasLayer" unique_id=1385734841]
+offset_left = 24.0
+offset_top = 80.0
+offset_right = 260.0
+offset_bottom = 106.0
+theme_override_colors/font_color = Color(0.75, 1, 0.85, 1)
+theme_override_font_sizes/font_size = 16
+text = "FOREST"
+
+[node name="GlideBar" type="ProgressBar" parent="CanvasLayer" unique_id=375304469]
+offset_left = 24.0
+offset_top = 112.0
+offset_right = 224.0
+offset_bottom = 132.0
+max_value = 5.0
+value = 5.0
+show_percentage = false
+
+[node name="HintLabel" type="Label" parent="CanvasLayer" unique_id=597454631]
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -420.0
+offset_top = 640.0
+offset_right = 420.0
+offset_bottom = 670.0
+theme_override_colors/font_color = Color(1, 1, 1, 0.9)
+theme_override_font_sizes/font_size = 16
+text = "A/D to drive — reach a ramp and see what happens"
+horizontal_alignment = 1
+
+[node name="CloseButton" type="Button" parent="CanvasLayer" unique_id=42334170]
+offset_left = 1220.0
+offset_top = 16.0
+offset_right = 1264.0
+offset_bottom = 56.0
+text = "X"

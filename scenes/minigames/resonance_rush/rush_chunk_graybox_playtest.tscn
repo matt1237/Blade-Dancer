@@ -1,0 +1,101 @@
+[gd_scene format=3 uid="uid://bjt2pm1q6pye5"]
+
+[ext_resource type="Script" uid="uid://diupa4hp12jfe" path="res://scripts/minigames/resonance_rush_chunk_playtest.gd" id="1_playtest"]
+[ext_resource type="Script" uid="uid://fmoeap57m5dj" path="res://scripts/minigames/resonance_rush_authored_terrain.gd" id="2_terrain"]
+[ext_resource type="PackedScene" uid="uid://bmq6tnlcyupds" path="res://scenes/minigames/resonance_rush/chunks/rush_chunk_graybox.tscn" id="3_chunk"]
+[ext_resource type="Script" uid="uid://cqay2exu6n4q8" path="res://scripts/minigames/resonance_rush_land_sail.gd" id="4_sail"]
+[ext_resource type="Texture2D" uid="uid://ckmg7sy6byc73" path="res://assets/generated/resonance_rush_land_sail_frame_0.png" id="5_sail_tex"]
+[ext_resource type="Texture2D" uid="uid://qr8668v2ibxn" path="res://assets/generated/resonance_rush_land_sail_glider_frame_0.png" id="6_glider_tex"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_bounce"]
+radius = 30.0
+
+[node name="RushChunkGrayboxPlaytest" type="Node2D" unique_id=807325366]
+script = ExtResource("1_playtest")
+
+[node name="Backdrop" type="Polygon2D" parent="." unique_id=1928677985]
+z_index = -100
+color = Color(0.066667, 0.086275, 0.117647, 1)
+polygon = PackedVector2Array(-2000, -2000, 5000, -2000, 5000, 2000, -2000, 2000)
+
+[node name="GridLineA" type="Line2D" parent="." unique_id=2000072287]
+z_index = -90
+points = PackedVector2Array(-1000, 600, 4000, 600)
+width = 2.0
+default_color = Color(0.2, 0.25, 0.32, 0.65)
+
+[node name="GridLineB" type="Line2D" parent="." unique_id=1526165536]
+z_index = -90
+points = PackedVector2Array(-1000, 400, 4000, 400)
+width = 2.0
+default_color = Color(0.2, 0.25, 0.32, 0.45)
+
+[node name="TerrainRoot" type="Node2D" parent="." unique_id=2057455872]
+script = ExtResource("2_terrain")
+
+[node name="RushChunkGraybox" parent="TerrainRoot" unique_id=795344736 instance=ExtResource("3_chunk")]
+position = Vector2(200, 500)
+is_primary_route = true
+track_only_mode = false
+
+[node name="LandSail" type="CharacterBody2D" parent="." unique_id=1963610605]
+script = ExtResource("4_sail")
+initial_ground_speed = 120.0
+show_grapple_range_debug = true
+
+[node name="Sprite2D" type="Sprite2D" parent="LandSail" unique_id=1841127576]
+texture_filter = 1
+texture = ExtResource("5_sail_tex")
+offset = Vector2(0, -30)
+
+[node name="GliderSprite" type="Sprite2D" parent="LandSail" unique_id=1003182197]
+visible = false
+modulate = Color(1, 1, 1, 0)
+texture_filter = 1
+texture = ExtResource("6_glider_tex")
+offset = Vector2(0, -30)
+
+[node name="GrappleLine" type="Line2D" parent="LandSail" unique_id=6369552]
+width = 3.0
+default_color = Color(0.4, 0.9, 1, 0.9)
+
+[node name="GrappleTip" type="Polygon2D" parent="LandSail" unique_id=1388083042]
+visible = false
+z_index = 6
+color = Color(0.65, 0.95, 1, 1)
+polygon = PackedVector2Array(-8, 0, 0, -5, 10, 0, 0, 5)
+
+[node name="GlideTrail" type="Line2D" parent="LandSail" unique_id=456457855]
+top_level = true
+width = 6.0
+default_color = Color(0.75, 0.95, 1, 0.75)
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BounceDetector" type="Area2D" parent="LandSail" unique_id=840655407]
+collision_layer = 0
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LandSail/BounceDetector" unique_id=472041856]
+shape = SubResource("CircleShape2D_bounce")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=970442984]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=538217800]
+
+[node name="Panel" type="ColorRect" parent="CanvasLayer" unique_id=1218873897]
+offset_left = 18.0
+offset_top = 16.0
+offset_right = 650.0
+offset_bottom = 78.0
+color = Color(0.03, 0.045, 0.065, 0.88)
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer" unique_id=59877846]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 638.0
+offset_bottom = 78.0
+theme_override_colors/font_color = Color(0.83, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "GRAYBOX RUSHCHUNK
+D/→ drive   Space jump   Aim + hold Left Click to fire hook"

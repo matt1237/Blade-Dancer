@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/chakram.gd" id="1_script"]
+[sub_resource type="CircleShape2D" id="ChakramShape"]
+radius = 20.0
+
+[node name="Chakram" type="Area2D" groups=["chakram"]]
+collision_layer = 16
+collision_mask = 2
+monitoring = true
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("ChakramShape")

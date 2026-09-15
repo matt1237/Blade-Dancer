@@ -1,0 +1,269 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/minigames/cauldron_catch.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/generated/cauldron_catch_cauldron_frame_0.png" id="2_cauldron"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
+bg_color = Color(0.1, 0.07, 0.09, 0.96)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.8, 0.55, 0.28, 0.9)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ledge"]
+bg_color = Color(0.24, 0.15, 0.1, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_sky"]
+bg_color = Color(0.14, 0.09, 0.13, 1)
+
+[node name="CauldronCatch" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.02, 0.01, 0.02, 0.92)
+
+[node name="Sky" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 90.0
+offset_right = 1240.0
+offset_bottom = 700.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_sky")
+
+[node name="FloorLedge" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 595.0
+offset_right = 1240.0
+offset_bottom = 700.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_ledge")
+
+[node name="FoodLayer" type="Control" parent="."]
+layout_mode = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 2
+
+[node name="CauldronClip" type="Control" parent="."]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 500.0
+offset_right = 1280.0
+offset_bottom = 700.0
+mouse_filter = 2
+clip_contents = true
+
+[node name="Cauldron" type="TextureRect" parent="CauldronClip"]
+layout_mode = 0
+offset_left = 495.0
+offset_top = 60.0
+offset_right = 645.0
+offset_bottom = 165.0
+mouse_filter = 2
+texture = ExtResource("2_cauldron")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CauldronGhost" type="TextureRect" parent="CauldronClip"]
+layout_mode = 0
+offset_left = 495.0
+offset_top = 60.0
+offset_right = 645.0
+offset_bottom = 165.0
+mouse_filter = 2
+texture = ExtResource("2_cauldron")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="FeedbackLayer" type="Control" parent="."]
+layout_mode = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 2
+
+[node name="HUD" type="Control" parent="."]
+layout_mode = 0
+offset_right = 1280.0
+offset_bottom = 720.0
+mouse_filter = 2
+
+[node name="ScoreLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 60.0
+offset_top = 40.0
+offset_right = 340.0
+offset_bottom = 76.0
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 26
+text = "Score: 0"
+
+[node name="StreakLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 60.0
+offset_top = 78.0
+offset_right = 340.0
+offset_bottom = 106.0
+theme_override_colors/font_color = Color(0.75, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 18
+text = "Streak x0"
+
+[node name="TimerLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 590.0
+offset_top = 36.0
+offset_right = 690.0
+offset_bottom = 84.0
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 34
+horizontal_alignment = 1
+text = "30"
+
+[node name="BuffLabel" type="Label" parent="HUD"]
+visible = false
+layout_mode = 0
+offset_left = 480.0
+offset_top = 90.0
+offset_right = 800.0
+offset_bottom = 116.0
+theme_override_colors/font_color = Color(0.55, 1, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+text = "SLOWED 3.0s"
+
+[node name="ShieldLabel" type="Label" parent="HUD"]
+visible = false
+layout_mode = 0
+offset_left = 480.0
+offset_top = 118.0
+offset_right = 800.0
+offset_bottom = 144.0
+theme_override_colors/font_color = Color(1, 0.95, 0.6, 1)
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+text = "SHIELDED 3.0s"
+
+[node name="BadLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 940.0
+offset_top = 40.0
+offset_right = 1220.0
+offset_bottom = 76.0
+theme_override_colors/font_color = Color(1, 0.5, 0.5, 1)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 2
+text = "Bad Caught: 0/3"
+
+[node name="CloseButtonTop" type="Button" parent="."]
+layout_mode = 0
+offset_left = 1224.0
+offset_top = 16.0
+offset_right = 1264.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 18
+text = "X"
+
+[node name="StartOverlay" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 340.0
+offset_top = 130.0
+offset_right = 940.0
+offset_bottom = 610.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="Title" type="Label" parent="StartOverlay"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 24.0
+offset_right = 580.0
+offset_bottom = 66.0
+theme_override_colors/font_color = Color(1, 0.82, 0.42, 1)
+theme_override_font_sizes/font_size = 30
+horizontal_alignment = 1
+text = "CAULDRON CATCH"
+
+[node name="Instructions" type="Label" parent="StartOverlay"]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 80.0
+offset_right = 576.0
+offset_bottom = 340.0
+theme_override_colors/font_color = Color(0.85, 0.88, 0.82, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1
+autowrap_mode = 3
+text = "Catch falling Turkey and Mushrooms in your cauldron — avoid the spiky purple fruit! Move with A / D.
+
+Grab a glowing wall clock for a 3s bonus: green slows good food, red speeds it up. Grab the angel wings for 3s of streak protection!
+
+Catching 3 bad fruits ends the run. You have 30 seconds — go!"
+
+[node name="StartButton" type="Button" parent="StartOverlay"]
+layout_mode = 0
+offset_left = 200.0
+offset_top = 358.0
+offset_right = 400.0
+offset_bottom = 410.0
+theme_override_font_sizes/font_size = 22
+text = "START"
+
+[node name="EndOverlay" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 390.0
+offset_top = 240.0
+offset_right = 890.0
+offset_bottom = 480.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+
+[node name="EndTitle" type="Label" parent="EndOverlay"]
+layout_mode = 0
+offset_left = 20.0
+offset_top = 24.0
+offset_right = 480.0
+offset_bottom = 62.0
+theme_override_colors/font_color = Color(0.6, 1, 0.5, 1)
+theme_override_font_sizes/font_size = 26
+horizontal_alignment = 1
+text = "TIME'S UP!"
+
+[node name="EndScoreLabel" type="Label" parent="EndOverlay"]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 76.0
+offset_right = 476.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(0.9, 0.9, 0.85, 1)
+theme_override_font_sizes/font_size = 20
+horizontal_alignment = 1
+text = "Final Score: 0"
+
+[node name="PlayAgainButton" type="Button" parent="EndOverlay"]
+layout_mode = 0
+offset_left = 60.0
+offset_top = 168.0
+offset_right = 240.0
+offset_bottom = 216.0
+theme_override_font_sizes/font_size = 18
+text = "PLAY AGAIN"
+
+[node name="CloseButton" type="Button" parent="EndOverlay"]
+layout_mode = 0
+offset_left = 260.0
+offset_top = 168.0
+offset_right = 440.0
+offset_bottom = 216.0
+theme_override_font_sizes/font_size = 18
+text = "CLOSE"

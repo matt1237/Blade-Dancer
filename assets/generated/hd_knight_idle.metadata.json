@@ -1,0 +1,70 @@
+{
+	"animation_name": "idle",
+	"animation_style": "",
+	"animation_type": "idle",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 8,
+	"frame_height": 128,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 128,
+			"w": 96,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 96,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 192,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 288,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 0,
+			"y": 128
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 96,
+			"y": 128
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 192,
+			"y": 128
+		},
+		{
+			"h": 128,
+			"w": 96,
+			"x": 288,
+			"y": 128
+		}
+	],
+	"frame_width": 96,
+	"name": "hd_knight_idle",
+	"prompt": "very subtle breathing motion, tiny idle sway, minimal movement",
+	"rows": 2,
+	"source_image": "res://assets/generated/hd_knight_base_frame_0.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/hd_knight_idle.png",
+	"spritesheet_width": 384,
+	"type": "animation"
+}

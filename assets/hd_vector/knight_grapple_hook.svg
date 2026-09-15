@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+ <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f6ffff"/><stop offset=".5" stop-color="#9ab6c1"/><stop offset="1" stop-color="#455a71"/></linearGradient>
+ <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#3b2834"/><stop offset=".5" stop-color="#a8674d"/><stop offset="1" stop-color="#3b2834"/></linearGradient>
+</defs>
+<!-- hook points right; the rope exits at the left -->
+<path d="M28 64 L61 64 Q73 64 79 52 L91 25 Q96 15 105 22 Q111 27 106 38 L94 68 Q88 86 70 93 L52 100" fill="none" stroke="#101a2b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M28 64 L61 64 Q73 64 79 52 L91 25 Q96 15 105 22 Q111 27 106 38 L94 68 Q88 86 70 93 L52 100" fill="none" stroke="url(#steel)" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M19 64 L44 64" stroke="url(#wood)" stroke-width="13" stroke-linecap="round"/>
+<path d="M52 100 L70 93" stroke="#d4edf0" stroke-width="4" stroke-linecap="round" opacity=".8"/>
+</svg>

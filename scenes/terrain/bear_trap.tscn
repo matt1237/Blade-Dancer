@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://bu2awylhfdwma"]
+
+[ext_resource type="Script" uid="uid://evipjej24fg7" path="res://scripts/terrain/bear_trap.gd" id="1_trap"]
+
+[sub_resource type="CircleShape2D" id="TrapShape"]
+radius = 22.0
+
+[node name="BearTrap" type="Area2D" unique_id=1978730902]
+collision_layer = 0
+monitorable = false
+script = ExtResource("1_trap")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=483208158]
+shape = SubResource("TrapShape")

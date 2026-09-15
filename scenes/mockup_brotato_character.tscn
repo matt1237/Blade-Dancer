@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/mockup_brotato_character.gd" id="1_script"]
+
+[node name="MockupCharacter" type="Node2D"]
+position = Vector2(640, 400)
+scale = Vector2(3.2, 3.2)
+script = ExtResource("1_script")

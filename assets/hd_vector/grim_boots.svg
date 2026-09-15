@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="192" viewBox="0 0 256 192">
+<defs>
+ <linearGradient id="pants" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3e3b48"/><stop offset="1" stop-color="#171a25"/></linearGradient>
+ <linearGradient id="boot" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#96624d"/><stop offset="1" stop-color="#382833"/></linearGradient>
+</defs>
+<!-- narrow dark trouser legs -->
+<path d="M51 5 L105 5 L111 107 L82 128 L42 111 Z" fill="url(#pants)" stroke="#181824" stroke-width="10"/>
+<path d="M151 5 L205 5 L214 111 L174 128 L145 107 Z" fill="url(#pants)" stroke="#181824" stroke-width="10"/>
+<!-- strapped boots, deliberately slimmer than the old profile -->
+<path d="M42 91 Q75 106 108 94 L116 133 L101 168 Q83 181 39 174 L27 159 Q28 146 43 137 Z" fill="url(#boot)" stroke="#181824" stroke-width="11" stroke-linejoin="round"/>
+<path d="M148 94 Q181 106 214 91 L222 137 Q237 146 229 159 L217 174 Q173 181 155 168 L140 133 Z" fill="url(#boot)" stroke="#181824" stroke-width="11" stroke-linejoin="round"/>
+<!-- boot straps -->
+<path d="M39 112 L109 128 M38 137 L104 151 M147 128 L217 112 M152 151 L218 137" stroke="#c08a62" stroke-width="9" opacity=".85"/>
+<path d="M74 119 L88 122 M74 144 L88 147 M168 122 L182 119 M168 147 L182 144" stroke="#e5c284" stroke-width="4"/>
+<!-- soles -->
+<path d="M39 170 Q72 184 103 169 M153 169 Q184 184 217 170" fill="none" stroke="#d3a06c" stroke-width="6" stroke-linecap="round"/>
+</svg>

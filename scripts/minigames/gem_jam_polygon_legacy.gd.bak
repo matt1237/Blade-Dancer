@@ -1,0 +1,715 @@
+class_name GemJamGame extends Control
+
+## Gem Jam refining prototype.
+## One canonical voxel volume (ROCK/GEM/EMPTY) is the source of truth for
+## spatial consistency between TOP/SIDE views. The rock BODY is rendered and
+## chiseled as a real 2D polygon per view, ray-marched from that volume, so it
+## reads as a solid rock cluster rather than a grid of blocks. Chiseling grows
+## an animated crack in from the rock's current outer edge; when two cracks'
+## endpoints meet, the enclosed voxel wedge is cleared and the outline is
+## rebuilt from the shared volume, so a real chunk visibly falls away.
+## This intentionally has no inventory, economy, tiers, or progression rules.
+
+signal closed()
+
+enum Cell { EMPTY, ROCK, GEM }
+enum Station { XRAY, CHISEL, RESONANCE }
+enum ViewMode { TOP, SIDE }
+
+const GRID_WIDTH: int = 16
+const GRID_HEIGHT: int = 16
+const GRID_DEPTH: int = 8
+## Pixel size of one voxel cell used for all grid<->screen conversions
+## (polygon ray-marching, wedge-to-voxel sync, hit testing).
+const GRID_CELL_PIXELS: float = 13.0
+const ROCK_COLOR: Color = Color("725846")
+const ROCK_HIGHLIGHT: Color = Color("a68162")
+const GEM_COLOR: Color = Color("54e5e0")
+const GEM_GLOW: Color = Color("b5fff2")
+const XRAY_STATION_RECT: Rect2 = Rect2(60.0, 175.0, 350.0, 420.0)
+const CHISEL_STATION_RECT: Rect2 = Rect2(465.0, 175.0, 350.0, 420.0)
+const RESONANCE_STATION_RECT: Rect2 = Rect2(870.0, 175.0, 350.0, 420.0)
+
+@export_category("Chiseling")
+## Degrees per second while A/D are held at the chisel bench.
+@export var chisel_angle_speed_degrees: float = 110.0
+## How fast a growing crack extends inward, in pixels/second.
+@export var crack_growth_speed: float = 260.0
+## Minimum/maximum crack reach; actual reach scales with strike POWER.
+@export var crack_min_length: float = 34.0
+@export var crack_max_length: float = 118.0
+## Two matured cracks whose endpoints land within this distance connect and
+## break the wedge between them off the rock.
+@export var crack_connection_distance: float = 46.0
+## Fraction of the gem's own surface that must be exposed (see
+## gem_exposure_ratio) before the rock may be moved to the resonance pad.
+@export_range(0.0, 1.0, 0.05) var resonance_exposure_required: float = 0.35
+
+@export_category("Resonance")
+@export var resonance_hold_seconds: float = 5.0
+@export_range(0.01, 0.5, 0.01) var resonance_frequency_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_amplitude_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_tolerance: float = 0.08
+## How much remaining (unexposed) gem surface destabilizes the live
+## waveform — at instability 1.0 (nothing exposed) the wobble is at its
+## strongest; at 0.0 (fully exposed) the wave is perfectly clean.
+@export_range(0.0, 0.5, 0.01) var resonance_instability_strength: float = 0.16
+
+var cells: Array[int] = []
+var gem_cells: Array[Vector3i] = []
+var total_gem_cells: int = 0
+var total_rock: int = 0
+var removed_rock: int = 0
+var gem_damage: int = 0
+
+var station: Station = Station.CHISEL
+var view_mode: ViewMode = ViewMode.TOP
+var completed: bool = false
+
+var rock_position: Vector2 = Vector2(640.0, 385.0)
+var rock_station: Station = Station.CHISEL
+var dragging_rock: bool = false
+var pending_rock_drag: bool = false
+var drag_start_position: Vector2 = Vector2.ZERO
+var drag_origin_position: Vector2 = Vector2.ZERO
+var drag_origin_station: Station = Station.CHISEL
+var chisel_mouse_position: Vector2 = Vector2.ZERO
+var chisel_angle: float = 0.0
+var power_phase: float = 0.0
+var power_value: float = 0.5
+
+## The rock body's current outline, in LOCAL space (offset from
+## rock_position), one per view so each keeps its own crack/break history.
+## Rebuilt from the canonical volume on demand (see *_dirty flags) so a
+## change made in one view is always picked up correctly by the other.
+var rock_polygon_top: PackedVector2Array = PackedVector2Array()
+var rock_polygon_side: PackedVector2Array = PackedVector2Array()
+var top_polygon_dirty: bool = true
+var side_polygon_dirty: bool = true
+
+## Cached gem icon anchor per view, in local space (see _build_volume).
+var gem_icon_local_top: Vector2 = Vector2.ZERO
+var gem_icon_local_side: Vector2 = Vector2.ZERO
+
+var cracks: Array[Dictionary] = []
+var falling_chunks: Array[Dictionary] = []
+var resonance_time: float = 0.0
+var resonance_frequency: float = 0.50
+var resonance_amplitude: float = 0.50
+var target_frequency: float = 0.64
+var target_amplitude: float = 0.72
+var resonance_good_time: float = 0.0
+
+@onready var station_label: Label = $HUD/StationLabel
+@onready var view_label: Label = $HUD/ViewLabel
+@onready var status_label: Label = $HUD/StatusLabel
+@onready var metrics_label: Label = $HUD/MetricsLabel
+@onready var progress_bar: ProgressBar = $HUD/ResonanceProgress
+@onready var frequency_label: Label = $ResonancePanel/FrequencyLabel
+@onready var amplitude_label: Label = $ResonancePanel/AmplitudeLabel
+@onready var resonance_panel: Control = $ResonancePanel
+@onready var chisel_hint: Label = $HUD/ChiselHint
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_build_volume()
+	$StationBar/XRayButton.pressed.connect(_select_xray)
+	$StationBar/ChiselButton.pressed.connect(_select_chisel)
+	$StationBar/ResonanceButton.pressed.connect(_select_resonance)
+	$ResonancePanel/FrequencyDown.pressed.connect(_frequency_down)
+	$ResonancePanel/FrequencyUp.pressed.connect(_frequency_up)
+	$ResonancePanel/AmplitudeDown.pressed.connect(_amplitude_down)
+	$ResonancePanel/AmplitudeUp.pressed.connect(_amplitude_up)
+	$CloseButton.pressed.connect(_close)
+	_update_ui()
+	queue_redraw()
+
+func _build_volume() -> void:
+	cells.clear()
+	cells.resize(GRID_WIDTH * GRID_HEIGHT * GRID_DEPTH)
+	var center: Vector3 = Vector3(float(GRID_WIDTH - 1) * 0.5, float(GRID_HEIGHT - 1) * 0.5, float(GRID_DEPTH - 1) * 0.5)
+	var radii: Vector3 = center * 0.92
+	for z: int in range(GRID_DEPTH):
+		for y: int in range(GRID_HEIGHT):
+			for x: int in range(GRID_WIDTH):
+				var normalized: Vector3 = Vector3((float(x) - center.x) / radii.x, (float(y) - center.y) / radii.y, (float(z) - center.z) / radii.z)
+				# Deterministic surface roughness (no RNG) keeps the clump from
+				# reading as a perfect ellipsoid while staying fully repeatable.
+				var roughness: float = 0.14 * sin(float(x) * 12.9898 + float(y) * 78.233 + float(z) * 37.719)
+				cells[_cell_index(x, y, z)] = Cell.ROCK if normalized.length() <= 1.0 + roughness else Cell.EMPTY
+	# A compact, spatially consistent gemstone sits inside the same rock volume.
+	gem_cells.clear()
+	for z: int in range(2, 6):
+		for y: int in range(6, 11):
+			for x: int in range(5, 11):
+				var distance: float = Vector3(x - 7.5, y - 8.0, (z - 3.5) * 1.5).length()
+				if distance <= 3.0:
+					cells[_cell_index(x, y, z)] = Cell.GEM
+					gem_cells.append(Vector3i(x, y, z))
+	total_gem_cells = gem_cells.size()
+	total_rock = _count_cells(Cell.ROCK)
+	var centroid: Vector3 = Vector3.ZERO
+	for cell: Vector3i in gem_cells: centroid += Vector3(cell)
+	if total_gem_cells > 0: centroid /= float(total_gem_cells)
+	gem_icon_local_top = _grid_point_to_local(centroid.x, centroid.y, GRID_WIDTH, GRID_HEIGHT)
+	gem_icon_local_side = _grid_point_to_local(centroid.x, centroid.z, GRID_WIDTH, GRID_DEPTH)
+	top_polygon_dirty = true
+	side_polygon_dirty = true
+
+func _process(delta: float) -> void:
+	if station == Station.CHISEL and not dragging_rock:
+		if Input.is_physical_key_pressed(KEY_A): chisel_angle -= deg_to_rad(chisel_angle_speed_degrees) * delta
+		if Input.is_physical_key_pressed(KEY_D): chisel_angle += deg_to_rad(chisel_angle_speed_degrees) * delta
+	power_phase += delta * 3.2
+	power_value = (sin(power_phase) + 1.0) * 0.5
+	_update_cracks(delta)
+	_update_falling_chunks(delta)
+	if completed: return
+	if station == Station.RESONANCE:
+		resonance_time += delta
+		if Input.is_physical_key_pressed(KEY_A): resonance_frequency = clampf(resonance_frequency - resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_D): resonance_frequency = clampf(resonance_frequency + resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_S): resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_W): resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+		var alignment: float = _alignment_score()
+		if alignment >= 1.0 - resonance_tolerance:
+			resonance_good_time = minf(resonance_hold_seconds, resonance_good_time + delta)
+		else:
+			resonance_good_time = maxf(0.0, resonance_good_time - delta * 1.5)
+		if resonance_good_time >= resonance_hold_seconds:
+			completed = true
+			status_label.text = "JEWEL REFINED!  Resonance stabilized."
+	_update_ui()
+	queue_redraw()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		view_mode = ViewMode.SIDE if view_mode == ViewMode.TOP else ViewMode.TOP
+		_ensure_polygon_fresh()
+		_update_ui()
+		queue_redraw()
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		chisel_mouse_position = event.position
+		if pending_rock_drag and not dragging_rock and drag_start_position.distance_to(event.position) > 10.0:
+			dragging_rock = true
+		if dragging_rock: rock_position = event.position
+		queue_redraw()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if rock_position.distance_to(event.position) < 70.0:
+				pending_rock_drag = true
+				drag_start_position = event.position
+				drag_origin_position = rock_position
+				drag_origin_station = rock_station
+				chisel_mouse_position = event.position
+			else: pending_rock_drag = false
+		else:
+			if dragging_rock:
+				dragging_rock = false
+				pending_rock_drag = false
+				_place_rock_in_station()
+			elif station == Station.CHISEL and CHISEL_STATION_RECT.has_point(event.position):
+				# The rock's clickable BODY (its visible edge, ~100px out) is
+				# larger than the 70px "grab to drag" zone around its center,
+				# so a strike out at the edge — the expected click target —
+				# must register even though it never set pending_rock_drag.
+				pending_rock_drag = false
+				_chisel_strike(event.position)
+			else: pending_rock_drag = false
+
+func _place_rock_in_station() -> void:
+	if XRAY_STATION_RECT.grow(20.0).has_point(rock_position):
+		_move_rock_to_station(Station.XRAY)
+		status_label.text = "Scanner active — press F to inspect TOP/SIDE."
+	elif CHISEL_STATION_RECT.grow(20.0).has_point(rock_position):
+		_move_rock_to_station(Station.CHISEL)
+		status_label.text = "Click the rock's edge to start a crack. Connect two cracks to break off a chunk."
+	elif RESONANCE_STATION_RECT.grow(20.0).has_point(rock_position):
+		if gem_exposure_ratio() >= resonance_exposure_required:
+			_move_rock_to_station(Station.RESONANCE)
+			status_label.text = "Tune frequency and amplitude with A/D and W/S."
+		else:
+			rock_position = drag_origin_position
+			rock_station = drag_origin_station
+			station = drag_origin_station
+			status_label.text = "Expose at least %d%% of the gem before resonance." % roundi(resonance_exposure_required * 100.0)
+	else:
+		rock_position = drag_origin_position
+		rock_station = drag_origin_station
+		station = drag_origin_station
+		status_label.text = "Place the rock inside a workstation."
+	_update_ui()
+	queue_redraw()
+
+func _station_center(target_station: Station) -> Vector2:
+	match target_station:
+		Station.XRAY: return XRAY_STATION_RECT.get_center()
+		Station.RESONANCE: return RESONANCE_STATION_RECT.get_center()
+		_: return CHISEL_STATION_RECT.get_center()
+
+func _move_rock_to_station(target_station: Station) -> void:
+	rock_station = target_station
+	station = target_station
+	rock_position = _station_center(target_station)
+	_ensure_polygon_fresh()
+
+## --- Grid <-> local-space conversions -----------------------------------
+
+## Local-space (rock_position-relative) rect the current view's grid maps to.
+func _grid_view_metrics() -> Dictionary:
+	var columns: int = GRID_WIDTH
+	var rows: int = GRID_HEIGHT if view_mode == ViewMode.TOP else GRID_DEPTH
+	var local_rect: Rect2 = Rect2(Vector2(-columns, -rows) * GRID_CELL_PIXELS * 0.5, Vector2(columns, rows) * GRID_CELL_PIXELS)
+	return {"local_rect": local_rect, "columns": columns, "rows": rows, "cell_size": GRID_CELL_PIXELS}
+
+func _grid_point_to_local(column: float, row: float, columns: int, rows: int) -> Vector2:
+	var local_rect: Rect2 = Rect2(Vector2(-columns, -rows) * GRID_CELL_PIXELS * 0.5, Vector2(columns, rows) * GRID_CELL_PIXELS)
+	return local_rect.position + Vector2(column + 0.5, row + 0.5) * GRID_CELL_PIXELS
+
+## Maps a 2D projected (column, row) plus a "depth into the surface" step to
+## the actual 3D grid coordinate, using the axis the current view chisels
+## into: TOP digs along Z (front-facing), SIDE digs along Y.
+func _surface_grid_coords(column: int, row: int, depth_step: int) -> Vector3i:
+	if view_mode == ViewMode.TOP: return Vector3i(column, row, depth_step)
+	return Vector3i(column, depth_step, row)
+
+## --- Rock polygon (per-view outline, ray-marched from the volume) -------
+
+func _current_rock_polygon() -> PackedVector2Array:
+	return rock_polygon_top if view_mode == ViewMode.TOP else rock_polygon_side
+
+func _ensure_polygon_fresh() -> void:
+	if view_mode == ViewMode.TOP and top_polygon_dirty:
+		rock_polygon_top = _rebuild_rock_polygon(ViewMode.TOP)
+		top_polygon_dirty = false
+	elif view_mode == ViewMode.SIDE and side_polygon_dirty:
+		rock_polygon_side = _rebuild_rock_polygon(ViewMode.SIDE)
+		side_polygon_dirty = false
+
+const POLYGON_ANGLE_COUNT: int = 40
+
+## Ray-marches outward from the local origin at a ring of angles, using the
+## canonical volume's occupancy (_projected_cell != EMPTY) to find the
+## outermost still-solid cell along each ray — the exact same data X-ray and
+## chiseling read/write, so the outline is always geometry-accurate.
+func _rebuild_rock_polygon(for_view: ViewMode) -> PackedVector2Array:
+	var columns: int = GRID_WIDTH
+	var rows: int = GRID_HEIGHT if for_view == ViewMode.TOP else GRID_DEPTH
+	var center_x: float = float(columns - 1) * 0.5
+	var center_y: float = float(rows - 1) * 0.5
+	var max_radius: float = maxf(center_x, center_y)
+	var points: PackedVector2Array = PackedVector2Array()
+	for index: int in range(POLYGON_ANGLE_COUNT):
+		var angle: float = TAU * float(index) / float(POLYGON_ANGLE_COUNT)
+		var direction: Vector2 = Vector2(cos(angle), sin(angle))
+		var found_radius: float = 0.5
+		for step: int in range(28, 0, -1):
+			var sample_radius: float = max_radius * float(step) / 28.0
+			var grid_x: int = roundi(center_x + direction.x * sample_radius)
+			var grid_y: int = roundi(center_y + direction.y * sample_radius)
+			if grid_x < 0 or grid_y < 0 or grid_x >= columns or grid_y >= rows: continue
+			if _projected_cell_for(for_view, grid_x, grid_y) != Cell.EMPTY:
+				found_radius = sample_radius
+				break
+		points.append(Vector2(direction.x * (found_radius + 0.5) * GRID_CELL_PIXELS, direction.y * (found_radius + 0.5) * GRID_CELL_PIXELS))
+	return points
+
+## --- Chiseling: boundary-anchored, animated, connecting cracks ----------
+
+func _chisel_trajectory_direction() -> Vector2:
+	# Screen-space positive rotation is visually clockwise. A decreases the
+	# angle (counterclockwise), D increases it (clockwise).
+	return Vector2.DOWN.rotated(chisel_angle)
+
+func _chisel_strike(click_position: Vector2) -> void:
+	_ensure_polygon_fresh()
+	var polygon: PackedVector2Array = _current_rock_polygon()
+	if polygon.size() < 3:
+		status_label.text = "Nothing left to chisel here."
+		return
+	var local_click: Vector2 = click_position - rock_position
+	# The mouse chooses WHERE on the rock the chisel lands. Its dotted guide
+	# and A/D angle choose the trajectory independently, so moving the mouse
+	# never silently bends the crack back toward the gem or rock center.
+	var boundary_point: Vector2 = _closest_boundary_point(polygon, local_click)
+	var trajectory_direction: Vector2 = _chisel_trajectory_direction()
+	var max_length: float = lerpf(crack_min_length, crack_max_length, power_value)
+	cracks.append({
+		"local_start": boundary_point,
+		"direction": trajectory_direction,
+		"length": 0.0,
+		"max_length": max_length,
+		"matured": false,
+	})
+	status_label.text = "Crack driven in — connect it with another nearby crack to break the rock away."
+	_update_ui()
+	queue_redraw()
+
+func _update_cracks(delta: float) -> void:
+	for crack: Dictionary in cracks:
+		if bool(crack["matured"]): continue
+		var new_length: float = minf(float(crack["max_length"]), float(crack["length"]) + crack_growth_speed * delta)
+		crack["length"] = new_length
+		if new_length >= float(crack["max_length"]): crack["matured"] = true
+	# Check for newly-matured cracks connecting to any other matured crack —
+	# handle at most one break per frame to keep the geometry update simple
+	# and easy to follow visually.
+	for i: int in range(cracks.size()):
+		var crack_a: Dictionary = cracks[i]
+		if not bool(crack_a["matured"]): continue
+		for j: int in range(i + 1, cracks.size()):
+			var crack_b: Dictionary = cracks[j]
+			if not bool(crack_b["matured"]): continue
+			if _cracks_connect(crack_a, crack_b):
+				_break_between(crack_a, crack_b)
+				cracks.remove_at(j)
+				cracks.remove_at(i)
+				return
+
+func _crack_tip(crack: Dictionary) -> Vector2:
+	return (crack["local_start"] as Vector2) + (crack["direction"] as Vector2) * float(crack["length"])
+
+func _cracks_connect(crack_a: Dictionary, crack_b: Dictionary) -> bool:
+	var a_start: Vector2 = crack_a["local_start"]
+	var a_tip: Vector2 = _crack_tip(crack_a)
+	var b_start: Vector2 = crack_b["local_start"]
+	var b_tip: Vector2 = _crack_tip(crack_b)
+	return a_start.distance_to(b_start) <= crack_connection_distance or a_start.distance_to(b_tip) <= crack_connection_distance or a_tip.distance_to(b_start) <= crack_connection_distance or a_tip.distance_to(b_tip) <= crack_connection_distance
+
+## Two connected cracks bound a wedge anchored at the rock's edge. Its voxel
+## columns are cleared and a debris polygon falls away; both view outlines are
+## then rebuilt from that shared volume so exposure stays spatially consistent.
+func _break_between(crack_a: Dictionary, crack_b: Dictionary) -> void:
+	var raw_wedge: PackedVector2Array = PackedVector2Array([crack_a["local_start"], _crack_tip(crack_a), _crack_tip(crack_b), crack_b["local_start"]])
+	# The two cracks' endpoints don't always land in an order that forms a
+	# simple (non-self-intersecting) quad — the convex hull of the same 4
+	# points is always a valid simple polygon and a reasonable chunk shape.
+	var wedge: PackedVector2Array = _convex_hull_without_closing_point(raw_wedge)
+	if wedge.size() < 3 or absf(_polygon_area(wedge)) < 24.0: return
+	_clear_voxels_under_wedge(wedge)
+	_spawn_falling_chunk(wedge)
+	# Rather than repeatedly clipping a persistent 2D polygon (Clipper-style
+	# boolean subtraction on an already-notched, non-convex shape reliably
+	# produces self-intersecting results after a few cuts), the outline is
+	# just re-derived fresh from the voxel data — which was already updated
+	# above — for BOTH views. Ray-marching from a single center point always
+	# yields a valid simple polygon by construction, so this can never break.
+	top_polygon_dirty = true
+	side_polygon_dirty = true
+	_ensure_polygon_fresh()
+	status_label.text = "Cracks connected — a chunk breaks away!"
+
+func _clear_voxels_under_wedge(wedge: PackedVector2Array) -> void:
+	var metrics: Dictionary = _grid_view_metrics()
+	var columns: int = metrics["columns"]
+	var rows: int = metrics["rows"]
+	var depth_axis_length: int = GRID_DEPTH if view_mode == ViewMode.TOP else GRID_HEIGHT
+	for row: int in range(rows):
+		for column: int in range(columns):
+			var center: Vector2 = _grid_point_to_local(column, row, columns, rows)
+			if not Geometry2D.is_point_in_polygon(center, wedge): continue
+			for depth_step: int in range(depth_axis_length):
+				var grid: Vector3i = _surface_grid_coords(column, row, depth_step)
+				var current: Cell = cells[_cell_index(grid.x, grid.y, grid.z)] as Cell
+				if current == Cell.EMPTY: continue
+				if current == Cell.GEM:
+					_remove_cell(grid.x, grid.y, grid.z)
+					break
+				_remove_cell(grid.x, grid.y, grid.z)
+
+func _spawn_falling_chunk(wedge: PackedVector2Array) -> void:
+	var absolute_points: PackedVector2Array = PackedVector2Array()
+	var centroid: Vector2 = Vector2.ZERO
+	for point: Vector2 in wedge:
+		centroid += point
+	centroid /= float(maxi(1, wedge.size()))
+	for point: Vector2 in wedge: absolute_points.append(point - centroid)
+	falling_chunks.append({
+		"position": rock_position + centroid,
+		"points": absolute_points,
+		"velocity": (centroid.normalized() if centroid.length() > 1.0 else Vector2(-1.0, -1.0)) * 90.0 + Vector2(0.0, -40.0),
+		"rotation": 0.0,
+		"spin": randf_range(-3.0, 3.0),
+		"life": 1.4,
+	})
+
+func _update_falling_chunks(delta: float) -> void:
+	for chunk: Dictionary in falling_chunks:
+		var velocity: Vector2 = chunk["velocity"]
+		chunk["position"] = (chunk["position"] as Vector2) + velocity * delta
+		chunk["velocity"] = velocity + Vector2(0.0, 280.0) * delta
+		chunk["rotation"] = float(chunk["rotation"]) + float(chunk["spin"]) * delta
+		chunk["life"] = float(chunk["life"]) - delta
+	for index: int in range(falling_chunks.size() - 1, -1, -1):
+		if float(falling_chunks[index]["life"]) <= 0.0: falling_chunks.remove_at(index)
+
+func _closest_boundary_point(polygon: PackedVector2Array, local_point: Vector2) -> Vector2:
+	var closest: Vector2 = polygon[0]
+	var closest_distance_squared: float = INF
+	for index: int in range(polygon.size()):
+		var segment_start: Vector2 = polygon[index]
+		var segment_end: Vector2 = polygon[(index + 1) % polygon.size()]
+		var segment: Vector2 = segment_end - segment_start
+		var length_squared: float = segment.length_squared()
+		var weight: float = 0.0
+		if length_squared > 0.0001:
+			weight = clampf((local_point - segment_start).dot(segment) / length_squared, 0.0, 1.0)
+		var candidate: Vector2 = segment_start + segment * weight
+		var distance_squared: float = candidate.distance_squared_to(local_point)
+		if distance_squared < closest_distance_squared:
+			closest_distance_squared = distance_squared
+			closest = candidate
+	return closest
+
+## Polygon clipping can leave near-duplicate/collinear seam points along the
+## cut, which reliably breaks Godot's triangulator on draw. Collapsing any
+## points closer together than min_distance keeps the polygon drawable
+## without visibly changing its shape.
+func _clean_polygon(points: PackedVector2Array, min_distance: float = 0.75) -> PackedVector2Array:
+	var cleaned: PackedVector2Array = PackedVector2Array()
+	for point: Vector2 in points:
+		if cleaned.is_empty() or cleaned[cleaned.size() - 1].distance_to(point) >= min_distance:
+			cleaned.append(point)
+	if cleaned.size() > 1 and cleaned[0].distance_to(cleaned[cleaned.size() - 1]) < min_distance:
+		cleaned.remove_at(cleaned.size() - 1)
+	return cleaned
+
+func _convex_hull_without_closing_point(points: PackedVector2Array) -> PackedVector2Array:
+	var hull: PackedVector2Array = Geometry2D.convex_hull(points)
+	if hull.size() > 1 and hull[0].is_equal_approx(hull[hull.size() - 1]):
+		hull.remove_at(hull.size() - 1)
+	return hull
+
+func _polygon_area(polygon: PackedVector2Array) -> float:
+	var area: float = 0.0
+	var count: int = polygon.size()
+	for i: int in range(count):
+		var a: Vector2 = polygon[i]
+		var b: Vector2 = polygon[(i + 1) % count]
+		area += a.x * b.y - b.x * a.y
+	return area * 0.5
+
+func _remove_cell(x: int, y: int, z: int) -> bool:
+	if x < 0 or x >= GRID_WIDTH or y < 0 or y >= GRID_HEIGHT or z < 0 or z >= GRID_DEPTH: return false
+	var index: int = _cell_index(x, y, z)
+	if cells[index] == Cell.ROCK:
+		cells[index] = Cell.EMPTY
+		removed_rock += 1
+		return true
+	if cells[index] == Cell.GEM:
+		gem_damage += 1
+		return false
+	return false
+
+func _select_xray() -> void:
+	_move_rock_to_station(Station.XRAY)
+	status_label.text = "X-ray inspection: the gemstone is highlighted through the rock."
+	_update_ui()
+	queue_redraw()
+
+func _select_chisel() -> void:
+	_move_rock_to_station(Station.CHISEL)
+	status_label.text = "Click the rock's edge to start a crack. Connect two cracks to break off a chunk."
+	_update_ui()
+	queue_redraw()
+
+func _select_resonance() -> void:
+	if gem_exposure_ratio() < resonance_exposure_required:
+		status_label.text = "Expose at least %d%% of the gem before resonance." % roundi(resonance_exposure_required * 100.0)
+		return
+	_move_rock_to_station(Station.RESONANCE)
+	status_label.text = "Match the live waveform to the target and hold steady."
+	_update_ui()
+	queue_redraw()
+
+## Overall rock cleared, informational only (HUD "ROCK REMOVED").
+func exposure_ratio() -> float:
+	return clampf(float(removed_rock) / maxf(1.0, float(total_rock)), 0.0, 1.0)
+
+## A gem cell counts as exposed once any of its 6 face-neighbors (including
+## outside the grid) is empty — i.e. it physically touches open air. This is
+## view-independent (unlike X-ray "see-through"), drives both the chisel
+## bench's gradual gem reveal and the resonance station's difficulty.
+func gem_exposure_ratio() -> float:
+	if total_gem_cells == 0: return 0.0
+	var exposed: int = 0
+	for cell: Vector3i in gem_cells:
+		if _gem_cell_is_exposed(cell): exposed += 1
+	return float(exposed) / float(total_gem_cells)
+
+func _gem_cell_is_exposed(cell: Vector3i) -> bool:
+	const OFFSETS: Array[Vector3i] = [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+	for offset: Vector3i in OFFSETS:
+		var neighbor: Vector3i = cell + offset
+		if neighbor.x < 0 or neighbor.x >= GRID_WIDTH or neighbor.y < 0 or neighbor.y >= GRID_HEIGHT or neighbor.z < 0 or neighbor.z >= GRID_DEPTH: return true
+		if cells[_cell_index(neighbor.x, neighbor.y, neighbor.z)] == Cell.EMPTY: return true
+	return false
+
+func _alignment_score() -> float:
+	var instability: float = (1.0 - gem_exposure_ratio()) * resonance_instability_strength
+	var noisy_frequency: float = resonance_frequency + instability * sin(resonance_time * 11.0)
+	var noisy_amplitude: float = resonance_amplitude + instability * cos(resonance_time * 9.0)
+	return 1.0 - clampf(absf(noisy_frequency - target_frequency) + absf(noisy_amplitude - target_amplitude), 0.0, 1.0)
+
+func _frequency_down() -> void:
+	resonance_frequency = clampf(resonance_frequency - resonance_frequency_step, 0.0, 1.0)
+func _frequency_up() -> void:
+	resonance_frequency = clampf(resonance_frequency + resonance_frequency_step, 0.0, 1.0)
+func _amplitude_down() -> void:
+	resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step, 0.0, 1.0)
+func _amplitude_up() -> void:
+	resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step, 0.0, 1.0)
+
+func _cell_index(x: int, y: int, z: int) -> int:
+	return x + y * GRID_WIDTH + z * GRID_WIDTH * GRID_HEIGHT
+
+func _count_cells(kind: Cell) -> int:
+	var count: int = 0
+	for cell: int in cells:
+		if cell == kind: count += 1
+	return count
+
+## X-ray projection for an arbitrary view: sees straight through the whole
+## depth axis, so the gem is revealed wherever it exists anywhere along that
+## ray, regardless of covering rock — the "X-ray" behavior.
+func _projected_cell_for(for_view: ViewMode, x: int, y: int) -> Cell:
+	var best: Cell = Cell.EMPTY
+	if for_view == ViewMode.TOP:
+		for z: int in range(GRID_DEPTH):
+			var cell: Cell = cells[_cell_index(x, y, z)] as Cell
+			if cell == Cell.GEM: return Cell.GEM
+			if cell == Cell.ROCK: best = Cell.ROCK
+	else:
+		for depth: int in range(GRID_HEIGHT):
+			var cell: Cell = cells[_cell_index(x, depth, y)] as Cell
+			if cell == Cell.GEM: return Cell.GEM
+			if cell == Cell.ROCK: best = Cell.ROCK
+	return best
+
+func _projected_cell(x: int, y: int) -> Cell:
+	return _projected_cell_for(view_mode, x, y)
+
+## Chisel-bench projection: only the outermost still-solid cell along the
+## chiseling axis is "visible" without X-ray vision, so the gem only appears
+## once the rock actually covering it has been physically cleared away.
+func _surface_projected_cell(column: int, row: int) -> Cell:
+	var depth_axis_length: int = GRID_DEPTH if view_mode == ViewMode.TOP else GRID_HEIGHT
+	for depth_step: int in range(depth_axis_length):
+		var grid: Vector3i = _surface_grid_coords(column, row, depth_step)
+		var cell: Cell = cells[_cell_index(grid.x, grid.y, grid.z)] as Cell
+		if cell != Cell.EMPTY: return cell
+	return Cell.EMPTY
+
+func _update_ui() -> void:
+	var station_name: String = ["X-RAY STATION", "CHISELING STATION", "RESONANCE STATION"][station]
+	station_label.text = station_name
+	view_label.text = "VIEW: TOP" if view_mode == ViewMode.TOP else "VIEW: SIDE"
+	metrics_label.text = "ROCK REMOVED  %d%%    GEM DAMAGE  %d    GEM EXPOSED  %d%%" % [roundi(exposure_ratio() * 100.0), gem_damage, roundi(gem_exposure_ratio() * 100.0)]
+	progress_bar.value = resonance_good_time / maxf(0.01, resonance_hold_seconds) * 100.0
+	frequency_label.text = "FREQUENCY  %.2f" % resonance_frequency
+	amplitude_label.text = "AMPLITUDE  %.2f" % resonance_amplitude
+	resonance_panel.visible = station == Station.RESONANCE
+	chisel_hint.visible = station == Station.CHISEL
+
+func _draw() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("100c16"))
+	_draw_shop_background()
+	_draw_station(XRAY_STATION_RECT, "X-RAY SCANNER", Color("4b8490"))
+	_draw_station(CHISEL_STATION_RECT, "CHISEL BENCH", Color("8b684d"))
+	_draw_station(RESONANCE_STATION_RECT, "RESONANCE PAD", Color("66518d"))
+	_draw_rock()
+	if station == Station.CHISEL:
+		var power_rect: Rect2 = Rect2(505.0, 545.0, 270.0, 20.0)
+		draw_rect(power_rect, Color("120e18"), true)
+		draw_rect(Rect2(power_rect.position, Vector2(power_rect.size.x * power_value, power_rect.size.y)), Color("e6ad4e"), true)
+		draw_rect(power_rect, Color("f6d68b"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, Vector2(505.0, 540.0), "POWER  %.0f%%  — click the rock's edge to strike" % (power_value * 100.0), HORIZONTAL_ALIGNMENT_LEFT, 270.0, 15, Color("f6d68b"))
+	if station == Station.RESONANCE: _draw_waveforms()
+
+func _draw_shop_background() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("17121b"))
+	draw_line(Vector2(0.0, 155.0), Vector2(size.x, 155.0), Color("4b3540"), 3.0)
+	for x: int in range(0, 1280, 80): draw_line(Vector2(x, 0.0), Vector2(x + 180.0, 155.0), Color(0.18, 0.12, 0.18, 0.45), 2.0)
+
+func _draw_station(rect: Rect2, title: String, color: Color) -> void:
+	draw_rect(rect, Color("211a25"), true)
+	draw_rect(rect, color, false, 4.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 32.0), title, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 20, color)
+
+func _draw_rock() -> void:
+	if station == Station.RESONANCE:
+		# By resonance the crystal is treated as fully freed from the rock, so
+		# it gets a clean stylized presentation instead of the polygon.
+		_draw_gem_icon(rock_position, 1.0)
+		return
+	_ensure_polygon_fresh()
+	var polygon: PackedVector2Array = _clean_polygon(_current_rock_polygon())
+	if polygon.size() >= 3:
+		var absolute_points: PackedVector2Array = PackedVector2Array()
+		for point: Vector2 in polygon: absolute_points.append(point + rock_position)
+		var xray: bool = station == Station.XRAY
+		draw_colored_polygon(absolute_points, Color(ROCK_COLOR.r, ROCK_COLOR.g, ROCK_COLOR.b, 0.4 if xray else 1.0))
+		var closed_outline: PackedVector2Array = absolute_points.duplicate()
+		closed_outline.append(closed_outline[0])
+		draw_polyline(closed_outline, ROCK_HIGHLIGHT, 3.0)
+	for chunk: Dictionary in falling_chunks:
+		var chunk_points: PackedVector2Array = chunk["points"]
+		var chunk_transform: Transform2D = Transform2D(float(chunk["rotation"]), chunk["position"])
+		var transformed: PackedVector2Array = PackedVector2Array()
+		for point: Vector2 in chunk_points: transformed.append(chunk_transform * point)
+		draw_colored_polygon(transformed, Color(ROCK_COLOR.r, ROCK_COLOR.g, ROCK_COLOR.b, clampf(float(chunk["life"]), 0.0, 1.0)))
+	if station == Station.XRAY:
+		_draw_gem_icon(rock_position + (gem_icon_local_top if view_mode == ViewMode.TOP else gem_icon_local_side), 1.0)
+	elif station == Station.CHISEL:
+		var reveal: float = clampf(gem_exposure_ratio() / 0.5, 0.0, 1.0)
+		if reveal > 0.02:
+			_draw_gem_icon(rock_position + (gem_icon_local_top if view_mode == ViewMode.TOP else gem_icon_local_side), reveal)
+	if station == Station.CHISEL and not dragging_rock:
+		_draw_chisel_tool()
+	if station == Station.CHISEL:
+		for crack: Dictionary in cracks:
+			var start: Vector2 = rock_position + (crack["local_start"] as Vector2)
+			var tip: Vector2 = rock_position + _crack_tip(crack)
+			var glow: float = 0.55 if bool(crack["matured"]) else 0.85
+			draw_line(start, tip, Color(1.0, 0.86, 0.38, glow), 4.0)
+			draw_circle(start, 3.5, Color(1.0, 0.86, 0.38, glow))
+
+func _draw_chisel_tool() -> void:
+	var tip: Vector2 = chisel_mouse_position if CHISEL_STATION_RECT.has_point(chisel_mouse_position) else rock_position + Vector2(0.0, -42.0)
+	# This exact vector is stored on every strike, so the dotted trajectory is
+	# a truthful preview rather than a cosmetic line with different math.
+	var entry_direction: Vector2 = _chisel_trajectory_direction()
+	var handle: Vector2 = tip - entry_direction * 58.0
+	draw_line(handle, tip, Color("e8d7b1"), 9.0)
+	draw_circle(handle, 7.0, Color("f5c765"))
+	for dot_index: int in range(1, 5):
+		var dot_position: Vector2 = tip + entry_direction * float(dot_index * 6)
+		draw_circle(dot_position, 2.5, Color("f6d68b"))
+	draw_string(ThemeDB.fallback_font, tip + Vector2(12.0, -12.0), "A/D ANGLE  %+.0f°" % rad_to_deg(chisel_angle), HORIZONTAL_ALIGNMENT_LEFT, 170.0, 14, Color("f6d68b"))
+
+func _draw_gem_icon(center: Vector2, reveal: float) -> void:
+	var width: float = (28.0 if view_mode == ViewMode.TOP else 19.0) * lerpf(0.6, 1.0, reveal)
+	var height: float = (30.0 if view_mode == ViewMode.TOP else 36.0) * lerpf(0.6, 1.0, reveal)
+	var gem_points: PackedVector2Array = PackedVector2Array([center + Vector2(0.0, -height), center + Vector2(width, -8.0), center + Vector2(width * 0.65, height), center + Vector2(-width * 0.8, height * 0.8), center + Vector2(-width, -10.0)])
+	draw_colored_polygon(gem_points, Color(GEM_COLOR.r, GEM_COLOR.g, GEM_COLOR.b, reveal))
+	draw_polyline(gem_points, Color(GEM_GLOW.r, GEM_GLOW.g, GEM_GLOW.b, reveal), 3.0)
+
+func _draw_waveforms() -> void:
+	var instability: float = (1.0 - gem_exposure_ratio()) * resonance_instability_strength
+	var target_points: PackedVector2Array = PackedVector2Array()
+	var player_points: PackedVector2Array = PackedVector2Array()
+	for index: int in range(101):
+		var x: float = 680.0 + index * 5.0
+		var normalized: float = float(index) / 100.0
+		var wobble: float = instability * sin(resonance_time * 14.0 + normalized * 6.0) * 18.0
+		target_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + target_frequency * 2.0)) * (35.0 + target_amplitude * 35.0)))
+		player_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + resonance_frequency * 2.0)) * (35.0 + resonance_amplitude * 35.0) + wobble))
+	draw_rect(Rect2(665.0, 235.0, 520.0, 210.0), Color("1b1524"), true)
+	draw_polyline(target_points, Color(1.0, 0.55, 0.45, 0.8), 3.0)
+	draw_polyline(player_points, Color(0.4, 0.95, 0.85, 0.95), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(665.0, 460.0), "SIGNAL INSTABILITY  %d%%  (exposing more gem stabilizes it)" % roundi(instability / resonance_instability_strength * 100.0), HORIZONTAL_ALIGNMENT_LEFT, 520.0, 14, Color(0.8, 0.7, 0.85, 0.8))
+
+func _close() -> void:
+	closed.emit()

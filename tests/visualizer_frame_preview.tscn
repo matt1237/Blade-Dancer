@@ -1,0 +1,60 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/source/Visualizer/Visualizer Hi Res.png" id="1_hi"]
+
+[node name="VisualizerFramePreview" type="Node2D"]
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.015, 0.02, 0.03, 1)
+mouse_filter = 2
+
+[node name="Frame0" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(100, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(0, 0, 310.2857, 724)
+
+[node name="Frame1" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(270, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(310.2857, 0, 310.2857, 724)
+
+[node name="Frame2" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(440, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(620.5714, 0, 310.2857, 724)
+
+[node name="Frame3" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(610, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(930.8571, 0, 310.2857, 724)
+
+[node name="Frame4" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(780, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(1241.1428, 0, 310.2857, 724)
+
+[node name="Frame5" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(950, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(1551.4285, 0, 310.2857, 724)
+
+[node name="Frame6" type="Sprite2D" parent="."]
+texture = ExtResource("1_hi")
+position = Vector2(1120, 360)
+scale = Vector2(0.42, 0.42)
+region_enabled = true
+region_rect = Rect2(1861.7142, 0, 310.2857, 724)

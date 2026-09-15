@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://odiq00b2rf7q"
+path="res://.godot/imported/Moonlit Gemforge (2).mp3-4fe4337e1a228219c5e3da5094fd7fd6.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Gem Jammer/Moonlit Gemforge (2).mp3"
+dest_files=["res://.godot/imported/Moonlit Gemforge (2).mp3-4fe4337e1a228219c5e3da5094fd7fd6.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,46 @@
+{
+	"animation_name": "walking",
+	"animation_style": "",
+	"animation_type": "walking",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 4,
+	"frame_height": 128,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 128,
+			"w": 128,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 128,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 256,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 384,
+			"y": 0
+		}
+	],
+	"frame_width": 128,
+	"name": "hd_enemy_turkey_walk",
+	"prompt": "walking",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_enemy_turkey_frame_0.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 128,
+	"spritesheet_path": "res://assets/generated/hd_enemy_turkey_walk.png",
+	"spritesheet_width": 512,
+	"type": "animation"
+}

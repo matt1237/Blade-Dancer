@@ -1,0 +1,218 @@
+[gd_scene format=3 uid="uid://cxcwpdvecu4r5"]
+
+[ext_resource type="Script" uid="uid://diupa4hp12jfe" path="res://scripts/minigames/resonance_rush_chunk_playtest.gd" id="1_playtest"]
+[ext_resource type="Script" uid="uid://fmoeap57m5dj" path="res://scripts/minigames/resonance_rush_authored_terrain.gd" id="2_terrain"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/test_course_warmup.tscn" id="3_warmup"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/test_course_speed_launch.tscn" id="4_speed"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/test_course_grapple_ramp.tscn" id="5_grapple"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/test_course_glide_landing.tscn" id="6_glide"]
+[ext_resource type="Script" uid="uid://cqay2exu6n4q8" path="res://scripts/minigames/resonance_rush_land_sail.gd" id="7_sail"]
+[ext_resource type="Texture2D" uid="uid://ckmg7sy6byc73" path="res://assets/generated/resonance_rush_land_sail_frame_0.png" id="8_sail_tex"]
+[ext_resource type="Texture2D" uid="uid://qr8668v2ibxn" path="res://assets/generated/resonance_rush_land_sail_glider_frame_0.png" id="9_glider_tex"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_bounce"]
+radius = 30.0
+
+[node name="RushMovementTestCourse" type="Node2D" unique_id=1799146322]
+script = ExtResource("1_playtest")
+course_title = "MOVEMENT TEST COURSE"
+camera_follow_speed = 6.0
+camera_look_ahead = Vector2(300, -120)
+
+[node name="Backdrop" type="Polygon2D" parent="." unique_id=1398069287]
+z_index = -100
+color = Color(0.055, 0.075, 0.105, 1)
+polygon = PackedVector2Array(-3000, -3000, 13000, -3000, 13000, 2500, -3000, 2500)
+
+[node name="HorizonLine" type="Line2D" parent="." unique_id=601719434]
+z_index = -90
+points = PackedVector2Array(-2000, 500, 12000, 500)
+width = 2.0
+default_color = Color(0.2, 0.25, 0.32, 0.55)
+
+[node name="UpperGuide" type="Line2D" parent="." unique_id=573233028]
+z_index = -90
+points = PackedVector2Array(-2000, 0, 12000, 0)
+width = 2.0
+default_color = Color(0.2, 0.25, 0.32, 0.3)
+
+[node name="TerrainRoot" type="Node2D" parent="." unique_id=1192862830]
+script = ExtResource("2_terrain")
+
+[node name="WarmupRollers" parent="TerrainRoot" unique_id=1707583498 instance=ExtResource("3_warmup")]
+position = Vector2(200, 500)
+
+[node name="SpeedBowlLaunch" parent="TerrainRoot" unique_id=750528092 instance=ExtResource("4_speed")]
+position = Vector2(2200, 400)
+
+[node name="GrappleLandingRamp" parent="TerrainRoot" unique_id=1605984388 instance=ExtResource("5_grapple")]
+position = Vector2(4200, 260)
+
+[node name="GlideLandingRecovery" parent="TerrainRoot" unique_id=2110675719 instance=ExtResource("6_glide")]
+position = Vector2(6900, 220)
+
+[node name="CourseLabels" type="Node2D" parent="." unique_id=313951920]
+
+[node name="Warmup" type="Label" parent="CourseLabels" unique_id=1652031816]
+offset_left = 520.0
+offset_top = 210.0
+offset_right = 520.0
+offset_bottom = 210.0
+theme_override_colors/font_color = Color(0.55, 1, 0.65, 0.9)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 24
+text = "1  ACCELERATION + ROLLERS"
+
+[node name="SpeedBowl" type="Label" parent="CourseLabels" unique_id=469219628]
+offset_left = 2500.0
+offset_top = 650.0
+offset_right = 2500.0
+offset_bottom = 650.0
+theme_override_colors/font_color = Color(1, 0.75, 0.35, 0.9)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 24
+text = "2  SPEED BOWL → LAUNCH"
+
+[node name="GrappleCanyon" type="Label" parent="CourseLabels" unique_id=337986830]
+offset_left = 3460.0
+offset_top = -250.0
+offset_right = 3460.0
+offset_bottom = -250.0
+theme_override_colors/font_color = Color(0.4, 0.88, 1, 0.95)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 24
+text = "3  GRAPPLE CANYON"
+
+[node name="PumpSwing" type="Label" parent="CourseLabels" unique_id=540480518]
+offset_left = 4760.0
+offset_top = -210.0
+offset_right = 4760.0
+offset_bottom = -210.0
+theme_override_colors/font_color = Color(0.4, 0.88, 1, 0.9)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "PUMP A/D → RELEASE"
+
+[node name="GlideGap" type="Label" parent="CourseLabels" unique_id=295795784]
+offset_left = 6020.0
+offset_top = -270.0
+offset_right = 6020.0
+offset_bottom = -270.0
+theme_override_colors/font_color = Color(0.88, 0.58, 1, 0.95)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 24
+text = "4  LONG GLIDE GAP"
+
+[node name="Recovery" type="Label" parent="CourseLabels" unique_id=364994204]
+offset_left = 7240.0
+offset_top = -80.0
+offset_right = 7240.0
+offset_bottom = -80.0
+theme_override_colors/font_color = Color(0.88, 0.65, 1, 0.9)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 24
+text = "5  LANDING + RECOVERY ROLLERS"
+
+[node name="LandSail" type="CharacterBody2D" parent="." unique_id=1434537666]
+script = ExtResource("7_sail")
+initial_ground_speed = 80.0
+show_grapple_range_debug = true
+
+[node name="Sprite2D" type="Sprite2D" parent="LandSail" unique_id=1119283983]
+texture_filter = 1
+texture = ExtResource("8_sail_tex")
+offset = Vector2(0, -30)
+
+[node name="GliderSprite" type="Sprite2D" parent="LandSail" unique_id=2021985727]
+visible = false
+modulate = Color(1, 1, 1, 0)
+texture_filter = 1
+texture = ExtResource("9_glider_tex")
+offset = Vector2(0, -30)
+
+[node name="GrappleLine" type="Line2D" parent="LandSail" unique_id=1652406080]
+width = 3.0
+default_color = Color(0.4, 0.9, 1, 0.9)
+
+[node name="GrappleTip" type="Polygon2D" parent="LandSail" unique_id=1926070218]
+visible = false
+z_index = 6
+color = Color(0.65, 0.95, 1, 1)
+polygon = PackedVector2Array(-8, 0, 0, -5, 10, 0, 0, 5)
+
+[node name="GlideTrail" type="Line2D" parent="LandSail" unique_id=681423040]
+top_level = true
+width = 6.0
+default_color = Color(0.75, 0.95, 1, 0.75)
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BounceDetector" type="Area2D" parent="LandSail" unique_id=630380597]
+collision_layer = 0
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LandSail/BounceDetector" unique_id=82808369]
+shape = SubResource("CircleShape2D_bounce")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=404519678]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1070195529]
+
+[node name="Panel" type="ColorRect" parent="CanvasLayer" unique_id=2136885175]
+offset_left = 18.0
+offset_top = 16.0
+offset_right = 650.0
+offset_bottom = 190.0
+color = Color(0.03, 0.045, 0.065, 0.9)
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer" unique_id=1765106635]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 638.0
+offset_bottom = 78.0
+theme_override_colors/font_color = Color(0.83, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "MOVEMENT TEST COURSE
+D/→ drive   Space jump   Aim + hold Left Click to fire hook"
+
+[node name="SpeedValueLabel" type="Label" parent="CanvasLayer" unique_id=2048966806]
+offset_left = 32.0
+offset_top = 84.0
+offset_right = 620.0
+offset_bottom = 104.0
+theme_override_colors/font_color = Color(0.45, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 14
+text = "HORIZONTAL SPEED  0 / 900  (0%)"
+
+[node name="SpeedBar" type="ProgressBar" parent="CanvasLayer" unique_id=597742544]
+modulate = Color(0.45, 0.9, 1, 1)
+offset_left = 32.0
+offset_top = 106.0
+offset_right = 620.0
+offset_bottom = 124.0
+max_value = 900.0
+show_percentage = false
+
+[node name="MomentumValueLabel" type="Label" parent="CanvasLayer" unique_id=831355514]
+offset_left = 32.0
+offset_top = 132.0
+offset_right = 620.0
+offset_bottom = 152.0
+theme_override_colors/font_color = Color(1, 0.72, 0.32, 1)
+theme_override_font_sizes/font_size = 14
+text = "TOTAL MOMENTUM  0 / 1625  (0%)"
+
+[node name="MomentumBar" type="ProgressBar" parent="CanvasLayer" unique_id=778384198]
+modulate = Color(1, 0.72, 0.32, 1)
+offset_left = 32.0
+offset_top = 154.0
+offset_right = 620.0
+offset_bottom = 172.0
+max_value = 1625.0
+show_percentage = false

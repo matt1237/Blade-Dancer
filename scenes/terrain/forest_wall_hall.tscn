@@ -1,0 +1,24 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/terrain/terrain_module.gd" id="1_module"]
+[sub_resource type="RectangleShape2D" id="LogShape"]
+size = Vector2(170, 28)
+
+[node name="ForestWallHall" type="Node2D"]
+script = ExtResource("1_module")
+module_id = "forest_wall_hall"
+footprint_size = Vector2(170, 120)
+
+[node name="TopLog" type="StaticBody2D" parent="."]
+position = Vector2(0, -46)
+collision_layer = 4
+collision_mask = 0
+[node name="CollisionShape2D" type="CollisionShape2D" parent="TopLog"]
+shape = SubResource("LogShape")
+
+[node name="BottomLog" type="StaticBody2D" parent="."]
+position = Vector2(0, 46)
+collision_layer = 4
+collision_mask = 0
+[node name="CollisionShape2D" type="CollisionShape2D" parent="BottomLog"]
+shape = SubResource("LogShape")

@@ -1,0 +1,34 @@
+{
+	"animation_name": "walking_in_place_with_a_subtle_weight_shift_alternating_boots_and_a_slight_scarf_flutter",
+	"animation_style": "",
+	"animation_type": "walking in place with a subtle weight shift, alternating boots, and a slight scarf flutter",
+	"columns": 2,
+	"directions": [],
+	"frame_count": 2,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 256,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 256,
+			"y": 0
+		}
+	],
+	"frame_width": 256,
+	"name": "grim_pixel_knight_walk",
+	"prompt": "walking in place with a subtle weight shift, alternating boots, and a slight scarf flutter",
+	"rows": 1,
+	"source_image": "res://assets/generated/grim_pixel_knight_reference_pass_frame_0.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/grim_pixel_knight_walk.png",
+	"spritesheet_width": 512,
+	"type": "animation"
+}

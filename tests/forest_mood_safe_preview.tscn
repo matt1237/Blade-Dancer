@@ -1,0 +1,20 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://tests/forest_mood_safe_preview.gd" id="2_preview"]
+
+[node name="ForestMoodSafePreview" instance=ExtResource("1_main")]
+script = ExtResource("2_preview")
+
+[node name="PreviewCaption" type="Label" parent="CanvasLayer"]
+offset_left = 22.0
+offset_top = 680.0
+offset_right = 1250.0
+offset_bottom = 712.0
+mouse_filter = 2
+theme_override_colors/font_color = Color(1, 0.9, 0.5, 1)
+theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 18
+text = "SAVE-FREE FOREST PREVIEW"

@@ -1,0 +1,129 @@
+[gd_scene format=3 uid="uid://ggot5cuojwwr"]
+
+[ext_resource type="Texture2D" uid="uid://wobb6agqg7yr" path="res://assets/source/chasm/hand_painted_crystal_cavern_arena.png" id="1_chasm_background"]
+[ext_resource type="Resource" path="res://resources/styles/chasm_art_style.tres" id="2_chasm_style"]
+[ext_resource type="Script" path="res://scripts/chasm_stage.gd" id="3_chasm_stage"]
+
+[sub_resource type="RectangleShape2D" id="TopBoundary"]
+size = Vector2(340, 28)
+
+[sub_resource type="RectangleShape2D" id="TopLeftSlope"]
+size = Vector2(140, 28)
+
+[sub_resource type="RectangleShape2D" id="LeftUpper"]
+size = Vector2(170, 28)
+
+[sub_resource type="RectangleShape2D" id="LeftMiddle"]
+size = Vector2(148, 28)
+
+[sub_resource type="RectangleShape2D" id="LeftLower"]
+size = Vector2(108, 28)
+
+[sub_resource type="RectangleShape2D" id="LeftBottom"]
+size = Vector2(204, 28)
+
+[sub_resource type="RectangleShape2D" id="BottomBoundary"]
+size = Vector2(278.13245, 30)
+
+[sub_resource type="RectangleShape2D" id="RightBottom"]
+size = Vector2(279.50015, 28)
+
+[sub_resource type="RectangleShape2D" id="RightLower"]
+size = Vector2(157.41772, 28)
+
+[sub_resource type="RectangleShape2D" id="RightMiddle"]
+size = Vector2(140, 28)
+
+[sub_resource type="RectangleShape2D" id="RightUpper"]
+size = Vector2(164, 28)
+
+[sub_resource type="RectangleShape2D" id="RightTopSlope"]
+size = Vector2(198, 28)
+
+[node name="ChasmStage" type="Node2D" unique_id=1870316904]
+script = ExtResource("3_chasm_stage")
+
+[node name="Background" type="Sprite2D" parent="." unique_id=1429948130]
+texture_filter = 2
+position = Vector2(640, 360)
+scale = Vector2(0.76555, 0.76514)
+texture = ExtResource("1_chasm_background")
+metadata/_edit_group_ = true
+
+[node name="StageTitle" type="Label" parent="." unique_id=1073151533]
+z_index = 2
+offset_left = 36.0
+offset_top = 654.0
+offset_right = 330.0
+offset_bottom = 690.0
+theme_override_colors/font_color = Color(0.84, 0.96, 1, 0.9)
+theme_override_colors/font_shadow_color = Color(0.02, 0.04, 0.08, 0.85)
+theme_override_constants/shadow_offset_x = 2
+theme_override_constants/shadow_offset_y = 2
+theme_override_font_sizes/font_size = 19
+text = "THE CHASM  //  CRYSTAL CAVERN"
+
+[node name="ChasmBounds" type="StaticBody2D" parent="." unique_id=61743948]
+collision_layer = 4
+collision_mask = 0
+metadata/style_contract = ExtResource("2_chasm_style")
+
+[node name="Top" type="CollisionShape2D" parent="ChasmBounds" unique_id=1166900661]
+position = Vector2(638, 172.00002)
+rotation = -0.018
+shape = SubResource("TopBoundary")
+
+[node name="TopLeftSlope" type="CollisionShape2D" parent="ChasmBounds" unique_id=284937483]
+position = Vector2(415, 204.99998)
+rotation = -0.534
+shape = SubResource("TopLeftSlope")
+
+[node name="LeftUpper" type="CollisionShape2D" parent="ChasmBounds" unique_id=218330780]
+position = Vector2(296.00003, 298.00003)
+rotation = 2.276
+shape = SubResource("LeftUpper")
+
+[node name="LeftMiddle" type="CollisionShape2D" parent="ChasmBounds" unique_id=1808285856]
+position = Vector2(219.99998, 406)
+rotation = 1.989
+shape = SubResource("LeftMiddle")
+
+[node name="LeftLower" type="CollisionShape2D" parent="ChasmBounds" unique_id=1463762838]
+position = Vector2(281, 441)
+rotation = 0.7131096
+shape = SubResource("LeftLower")
+
+[node name="LeftBottom" type="CollisionShape2D" parent="ChasmBounds" unique_id=1233685598]
+position = Vector2(407, 529)
+rotation = 0.588
+shape = SubResource("LeftBottom")
+
+[node name="Bottom" type="CollisionShape2D" parent="ChasmBounds" unique_id=37006939]
+position = Vector2(589.12787, 613.78735)
+rotation = 0.45012698
+shape = SubResource("BottomBoundary")
+
+[node name="RightBottom" type="CollisionShape2D" parent="ChasmBounds" unique_id=1802179245]
+position = Vector2(825.5654, 597.3002)
+rotation = -0.532
+shape = SubResource("RightBottom")
+
+[node name="RightLower" type="CollisionShape2D" parent="ChasmBounds" unique_id=1650674175]
+position = Vector2(1016.67804, 490.7397)
+rotation = -0.50362486
+shape = SubResource("RightLower")
+
+[node name="RightMiddle" type="CollisionShape2D" parent="ChasmBounds" unique_id=139640244]
+position = Vector2(1029, 392.99994)
+rotation = -2.4094243
+shape = SubResource("RightMiddle")
+
+[node name="RightUpper" type="CollisionShape2D" parent="ChasmBounds" unique_id=19256951]
+position = Vector2(941.0001, 285)
+rotation = -2.312
+shape = SubResource("RightUpper")
+
+[node name="RightTopSlope" type="CollisionShape2D" parent="ChasmBounds" unique_id=1535331995]
+position = Vector2(851, 207.99998)
+rotation = -2.859
+shape = SubResource("RightTopSlope")

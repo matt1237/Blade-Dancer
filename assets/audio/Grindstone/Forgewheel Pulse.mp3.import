@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dybu3kxhaw80q"
+path="res://.godot/imported/Forgewheel Pulse.mp3-acf8f6619c4aaf3789f02bd79a2f5494.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Grindstone/Forgewheel Pulse.mp3"
+dest_files=["res://.godot/imported/Forgewheel Pulse.mp3-acf8f6619c4aaf3789f02bd79a2f5494.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

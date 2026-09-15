@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs>
+ <linearGradient id="vest" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#4b4a55"/><stop offset="1" stop-color="#171a25"/></linearGradient>
+ <linearGradient id="shirt" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff0dc"/><stop offset="1" stop-color="#b99f9b"/></linearGradient>
+ <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#d43b52"/><stop offset="1" stop-color="#67152e"/></linearGradient>
+</defs>
+<!-- windblown red scarf tails -->
+<path d="M69 57 Q31 62 17 91 Q44 91 66 103 L26 136 Q67 132 96 108 Z" fill="url(#red)" stroke="#181824" stroke-width="9" stroke-linejoin="round"/>
+<path d="M187 58 Q222 64 239 90 Q213 91 190 104 L224 135 Q187 131 162 108 Z" fill="url(#red)" stroke="#181824" stroke-width="9" stroke-linejoin="round"/>
+<path d="M31 87 Q53 79 72 84 M225 86 Q205 78 186 84" fill="none" stroke="#ff7580" stroke-width="5" opacity=".6"/>
+<!-- white shirt sleeves -->
+<path d="M67 74 Q35 74 29 111 L45 145 L78 126 Z" fill="url(#shirt)" stroke="#181824" stroke-width="10"/>
+<path d="M189 74 Q221 74 227 111 L211 145 L178 126 Z" fill="url(#shirt)" stroke="#181824" stroke-width="10"/>
+<!-- torso and dark vest -->
+<path d="M72 65 Q128 44 184 65 L198 183 Q181 211 128 217 Q75 211 58 183 Z" fill="url(#shirt)" stroke="#181824" stroke-width="11" stroke-linejoin="round"/>
+<path d="M82 62 L128 82 L174 62 L184 183 Q157 204 128 207 Q99 204 72 183 Z" fill="url(#vest)" stroke="#181824" stroke-width="9" stroke-linejoin="round"/>
+<!-- scarf collar -->
+<path d="M61 55 Q128 83 195 55 L188 99 Q128 119 68 99 Z" fill="url(#red)" stroke="#181824" stroke-width="9"/>
+<path d="M76 73 Q128 95 180 73" fill="none" stroke="#ff6b79" stroke-width="5" opacity=".65"/>
+<!-- straps and buckle -->
+<path d="M87 68 L169 184" stroke="#9c6b54" stroke-width="13" opacity=".9"/>
+<path d="M169 68 L89 184" stroke="#302633" stroke-width="10" opacity=".9"/>
+<rect x="111" y="146" width="35" height="28" rx="4" fill="#c9a26b" stroke="#181824" stroke-width="7"/>
+<path d="M120 154 L137 154 L137 166 L120 166" fill="none" stroke="#fff0b1" stroke-width="4"/>
+<!-- shoulder armor -->
+<path d="M67 65 Q38 57 31 82 L52 104 L81 88 Z" fill="#73727d" stroke="#181824" stroke-width="9"/>
+<path d="M189 65 Q218 57 225 82 L204 104 L175 88 Z" fill="#73727d" stroke="#181824" stroke-width="9"/>
+<path d="M48 76 L66 84 M208 76 L190 84" stroke="#e0d6cf" stroke-width="5" opacity=".7"/>
+<!-- forearm wraps -->
+<path d="M42 126 L27 157 Q28 174 44 176 L67 146" fill="#5a3a42" stroke="#181824" stroke-width="9"/>
+<path d="M214 126 L229 157 Q228 174 212 176 L189 146" fill="#5a3a42" stroke="#181824" stroke-width="9"/>
+</svg>

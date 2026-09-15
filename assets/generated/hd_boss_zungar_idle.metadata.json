@@ -1,0 +1,40 @@
+{
+	"animation_name": "slow_intimidating_idle_breathing_with_subtle_weight_shift_feet_planted_and_empty_hands",
+	"animation_style": "",
+	"animation_type": "slow intimidating idle breathing with subtle weight shift, feet planted and empty hands",
+	"columns": 3,
+	"directions": [],
+	"frame_count": 3,
+	"frame_height": 512,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 512,
+			"w": 512,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 512,
+			"w": 512,
+			"x": 512,
+			"y": 0
+		},
+		{
+			"h": 512,
+			"w": 512,
+			"x": 1024,
+			"y": 0
+		}
+	],
+	"frame_width": 512,
+	"name": "hd_boss_zungar_idle",
+	"prompt": "slow intimidating idle breathing with subtle weight shift, feet planted and empty hands",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_boss_zungar_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 512,
+	"spritesheet_path": "res://assets/generated/hd_boss_zungar_idle.png",
+	"spritesheet_width": 1536,
+	"type": "animation"
+}

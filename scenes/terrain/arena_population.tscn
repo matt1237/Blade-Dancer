@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/terrain/arena_population.gd" id="1_population"]
+
+[node name="ArenaPopulation" type="Node2D"]
+script = ExtResource("1_population")
+enabled = true
+population_seed = 271828
+spawn_clearance = 105.0
+farmable_density = 0.3
+big_things_density = 0.75

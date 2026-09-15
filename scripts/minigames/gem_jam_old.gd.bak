@@ -1,0 +1,448 @@
+class_name GemJamGame extends Control
+
+## Gem Jam first-pass refining prototype.
+## One canonical voxel volume drives both X-ray projections and chiseling.
+## This intentionally has no inventory, economy, tiers, or progression rules.
+
+signal closed()
+
+enum Cell { EMPTY, ROCK, GEM }
+enum Station { XRAY, CHISEL, RESONANCE }
+enum ViewMode { TOP, SIDE }
+
+const GRID_WIDTH: int = 16
+const GRID_HEIGHT: int = 16
+const GRID_DEPTH: int = 8
+## Pixel size of one voxel cell in the rendered projection, shared by both the
+## X-ray and chisel views so a struck cell is exactly the cell drawn.
+const GRID_CELL_PIXELS: float = 13.0
+const ROCK_COLOR: Color = Color("725846")
+const ROCK_HIGHLIGHT: Color = Color("a68162")
+const GEM_COLOR: Color = Color("54e5e0")
+const GEM_GLOW: Color = Color("b5fff2")
+const EMPTY_COLOR: Color = Color("251e2b")
+const XRAY_STATION_RECT: Rect2 = Rect2(60.0, 175.0, 350.0, 420.0)
+const CHISEL_STATION_RECT: Rect2 = Rect2(465.0, 175.0, 350.0, 420.0)
+const RESONANCE_STATION_RECT: Rect2 = Rect2(870.0, 175.0, 350.0, 420.0)
+
+@export_category("Chiseling")
+## How many extra cells a strike reaches in the aim direction beyond the
+## clicked one (0 = a single precise cell; higher = a wider sweep).
+@export_range(0, 4, 1) var chisel_radius: int = 1
+## Degrees per second while A/D are held at the chisel bench.
+@export var chisel_angle_speed_degrees: float = 110.0
+## How long the impact flash line stays visible after a strike.
+@export var chisel_flash_seconds: float = 0.35
+@export_range(0.0, 1.0, 0.05) var resonance_exposure_required: float = 0.45
+
+@export_category("Resonance")
+## Final alignment window for the first pass; tune this in the inspector.
+@export var resonance_hold_seconds: float = 10.0
+@export_range(0.01, 0.5, 0.01) var resonance_frequency_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_amplitude_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_tolerance: float = 0.08
+
+var cells: Array[int] = []
+var station: Station = Station.CHISEL
+var view_mode: ViewMode = ViewMode.TOP
+var gem_damage: int = 0
+var removed_rock: int = 0
+var total_rock: int = 0
+var resonance_frequency: float = 0.50
+var resonance_amplitude: float = 0.50
+var target_frequency: float = 0.64
+var target_amplitude: float = 0.72
+var resonance_good_time: float = 0.0
+var completed: bool = false
+var rock_position: Vector2 = Vector2(640.0, 385.0)
+var rock_station: Station = Station.CHISEL
+var dragging_rock: bool = false
+var pending_rock_drag: bool = false
+var drag_start_position: Vector2 = Vector2.ZERO
+var chisel_mouse_position: Vector2 = Vector2.ZERO
+var chisel_angle: float = 0.0
+var power_phase: float = 0.0
+var power_value: float = 0.5
+var cracks: Array[Dictionary] = []
+
+@onready var station_label: Label = $HUD/StationLabel
+@onready var view_label: Label = $HUD/ViewLabel
+@onready var status_label: Label = $HUD/StatusLabel
+@onready var metrics_label: Label = $HUD/MetricsLabel
+@onready var progress_bar: ProgressBar = $HUD/ResonanceProgress
+@onready var frequency_label: Label = $ResonancePanel/FrequencyLabel
+@onready var amplitude_label: Label = $ResonancePanel/AmplitudeLabel
+@onready var resonance_panel: Control = $ResonancePanel
+@onready var chisel_hint: Label = $HUD/ChiselHint
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_build_volume()
+	$StationBar/XRayButton.pressed.connect(_select_xray)
+	$StationBar/ChiselButton.pressed.connect(_select_chisel)
+	$StationBar/ResonanceButton.pressed.connect(_select_resonance)
+	$ResonancePanel/FrequencyDown.pressed.connect(_frequency_down)
+	$ResonancePanel/FrequencyUp.pressed.connect(_frequency_up)
+	$ResonancePanel/AmplitudeDown.pressed.connect(_amplitude_down)
+	$ResonancePanel/AmplitudeUp.pressed.connect(_amplitude_up)
+	$CloseButton.pressed.connect(_close)
+	_update_ui()
+	queue_redraw()
+
+func _build_volume() -> void:
+	cells.clear()
+	cells.resize(GRID_WIDTH * GRID_HEIGHT * GRID_DEPTH)
+	var center: Vector3 = Vector3(float(GRID_WIDTH - 1) * 0.5, float(GRID_HEIGHT - 1) * 0.5, float(GRID_DEPTH - 1) * 0.5)
+	var radii: Vector3 = center * 0.92
+	for z: int in range(GRID_DEPTH):
+		for y: int in range(GRID_HEIGHT):
+			for x: int in range(GRID_WIDTH):
+				var normalized: Vector3 = Vector3((float(x) - center.x) / radii.x, (float(y) - center.y) / radii.y, (float(z) - center.z) / radii.z)
+				# Deterministic surface roughness (no RNG) keeps the clump from
+				# reading as a perfect ellipsoid while staying fully repeatable.
+				var roughness: float = 0.14 * sin(float(x) * 12.9898 + float(y) * 78.233 + float(z) * 37.719)
+				cells[_cell_index(x, y, z)] = Cell.ROCK if normalized.length() <= 1.0 + roughness else Cell.EMPTY
+	# A compact, spatially consistent gemstone sits inside the same rock volume.
+	for z: int in range(2, 6):
+		for y: int in range(6, 11):
+			for x: int in range(5, 11):
+				var distance: float = Vector3(x - 7.5, y - 8.0, (z - 3.5) * 1.5).length()
+				if distance <= 3.0:
+					cells[_cell_index(x, y, z)] = Cell.GEM
+	total_rock = _count_cells(Cell.ROCK)
+
+func _process(delta: float) -> void:
+	if station == Station.CHISEL and not dragging_rock:
+		if Input.is_physical_key_pressed(KEY_A): chisel_angle -= deg_to_rad(chisel_angle_speed_degrees) * delta
+		if Input.is_physical_key_pressed(KEY_D): chisel_angle += deg_to_rad(chisel_angle_speed_degrees) * delta
+	power_phase += delta * 3.2
+	power_value = (sin(power_phase) + 1.0) * 0.5
+	for crack: Dictionary in cracks:
+		crack["life"] = float(crack["life"]) - delta
+	for index: int in range(cracks.size() - 1, -1, -1):
+		if float(cracks[index]["life"]) <= 0.0: cracks.remove_at(index)
+	if completed: return
+	if station == Station.RESONANCE:
+		if Input.is_physical_key_pressed(KEY_A): resonance_frequency = clampf(resonance_frequency - resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_D): resonance_frequency = clampf(resonance_frequency + resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_S): resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+		if Input.is_physical_key_pressed(KEY_W): resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+		var alignment: float = _alignment_score()
+		if alignment >= 1.0 - resonance_tolerance:
+			resonance_good_time = minf(resonance_hold_seconds, resonance_good_time + delta)
+		else:
+			resonance_good_time = maxf(0.0, resonance_good_time - delta * 1.5)
+		if resonance_good_time >= resonance_hold_seconds:
+			completed = true
+			status_label.text = "JEWEL REFINED!  Resonance stabilized."
+	_update_ui()
+	queue_redraw()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		view_mode = ViewMode.SIDE if view_mode == ViewMode.TOP else ViewMode.TOP
+		_update_ui()
+		queue_redraw()
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		chisel_mouse_position = event.position
+		if pending_rock_drag and not dragging_rock and drag_start_position.distance_to(event.position) > 10.0:
+			dragging_rock = true
+		if dragging_rock: rock_position = event.position
+		queue_redraw()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if rock_position.distance_to(event.position) < 70.0:
+				pending_rock_drag = true
+				drag_start_position = event.position
+				chisel_mouse_position = event.position
+			else: pending_rock_drag = false
+		else:
+			if dragging_rock:
+				dragging_rock = false
+				pending_rock_drag = false
+				_place_rock_in_station()
+			elif pending_rock_drag and station == Station.CHISEL and CHISEL_STATION_RECT.has_point(event.position):
+				pending_rock_drag = false
+				_chisel_strike(event.position)
+			else: pending_rock_drag = false
+
+func _place_rock_in_station() -> void:
+	if XRAY_STATION_RECT.grow(20.0).has_point(rock_position):
+		rock_station = Station.XRAY
+		station = Station.XRAY
+		status_label.text = "Scanner active — press F to inspect TOP/SIDE."
+	elif CHISEL_STATION_RECT.grow(20.0).has_point(rock_position):
+		rock_station = Station.CHISEL
+		station = Station.CHISEL
+		status_label.text = "Move the chisel with the mouse. A/D rotates it; click to strike."
+	elif RESONANCE_STATION_RECT.grow(20.0).has_point(rock_position) and exposure_ratio() >= resonance_exposure_required:
+		rock_station = Station.RESONANCE
+		station = Station.RESONANCE
+		status_label.text = "Tune frequency and amplitude with A/D and W/S."
+	_update_ui()
+	queue_redraw()
+
+## The rect/cell-size the current view's grid is rendered and hit-tested
+## against, centered on the rock's current physical position. Both drawing
+## and chiseling call this so a strike always hits the exact cell drawn.
+func _grid_view_metrics() -> Dictionary:
+	var columns: int = GRID_WIDTH
+	var rows: int = GRID_HEIGHT if view_mode == ViewMode.TOP else GRID_DEPTH
+	var rect: Rect2 = Rect2(rock_position - Vector2(columns, rows) * GRID_CELL_PIXELS * 0.5, Vector2(columns, rows) * GRID_CELL_PIXELS)
+	return {"rect": rect, "columns": columns, "rows": rows, "cell_size": GRID_CELL_PIXELS}
+
+## Maps a 2D projected (column, row) position plus a "depth into the surface"
+## step to the actual 3D grid coordinate, using the axis the current view
+## chisels into: TOP digs along Z (front-facing), SIDE digs along Y. Shared by
+## both the read path (rendering the visible surface) and the write path
+## (chiseling), so what you see is always exactly what you can strike.
+func _surface_grid_coords(column: int, row: int, depth_step: int) -> Vector3i:
+	if view_mode == ViewMode.TOP: return Vector3i(column, row, depth_step)
+	return Vector3i(column, depth_step, row)
+
+func _chisel_strike(click_position: Vector2) -> void:
+	var metrics: Dictionary = _grid_view_metrics()
+	var rect: Rect2 = metrics["rect"]
+	var columns: int = metrics["columns"]
+	var rows: int = metrics["rows"]
+	var cell_size: float = metrics["cell_size"]
+	var local: Vector2 = click_position - rect.position
+	var column0: int = clampi(floori(local.x / cell_size), 0, columns - 1)
+	var row0: int = clampi(floori(local.y / cell_size), 0, rows - 1)
+	# Angle zero aims straight "down" the visible grid; A/D rotate that aim so
+	# a strike can precisely sweep sideways around the gem instead of only
+	# ever digging straight into the surface.
+	var aim_direction: Vector2 = Vector2(0.0, 1.0).rotated(-chisel_angle)
+	var depth_axis_length: int = GRID_DEPTH if view_mode == ViewMode.TOP else GRID_HEIGHT
+	var strike_depth: int = maxi(1, roundi(power_value * float(depth_axis_length) * 0.4))
+	var rock_removed_this_strike: int = 0
+	var gem_hit_this_strike: bool = false
+	var struck_cells: Array[Vector2i] = []
+	for sweep_index: int in range(chisel_radius + 1):
+		var target: Vector2i = Vector2i(clampi(column0 + roundi(aim_direction.x * float(sweep_index)), 0, columns - 1), clampi(row0 + roundi(aim_direction.y * float(sweep_index)), 0, rows - 1))
+		if struck_cells.has(target): continue
+		struck_cells.append(target)
+		var removed_here: int = 0
+		for depth_step: int in range(depth_axis_length):
+			if removed_here >= strike_depth: break
+			var grid: Vector3i = _surface_grid_coords(target.x, target.y, depth_step)
+			var current: Cell = cells[_cell_index(grid.x, grid.y, grid.z)] as Cell
+			if current == Cell.EMPTY: continue
+			if current == Cell.GEM:
+				_remove_cell(grid.x, grid.y, grid.z)
+				gem_hit_this_strike = true
+				break
+			if _remove_cell(grid.x, grid.y, grid.z):
+				removed_here += 1
+				rock_removed_this_strike += 1
+	var crack_end: Vector2 = click_position + aim_direction * (16.0 + power_value * 34.0)
+	cracks.append({"start": click_position, "end": crack_end, "life": chisel_flash_seconds})
+	if rock_removed_this_strike > 0:
+		status_label.text = "Chisel strike — %d rock cell%s cleared." % [rock_removed_this_strike, "" if rock_removed_this_strike == 1 else "s"]
+	elif gem_hit_this_strike:
+		status_label.text = "CRACK! Gem material damaged — ease off the power here."
+	else:
+		status_label.text = "Already clear here — aim at solid rock to keep exposing the gem."
+	_update_ui()
+	queue_redraw()
+
+func _remove_cell(x: int, y: int, z: int, _power: float = 1.0) -> bool:
+	if x < 0 or x >= GRID_WIDTH or y < 0 or y >= GRID_HEIGHT or z < 0 or z >= GRID_DEPTH: return false
+	var index: int = _cell_index(x, y, z)
+	if cells[index] == Cell.ROCK:
+		cells[index] = Cell.EMPTY
+		removed_rock += 1
+		return true
+	if cells[index] == Cell.GEM:
+		gem_damage += 1
+		status_label.text = "CRACK! Gem material damaged — keep chiseling carefully."
+		return false
+	return false
+
+func _select_xray() -> void:
+	station = Station.XRAY
+	status_label.text = "X-ray inspection: the gemstone is highlighted through the rock."
+	_update_ui()
+	queue_redraw()
+
+func _select_chisel() -> void:
+	station = Station.CHISEL
+	status_label.text = "Click rock to chisel it away — the gem appears once truly exposed."
+	_update_ui()
+	queue_redraw()
+
+func _select_resonance() -> void:
+	if not RESONANCE_STATION_RECT.grow(20.0).has_point(rock_position) or exposure_ratio() < resonance_exposure_required:
+		status_label.text = "Place the exposed crystal on the resonance pad first."
+		return
+	station = Station.RESONANCE
+	status_label.text = "Match the live waveform to the target and hold steady."
+	_update_ui()
+	queue_redraw()
+
+func exposure_ratio() -> float:
+	return clampf(float(removed_rock) / maxf(1.0, float(total_rock)), 0.0, 1.0)
+
+func _alignment_score() -> float:
+	return 1.0 - clampf(absf(resonance_frequency - target_frequency) + absf(resonance_amplitude - target_amplitude), 0.0, 1.0)
+
+func _frequency_down() -> void:
+	resonance_frequency = clampf(resonance_frequency - resonance_frequency_step, 0.0, 1.0)
+func _frequency_up() -> void:
+	resonance_frequency = clampf(resonance_frequency + resonance_frequency_step, 0.0, 1.0)
+func _amplitude_down() -> void:
+	resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step, 0.0, 1.0)
+func _amplitude_up() -> void:
+	resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step, 0.0, 1.0)
+
+func _cell_index(x: int, y: int, z: int) -> int:
+	return x + y * GRID_WIDTH + z * GRID_WIDTH * GRID_HEIGHT
+
+func _count_cells(kind: Cell) -> int:
+	var count: int = 0
+	for cell: int in cells:
+		if cell == kind: count += 1
+	return count
+
+## X-ray projection: sees straight through the whole depth axis, so the gem
+## is revealed wherever it exists anywhere along that ray, regardless of
+## covering rock — this is deliberately the "X-ray" behavior.
+func _projected_cell(x: int, y: int) -> Cell:
+	var best: Cell = Cell.EMPTY
+	if view_mode == ViewMode.TOP:
+		for z: int in range(GRID_DEPTH):
+			var cell: Cell = cells[_cell_index(x, y, z)] as Cell
+			if cell == Cell.GEM: return Cell.GEM
+			if cell == Cell.ROCK: best = Cell.ROCK
+	else:
+		for depth: int in range(GRID_HEIGHT):
+			var cell: Cell = cells[_cell_index(x, depth, y)] as Cell
+			if cell == Cell.GEM: return Cell.GEM
+			if cell == Cell.ROCK: best = Cell.ROCK
+	return best
+
+## Chisel-bench projection: only the outermost still-solid cell along the
+## chiseling axis is "visible" without X-ray vision, so the gem only appears
+## once the rock actually covering it has been physically cleared away.
+func _surface_projected_cell(column: int, row: int) -> Cell:
+	var depth_axis_length: int = GRID_DEPTH if view_mode == ViewMode.TOP else GRID_HEIGHT
+	for depth_step: int in range(depth_axis_length):
+		var grid: Vector3i = _surface_grid_coords(column, row, depth_step)
+		var cell: Cell = cells[_cell_index(grid.x, grid.y, grid.z)] as Cell
+		if cell != Cell.EMPTY: return cell
+	return Cell.EMPTY
+
+func _update_ui() -> void:
+	var station_name: String = ["X-RAY STATION", "CHISELING STATION", "RESONANCE STATION"][station]
+	station_label.text = station_name
+	view_label.text = "VIEW: TOP" if view_mode == ViewMode.TOP else "VIEW: SIDE"
+	metrics_label.text = "ROCK REMOVED  %d / %d    GEM DAMAGE  %d    EXPOSURE  %d%%" % [removed_rock, total_rock, gem_damage, roundi(exposure_ratio() * 100.0)]
+	progress_bar.value = resonance_good_time / maxf(0.01, resonance_hold_seconds) * 100.0
+	frequency_label.text = "FREQUENCY  %.2f" % resonance_frequency
+	amplitude_label.text = "AMPLITUDE  %.2f" % resonance_amplitude
+	resonance_panel.visible = station == Station.RESONANCE
+	chisel_hint.visible = station == Station.CHISEL
+
+func _draw() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("100c16"))
+	_draw_shop_background()
+	_draw_station(XRAY_STATION_RECT, "X-RAY SCANNER", Color("4b8490"))
+	_draw_station(CHISEL_STATION_RECT, "CHISEL BENCH", Color("8b684d"))
+	_draw_station(RESONANCE_STATION_RECT, "RESONANCE PAD", Color("66518d"))
+	_draw_rock()
+	if station == Station.CHISEL:
+		var power_rect: Rect2 = Rect2(505.0, 545.0, 270.0, 20.0)
+		draw_rect(power_rect, Color("120e18"), true)
+		draw_rect(Rect2(power_rect.position, Vector2(power_rect.size.x * power_value, power_rect.size.y)), Color("e6ad4e"), true)
+		draw_rect(power_rect, Color("f6d68b"), false, 2.0)
+		draw_string(ThemeDB.fallback_font, Vector2(505.0, 540.0), "POWER  %.0f%%  — click to strike" % (power_value * 100.0), HORIZONTAL_ALIGNMENT_LEFT, 270.0, 15, Color("f6d68b"))
+	if station == Station.RESONANCE: _draw_waveforms()
+
+func _draw_shop_background() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("17121b"))
+	draw_line(Vector2(0.0, 155.0), Vector2(size.x, 155.0), Color("4b3540"), 3.0)
+	for x: int in range(0, 1280, 80): draw_line(Vector2(x, 0.0), Vector2(x + 180.0, 155.0), Color(0.18, 0.12, 0.18, 0.45), 2.0)
+
+func _draw_station(rect: Rect2, title: String, color: Color) -> void:
+	draw_rect(rect, Color("211a25"), true)
+	draw_rect(rect, color, false, 4.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 32.0), title, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 20, color)
+
+func _draw_rock() -> void:
+	if station == Station.RESONANCE:
+		# By resonance the crystal is treated as fully freed from the rock, so
+		# it gets a clean stylized presentation instead of the grid.
+		_draw_visible_gem(rock_position)
+	else:
+		_draw_grid_projection()
+	if station == Station.CHISEL and not dragging_rock:
+		var tip: Vector2 = chisel_mouse_position if CHISEL_STATION_RECT.has_point(chisel_mouse_position) else rock_position + Vector2(0.0, -42.0)
+		var entry_direction: Vector2 = Vector2(0.0, 1.0).rotated(-chisel_angle)
+		var handle: Vector2 = tip - entry_direction * 58.0
+		# Tool body follows the mouse while its angle is independently tuned by A/D.
+		draw_line(handle, tip, Color("e8d7b1"), 9.0)
+		draw_circle(handle, 7.0, Color("f5c765"))
+		# Short dotted preview of the exact path from the chisel tip into the rock.
+		for dot_index: int in range(1, 5):
+			var dot_position: Vector2 = tip + entry_direction * float(dot_index * 6)
+			draw_circle(dot_position, 2.5, Color("f6d68b"))
+		draw_string(ThemeDB.fallback_font, tip + Vector2(12.0, -12.0), "A/D ANGLE  %+.0f°" % rad_to_deg(chisel_angle), HORIZONTAL_ALIGNMENT_LEFT, 170.0, 14, Color("f6d68b"))
+	if station == Station.CHISEL:
+		for crack: Dictionary in cracks:
+			var crack_alpha: float = clampf(float(crack["life"]) / chisel_flash_seconds, 0.0, 1.0)
+			var crack_color: Color = Color(1.0, 0.86, 0.38, crack_alpha)
+			draw_line(crack["start"], crack["end"], crack_color, 5.0)
+			draw_circle(crack["start"], 4.0, crack_color)
+
+## Renders the canonical volume's literal per-cell state for the current
+## view: X-ray uses the see-through projection (_projected_cell), the chisel
+## bench uses the physically-exposed surface projection
+## (_surface_projected_cell). Because this reads the exact same `cells` data
+## that chiseling writes to, every removed cell disappears from the render
+## immediately, and a struck cell is always the cell drawn.
+func _draw_grid_projection() -> void:
+	var metrics: Dictionary = _grid_view_metrics()
+	var rect: Rect2 = metrics["rect"]
+	var columns: int = metrics["columns"]
+	var rows: int = metrics["rows"]
+	var cell_size: float = metrics["cell_size"]
+	var xray: bool = station == Station.XRAY
+	var draw_radius: float = cell_size * 0.62
+	for row: int in range(rows):
+		for column: int in range(columns):
+			var cell: Cell = _projected_cell(column, row) if xray else _surface_projected_cell(column, row)
+			if cell == Cell.EMPTY: continue
+			var center: Vector2 = rect.position + Vector2((float(column) + 0.5) * cell_size, (float(row) + 0.5) * cell_size)
+			if cell == Cell.ROCK:
+				var rock_alpha: float = 0.32 if xray else 1.0
+				draw_circle(center, draw_radius, Color(ROCK_COLOR.r, ROCK_COLOR.g, ROCK_COLOR.b, rock_alpha))
+			else:
+				# Bright and unmistakable: visible through rock at the scanner,
+				# and only once truly exposed at the chisel bench.
+				draw_circle(center, draw_radius, GEM_COLOR)
+				draw_arc(center, draw_radius, 0.0, TAU, 14, GEM_GLOW, 2.0)
+	draw_rect(rect, Color("4b8490") if xray else Color("d4a75c"), false, 2.0)
+
+func _draw_visible_gem(center: Vector2) -> void:
+	var width: float = 28.0 if view_mode == ViewMode.TOP else 19.0
+	var height: float = 30.0 if view_mode == ViewMode.TOP else 36.0
+	var gem_points: PackedVector2Array = PackedVector2Array([center + Vector2(0.0, -height), center + Vector2(width, -8.0), center + Vector2(width * 0.65, height), center + Vector2(-width * 0.8, height * 0.8), center + Vector2(-width, -10.0)])
+	draw_colored_polygon(gem_points, GEM_COLOR)
+	draw_polyline(gem_points, GEM_GLOW, 3.0)
+
+func _draw_waveforms() -> void:
+	var target_points: PackedVector2Array = PackedVector2Array()
+	var player_points: PackedVector2Array = PackedVector2Array()
+	for index: int in range(101):
+		var x: float = 680.0 + index * 5.0
+		var normalized: float = float(index) / 100.0
+		target_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + target_frequency * 2.0)) * (35.0 + target_amplitude * 35.0)))
+		player_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + resonance_frequency * 2.0)) * (35.0 + resonance_amplitude * 35.0)))
+	draw_rect(Rect2(665.0, 235.0, 520.0, 210.0), Color("1b1524"), true)
+	draw_polyline(target_points, Color(1.0, 0.55, 0.45, 0.8), 3.0)
+	draw_polyline(player_points, Color(0.4, 0.95, 0.85, 0.95), 3.0)
+
+func _close() -> void:
+	closed.emit()

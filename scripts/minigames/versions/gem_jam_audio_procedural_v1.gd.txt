@@ -1,0 +1,176 @@
+class_name GemJamAudio extends Node
+
+## Dedicated procedural sound layer for Jewel Jam. Two low-rate generators run
+## continuously (grinding and resonance) so their volume/timbre can follow the
+## mechanic without start latency; X-ray is a short generated one-shot.
+
+const SAMPLE_RATE: float = 22050.0
+const CONTINUOUS_BUFFER_SECONDS: float = 0.28
+const XRAY_LENGTH_SECONDS: float = 1.15
+
+@export_category("Mix")
+@export_range(0.0, 1.0, 0.01) var grind_volume: float = 0.16
+@export_range(0.0, 1.0, 0.01) var xray_volume: float = 0.28
+@export_range(0.0, 1.0, 0.01) var resonance_fuzz_volume: float = 0.10
+@export_range(0.0, 1.0, 0.01) var resonance_hum_volume: float = 0.20
+@export_range(0.2, 3.0, 0.1) var out_of_sync_bell_interval_min: float = 0.85
+@export_range(0.2, 3.0, 0.1) var out_of_sync_bell_interval_max: float = 1.35
+
+var grind_player: AudioStreamPlayer = null
+var resonance_player: AudioStreamPlayer = null
+var xray_player: AudioStreamPlayer = null
+var grind_playback: AudioStreamGeneratorPlayback = null
+var resonance_playback: AudioStreamGeneratorPlayback = null
+
+var grind_level: float = 0.0
+var grind_target_level: float = 0.0
+var grind_speed: float = 0.35
+var gem_contact: float = 0.0
+var resonance_fuzz_level: float = 0.0
+var resonance_hum_level: float = 0.0
+var resonance_active: bool = false
+var resonance_alignment: float = 0.0
+var bell_cooldown: float = 0.0
+var bell_age: float = -1.0
+var grind_sample_clock: int = 0
+var resonance_sample_clock: int = 0
+var xray_trigger_count: int = 0
+var bell_trigger_count: int = 0
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	grind_player = _create_generator_player("GentleGrindPlayer", CONTINUOUS_BUFFER_SECONDS)
+	resonance_player = _create_generator_player("ResonanceTonePlayer", CONTINUOUS_BUFFER_SECONDS)
+	xray_player = _create_generator_player("XRayMachinePlayer", XRAY_LENGTH_SECONDS + 0.15)
+	grind_player.play()
+	resonance_player.play()
+	grind_playback = grind_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	resonance_playback = resonance_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	_fill_grind_buffer()
+	_fill_resonance_buffer()
+
+func _create_generator_player(player_name: String, buffer_seconds: float) -> AudioStreamPlayer:
+	var player: AudioStreamPlayer = AudioStreamPlayer.new()
+	player.name = player_name
+	var generator: AudioStreamGenerator = AudioStreamGenerator.new()
+	generator.mix_rate = SAMPLE_RATE
+	generator.buffer_length = buffer_seconds
+	player.stream = generator
+	add_child(player)
+	return player
+
+func update_state(delta: float, is_grinding: bool, normalized_wheel_speed: float, gem_contact_ratio: float, is_resonating: bool, alignment: float) -> void:
+	grind_target_level = 1.0 if is_grinding else 0.0
+	grind_speed = clampf(normalized_wheel_speed, 0.0, 1.0)
+	gem_contact = clampf(gem_contact_ratio, 0.0, 1.0)
+	resonance_active = is_resonating
+	resonance_alignment = clampf(alignment, 0.0, 1.0)
+	var smoothing: float = 1.0 - exp(-delta * 7.0)
+	grind_level = lerpf(grind_level, grind_target_level, smoothing)
+	var fuzz_target: float = pow(1.0 - resonance_alignment, 1.7) if resonance_active else 0.0
+	var hum_target: float = pow(resonance_alignment, 1.45) if resonance_active else 0.0
+	resonance_fuzz_level = lerpf(resonance_fuzz_level, fuzz_target, smoothing)
+	resonance_hum_level = lerpf(resonance_hum_level, hum_target, smoothing)
+	bell_cooldown = maxf(0.0, bell_cooldown - delta)
+	if resonance_active and resonance_alignment < 0.46 and bell_cooldown <= 0.0:
+		_trigger_out_of_sync_bell()
+
+func _process(_delta: float) -> void:
+	_fill_grind_buffer()
+	_fill_resonance_buffer()
+
+func play_xray_machine() -> void:
+	xray_trigger_count += 1
+	if xray_player == null:
+		return
+	xray_player.stop()
+	xray_player.play()
+	var playback: AudioStreamGeneratorPlayback = xray_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	if playback == null:
+		return
+	var requested_frames: int = int(XRAY_LENGTH_SECONDS * SAMPLE_RATE)
+	var frame_count: int = mini(requested_frames, playback.get_frames_available())
+	for frame: int in range(frame_count):
+		var time: float = float(frame) / SAMPLE_RATE
+		var sample: float = _xray_sample(time) * xray_volume
+		playback.push_frame(Vector2(sample, sample))
+
+func _trigger_out_of_sync_bell() -> void:
+	bell_age = 0.0
+	bell_cooldown = randf_range(out_of_sync_bell_interval_min, out_of_sync_bell_interval_max)
+	bell_trigger_count += 1
+
+func _fill_grind_buffer() -> void:
+	if grind_playback == null:
+		return
+	var available: int = grind_playback.get_frames_available()
+	for frame: int in range(available):
+		var time: float = float(grind_sample_clock) / SAMPLE_RATE
+		var sample: float = _grind_sample(time)
+		grind_playback.push_frame(Vector2(sample, sample))
+		grind_sample_clock += 1
+
+func _fill_resonance_buffer() -> void:
+	if resonance_playback == null:
+		return
+	var available: int = resonance_playback.get_frames_available()
+	for frame: int in range(available):
+		var time: float = float(resonance_sample_clock) / SAMPLE_RATE
+		var sample: float = _resonance_sample(time)
+		resonance_playback.push_frame(Vector2(sample, sample))
+		resonance_sample_clock += 1
+		if bell_age >= 0.0:
+			bell_age += 1.0 / SAMPLE_RATE
+			if bell_age > 1.25:
+				bell_age = -1.0
+
+func _grind_sample(time: float) -> float:
+	# Slowly interpolated noise has a soft sand/pumice texture instead of a
+	# harsh white-noise hiss. A quiet low wheel tone makes it feel continuous.
+	var fine_grit: float = _smooth_noise(time, 7.0)
+	var broad_grit: float = _smooth_noise(time + 0.317, 24.0)
+	var wheel_hz: float = 82.0 + grind_speed * 92.0
+	var wheel_tone: float = sin(TAU * wheel_hz * time) * 0.10
+	var breathing: float = 0.90 + sin(TAU * 1.7 * time) * 0.10
+	var material_softening: float = 1.0 - gem_contact * 0.48
+	var sample: float = (fine_grit * 0.42 + broad_grit * 0.34 + wheel_tone) * grind_level * material_softening * breathing * grind_volume
+	return clampf(sample, -0.45, 0.45)
+
+func _resonance_sample(time: float) -> float:
+	# Out of sync: restrained radio-like fuzz. In sync: a consonant open fifth
+	# plus octave blooms into a gentle hymn. The bell is an occasional readable
+	# correction cue, not a constant punishment.
+	var fuzz: float = (_smooth_noise(time + 0.73, 5.0) * 0.55 + _smooth_noise(time + 1.91, 17.0) * 0.45) * resonance_fuzz_level * resonance_fuzz_volume
+	var slow_bloom: float = 0.82 + sin(TAU * 0.34 * time) * 0.18
+	var root: float = sin(TAU * 220.0 * time) * 0.42
+	var fifth: float = sin(TAU * 329.63 * time + 0.22) * 0.30
+	var octave: float = sin(TAU * 440.0 * time + 0.47) * 0.20
+	var high_fifth: float = sin(TAU * 659.25 * time + 0.71) * 0.10
+	var hum: float = (root + fifth + octave + high_fifth) * resonance_hum_level * resonance_hum_volume * slow_bloom
+	var bell: float = 0.0
+	if bell_age >= 0.0:
+		var bell_envelope: float = exp(-bell_age * 4.0)
+		bell = (sin(TAU * 880.0 * bell_age) * 0.50 + sin(TAU * 1320.0 * bell_age) * 0.26 + sin(TAU * 1760.0 * bell_age) * 0.12) * bell_envelope * 0.16
+	return clampf(fuzz + hum + bell, -0.55, 0.55)
+
+func _xray_sample(time: float) -> float:
+	var attack: float = clampf(time / 0.025, 0.0, 1.0)
+	var release: float = clampf((XRAY_LENGTH_SECONDS - time) / 0.20, 0.0, 1.0)
+	var envelope: float = attack * release
+	var scanner_chirp: float = sin(TAU * (260.0 + time * 720.0) * time) * 0.30
+	var machine_hum: float = sin(TAU * 96.0 * time) * 0.16 + sin(TAU * 192.0 * time) * 0.08
+	var gate: float = 1.0 if fmod(time, 0.18) < 0.045 else 0.0
+	var computer_beep: float = sin(TAU * 910.0 * time) * gate * 0.24
+	var relay_one: float = exp(-absf(time - 0.055) * 95.0) * sin(TAU * 2100.0 * time) * 0.20
+	var relay_two: float = exp(-absf(time - 0.72) * 80.0) * sin(TAU * 1650.0 * time) * 0.15
+	return clampf((scanner_chirp + machine_hum + computer_beep + relay_one + relay_two) * envelope, -0.85, 0.85)
+
+func _noise_lattice_value(index: int) -> float:
+	return fposmod(sin(float(index) * 12.9898) * 43758.5453, 1.0) * 2.0 - 1.0
+
+func _smooth_noise(time: float, frames_per_value: float) -> float:
+	var lattice_position: float = time * SAMPLE_RATE / frames_per_value
+	var left_index: int = floori(lattice_position)
+	var blend: float = lattice_position - float(left_index)
+	blend = blend * blend * (3.0 - 2.0 * blend)
+	return lerpf(_noise_lattice_value(left_index), _noise_lattice_value(left_index + 1), blend)

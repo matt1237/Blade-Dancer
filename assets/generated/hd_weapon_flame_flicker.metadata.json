@@ -1,0 +1,46 @@
+{
+	"animation_name": "flickering_and_curling_upward_in_a_seamless_magical_weapon_flame_loop_narrow_base_remains_fixed_at_bottom_center_semi_transparent_wispy_edges",
+	"animation_style": "",
+	"animation_type": "flickering and curling upward in a seamless magical weapon flame loop, narrow base remains fixed at bottom center, semi-transparent wispy edges",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 4,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 256,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 256,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 512,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 768,
+			"y": 0
+		}
+	],
+	"frame_width": 256,
+	"name": "hd_weapon_flame_flicker",
+	"prompt": "flickering and curling upward in a seamless magical weapon flame loop, narrow base remains fixed at bottom center, semi-transparent wispy edges",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_weapon_flame_tongue_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/hd_weapon_flame_flicker.png",
+	"spritesheet_width": 1024,
+	"type": "animation"
+}

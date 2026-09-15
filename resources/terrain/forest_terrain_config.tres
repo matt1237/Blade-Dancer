@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="TerrainConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/terrain/terrain_config.gd" id="1_config"]
+
+[resource]
+script = ExtResource("1_config")
+minimum_modules = 3
+maximum_modules = 3
+placement_attempts_per_module = 60
+guarantee_mud_patch = true
+guarantee_bear_trap = true
+arena_rect = Rect2(0, 0, 1280, 720)
+player_spawn = Vector2(640, 360)
+player_spawn_clearance = 150.0
+arena_edge_clearance = 70.0
+module_spacing = 34.0
+minimum_open_area_ratio = 0.6
+trap_telegraph_clearance = 36.0
+navigation_margin = 24.0
+navigation_cell_size = 40.0
+wall_visual_z_index = 1
+trap_visual_z_index = 1
+arena_border_thickness = 52.0
+mud_movement_multiplier = 0.7
+mud_disables_dash = true
+mud_radius = 46.0
+bear_trap_root_duration = 1.0
+bear_trap_rearm_duration = 4.0
+bear_trap_radius = 22.0
+print_generation_report = true
+draw_placement_bounds = false

@@ -1,0 +1,172 @@
+class_name GemJamTest extends Node
+
+const GEM_JAM_SCENE: PackedScene = preload("res://scenes/minigames/gem_jam.tscn")
+
+func _make_game() -> GemJamGame:
+	var game: GemJamGame = GEM_JAM_SCENE.instantiate() as GemJamGame
+	add_child(game)
+	game._build_material_mask()
+	game.status_label = game.get_node("HUD/StatusLabel") as Label
+	game.metrics_label = game.get_node("HUD/MetricsLabel") as Label
+	game.view_label = game.get_node("HUD/ViewLabel") as Label
+	game.station_label = game.get_node("HUD/StationLabel") as Label
+	game.progress_bar = game.get_node("HUD/ResonanceProgress") as ProgressBar
+	game.frequency_label = game.get_node("ResonancePanel/FrequencyLabel") as Label
+	game.amplitude_label = game.get_node("ResonancePanel/AmplitudeLabel") as Label
+	game.resonance_panel = game.get_node("ResonancePanel") as Control
+	game.chisel_hint = game.get_node("HUD/ChiselHint") as Label
+	return game
+
+func _build_rectangular_test_mask(game: GemJamGame) -> void:
+	game.material_mask.fill(GemJamGame.Cell.EMPTY)
+	game.total_rock = 0
+	game.total_gem_cells = 0
+	game.removed_rock = 0
+	game.gem_damage = 0
+	for y: int in range(20, 236):
+		for x: int in range(20, 236):
+			game._set_mask_cell(x, y, GemJamGame.Cell.ROCK)
+			game.total_rock += 1
+	for y: int in range(112, 145):
+		for x: int in range(112, 145):
+			game._set_mask_cell(x, y, GemJamGame.Cell.GEM)
+			game.total_rock -= 1
+			game.total_gem_cells += 1
+
+func test_material_mask_contains_rock_gem_and_empty_cells() -> void:
+	var game: GemJamGame = _make_game()
+	assert(game.material_mask.size() == GemJamGame.MASK_SIZE * GemJamGame.MASK_SIZE)
+	assert(game._count_mask_cells(GemJamGame.Cell.ROCK) > 0)
+	assert(game._count_mask_cells(GemJamGame.Cell.GEM) > 0)
+	assert(game._count_mask_cells(GemJamGame.Cell.EMPTY) > 0)
+	game.free()
+
+func test_hidden_gem_uses_the_same_canonical_cell_in_xray_and_chisel() -> void:
+	var game: GemJamGame = _make_game()
+	var gem_point: Vector2i = game._find_any_cell(GemJamGame.Cell.GEM)
+	assert(gem_point.x >= 0)
+	assert(game._visible_material_at(gem_point.x, gem_point.y, true) == GemJamGame.Cell.GEM)
+	assert(game._visible_material_at(gem_point.x, gem_point.y, false) == GemJamGame.Cell.ROCK, "An intact hidden gem cell must look like ordinary rock at the chisel bench.")
+	game.free()
+
+func test_crack_raster_follows_the_selected_world_space_direction() -> void:
+	var game: GemJamGame = _make_game()
+	_build_rectangular_test_mask(game)
+	game._rasterize_crack(Vector2(80.0, 20.0), Vector2.DOWN, 80.0, 2.0)
+	assert(game._mask_cell(80, 60) == GemJamGame.Cell.CUT)
+	assert(game._mask_cell(100, 60) == GemJamGame.Cell.ROCK, "A straight-down cut must not bend toward the gemstone core.")
+	game.free()
+
+func test_one_complete_crack_removes_the_disconnected_exterior_side() -> void:
+	var game: GemJamGame = _make_game()
+	_build_rectangular_test_mask(game)
+	game._rasterize_crack(Vector2(80.0, 20.0), Vector2.DOWN, 216.0, 2.0)
+	var detached: int = game._remove_disconnected_components()
+	assert(detached > 0)
+	assert(game._mask_cell(40, 128) == GemJamGame.Cell.EMPTY, "The exterior section separated by the full crack must fall away.")
+	assert(game._mask_cell(128, 128) == GemJamGame.Cell.GEM, "The primary gemstone body must remain.")
+	game.free()
+
+func test_two_intersecting_cracks_remove_exact_isolated_top_wedge() -> void:
+	var game: GemJamGame = _make_game()
+	_build_rectangular_test_mask(game)
+	var left_start: Vector2 = Vector2(70.0, 20.0)
+	var meeting_point: Vector2 = Vector2(128.0, 105.0)
+	var right_start: Vector2 = Vector2(186.0, 20.0)
+	game._rasterize_crack(left_start, left_start.direction_to(meeting_point), left_start.distance_to(meeting_point) + 4.0, 2.0)
+	game._rasterize_crack(right_start, right_start.direction_to(meeting_point), right_start.distance_to(meeting_point) + 4.0, 2.0)
+	var detached: int = game._remove_disconnected_components()
+	assert(detached > 0)
+	assert(game._mask_cell(128, 45) == GemJamGame.Cell.EMPTY, "Only the top wedge enclosed by both cracks and the exterior boundary should fall.")
+	assert(game._mask_cell(45, 128) == GemJamGame.Cell.ROCK)
+	assert(game._mask_cell(128, 128) == GemJamGame.Cell.GEM)
+	game.free()
+
+func test_cutting_gem_removes_and_damages_canonical_gem_cells() -> void:
+	var game: GemJamGame = _make_game()
+	_build_rectangular_test_mask(game)
+	game._rasterize_crack(Vector2(128.0, 100.0), Vector2.DOWN, 56.0, 2.0)
+	assert(game.gem_damage > 0)
+	assert(game._mask_cell(128, 128) == GemJamGame.Cell.CUT)
+	game.free()
+
+func test_gem_colour_appears_only_after_physical_exposure() -> void:
+	var game: GemJamGame = _make_game()
+	var gem_point: Vector2i = game._find_any_cell(GemJamGame.Cell.GEM)
+	assert(gem_point.x >= 0)
+	assert(game._visible_material_at(gem_point.x, gem_point.y, false) == GemJamGame.Cell.ROCK)
+	# Open a direct sightline from this canonical gem pixel to the exterior.
+	for y: int in range(gem_point.y - 1, -1, -1):
+		if game._mask_cell(gem_point.x, y) == GemJamGame.Cell.ROCK:
+			game._cut_mask_cell(gem_point.x, y)
+	assert(game._visible_material_at(gem_point.x, gem_point.y, false) == GemJamGame.Cell.GEM)
+	game.free()
+
+func test_chisel_angle_and_guide_share_exactly_one_trajectory() -> void:
+	var game: GemJamGame = _make_game()
+	game.chisel_angle = -0.47
+	var direction: Vector2 = game._chisel_trajectory_direction()
+	assert(direction.is_equal_approx(Vector2.DOWN.rotated(-0.47)))
+	game.free()
+
+func _target_motion_span(game: GemJamGame, exposure: float) -> Vector2:
+	var minimum: Vector2 = Vector2(INF, INF)
+	var maximum: Vector2 = Vector2(-INF, -INF)
+	for sample: int in range(121):
+		var target: Vector2 = game._resonance_target_at_time(exposure, float(sample) * 0.05)
+		minimum.x = minf(minimum.x, target.x)
+		minimum.y = minf(minimum.y, target.y)
+		maximum.x = maxf(maximum.x, target.x)
+		maximum.y = maxf(maximum.y, target.y)
+	return maximum - minimum
+
+func test_gem_target_still_moves_gently_at_full_exposure() -> void:
+	var game: GemJamGame = _make_game()
+	var first: Vector2 = game._resonance_target_at_time(1.0, 0.0)
+	var later: Vector2 = game._resonance_target_at_time(1.0, 2.0)
+	assert(first.distance_to(later) > 0.01, "The red gem wave must never become static, even at 100% exposure.")
+	game.free()
+
+func test_resonance_motion_is_much_more_erratic_at_eighty_percent_and_below() -> void:
+	var game: GemJamGame = _make_game()
+	var low_exposure_span: Vector2 = _target_motion_span(game, 0.80)
+	var full_exposure_span: Vector2 = _target_motion_span(game, 1.0)
+	assert(low_exposure_span.x > full_exposure_span.x * 2.0)
+	assert(low_exposure_span.y > full_exposure_span.y * 2.0)
+	assert(is_equal_approx(game._resonance_erratic_weight(0.80), 1.0))
+	assert(is_equal_approx(game._resonance_erratic_weight(1.0), 0.0))
+	game.free()
+
+func test_removing_all_rock_fully_exposes_gem_and_unlocks_resonance() -> void:
+	var game: GemJamGame = _make_game()
+	for y: int in range(GemJamGame.MASK_SIZE):
+		for x: int in range(GemJamGame.MASK_SIZE):
+			if game._mask_cell(x, y) == GemJamGame.Cell.ROCK:
+				game._set_mask_cell(x, y, GemJamGame.Cell.EMPTY)
+	assert(is_equal_approx(game.gem_exposure_ratio(), 1.0), "No intact rock means every remaining canonical gem pixel is exposed.")
+	game._select_resonance()
+	assert(game.station == GemJamGame.Station.RESONANCE)
+	# Follow the gently moving 100%-exposed target frame by frame. Staying
+	# synchronized for the hold duration must still complete the station.
+	for frame: int in range(360):
+		game.resonance_frequency = game.target_frequency
+		game.resonance_amplitude = game.target_amplitude
+		game._process(1.0 / 60.0)
+		if game.completed:
+			break
+	assert(game.completed)
+	game.free()
+
+func test_top_and_side_are_transforms_of_the_same_mask_coordinates() -> void:
+	var game: GemJamGame = _make_game()
+	var mask_point: Vector2 = Vector2(87.0, 142.0)
+	game.view_mode = GemJamGame.ViewMode.TOP
+	var top_scale: Vector2 = game._view_scale()
+	var top_screen: Vector2 = game.rock_position + (mask_point - Vector2(GemJamGame.MASK_HALF, GemJamGame.MASK_HALF)) * top_scale
+	assert(game._screen_to_mask(top_screen).is_equal_approx(mask_point))
+	game.view_mode = GemJamGame.ViewMode.SIDE
+	var side_scale: Vector2 = game._view_scale()
+	var side_screen: Vector2 = game.rock_position + (mask_point - Vector2(GemJamGame.MASK_HALF, GemJamGame.MASK_HALF)) * side_scale
+	assert(side_scale.y < top_scale.y)
+	assert(game._screen_to_mask(side_screen).is_equal_approx(mask_point), "SIDE must map back to the exact same canonical mask cell, not separate geometry.")
+	game.free()

@@ -1,0 +1,27 @@
+class_name HomePlayerPortrait extends Control
+
+func _draw() -> void:
+	var center: Vector2 = size * 0.5 + Vector2(0.0, 10.0)
+	var outline: Color = Color("2a2530")
+	var steel_dark: Color = Color("526477")
+	var steel: Color = Color("9eb4c7")
+	var steel_light: Color = Color("d7e6ec")
+	var blue: Color = Color("315b86")
+	var gold: Color = Color("e2bd55")
+	# Enlarged, simplified version of the player for the calm Status page.
+	draw_circle(center + Vector2(0.0, 62.0), 42.0, Color(0.12, 0.09, 0.07, 0.3))
+	draw_rect(Rect2(center + Vector2(-34.0, -12.0), Vector2(68.0, 78.0)), outline)
+	draw_rect(Rect2(center + Vector2(-27.0, -7.0), Vector2(54.0, 64.0)), steel_dark)
+	draw_rect(Rect2(center + Vector2(-19.0, 0.0), Vector2(38.0, 42.0)), steel)
+	draw_rect(Rect2(center + Vector2(-13.0, 5.0), Vector2(18.0, 10.0)), steel_light)
+	draw_rect(Rect2(center + Vector2(-30.0, 40.0), Vector2(60.0, 12.0)), Color("5b4034"))
+	draw_rect(Rect2(center + Vector2(-7.0, 40.0), Vector2(14.0, 12.0)), gold)
+	draw_rect(Rect2(center + Vector2(-32.0, -64.0), Vector2(64.0, 52.0)), outline)
+	draw_rect(Rect2(center + Vector2(-25.0, -57.0), Vector2(50.0, 39.0)), steel)
+	draw_rect(Rect2(center + Vector2(-21.0, -40.0), Vector2(43.0, 12.0)), outline)
+	draw_rect(Rect2(center + Vector2(-12.0, -37.0), Vector2(24.0, 5.0)), gold)
+	draw_rect(Rect2(center + Vector2(-12.0, -70.0), Vector2(10.0, 13.0)), blue)
+	draw_rect(Rect2(center + Vector2(-8.0, -80.0), Vector2(7.0, 12.0)), Color("4a86bd"))
+	draw_colored_polygon(PackedVector2Array([center + Vector2(28.0, -4.0), center + Vector2(58.0, 12.0), center + Vector2(37.0, 50.0)]), blue)
+	draw_rect(Rect2(center + Vector2(-24.0, 55.0), Vector2(20.0, 24.0)), outline)
+	draw_rect(Rect2(center + Vector2(7.0, 55.0), Vector2(20.0, 24.0)), outline)

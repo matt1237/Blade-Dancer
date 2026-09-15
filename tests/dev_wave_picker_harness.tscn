@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://tests/dev_wave_picker_harness.gd" id="2_harness"]
+
+[node name="Main" instance=ExtResource("1_main")]
+
+[node name="DevWavePickerHarness" type="Node" parent="."]
+script = ExtResource("2_harness")

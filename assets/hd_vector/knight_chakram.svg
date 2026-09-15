@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+<defs>
+ <radialGradient id="metal"><stop stop-color="#f9ffff"/><stop offset=".45" stop-color="#9db8c4"/><stop offset="1" stop-color="#3b526a"/></radialGradient>
+ <radialGradient id="core"><stop stop-color="#d8ffff"/><stop offset=".45" stop-color="#4ca6c7"/><stop offset="1" stop-color="#17446d"/></radialGradient>
+</defs>
+<circle cx="64" cy="64" r="49" fill="#132237" opacity=".45"/>
+<path d="M64 9 L75 24 L95 17 L98 38 L118 47 L103 64 L118 81 L98 90 L95 111 L75 104 L64 119 L53 104 L33 111 L30 90 L10 81 L25 64 L10 47 L30 38 L33 17 L53 24 Z" fill="url(#metal)" stroke="#101a2b" stroke-width="6" stroke-linejoin="round"/>
+<circle cx="64" cy="64" r="30" fill="url(#core)" stroke="#e9ffff" stroke-width="5"/>
+<circle cx="64" cy="64" r="12" fill="#16304c" stroke="#a8ecf2" stroke-width="4"/>
+<path d="M43 45 Q64 31 85 45" fill="none" stroke="#ffffff" stroke-width="5" opacity=".7" stroke-linecap="round"/>
+</svg>

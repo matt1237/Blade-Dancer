@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dmo10fo1vw1jm"
+path="res://.godot/imported/Forge of Moss and Iron.mp3-9fedd62d778a607570c629284d6c81b9.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Forge/Forge of Moss and Iron.mp3"
+dest_files=["res://.godot/imported/Forge of Moss and Iron.mp3-9fedd62d778a607570c629284d6c81b9.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

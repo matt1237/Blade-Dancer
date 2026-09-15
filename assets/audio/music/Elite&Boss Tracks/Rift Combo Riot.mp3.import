@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bjrnqxq3kkyim"
+path="res://.godot/imported/Rift Combo Riot.mp3-c10a9933b29963a1d9d521c319d59793.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Elite&Boss Tracks/Rift Combo Riot.mp3"
+dest_files=["res://.godot/imported/Rift Combo Riot.mp3-c10a9933b29963a1d9d521c319d59793.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,40 @@
+{
+	"animation_name": "compressing_into_a_deep_crouch_then_explosive_jump_takeoff_and_airborne_pose_empty_hands_feet_leave_the_ground",
+	"animation_style": "",
+	"animation_type": "compressing into a deep crouch then explosive jump takeoff and airborne pose, empty hands, feet leave the ground",
+	"columns": 3,
+	"directions": [],
+	"frame_count": 3,
+	"frame_height": 512,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 512,
+			"w": 512,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 512,
+			"w": 512,
+			"x": 512,
+			"y": 0
+		},
+		{
+			"h": 512,
+			"w": 512,
+			"x": 1024,
+			"y": 0
+		}
+	],
+	"frame_width": 512,
+	"name": "hd_boss_zungar_jump",
+	"prompt": "compressing into a deep crouch then explosive jump takeoff and airborne pose, empty hands, feet leave the ground",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_boss_zungar_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 512,
+	"spritesheet_path": "res://assets/generated/hd_boss_zungar_jump.png",
+	"spritesheet_width": 1536,
+	"type": "animation"
+}

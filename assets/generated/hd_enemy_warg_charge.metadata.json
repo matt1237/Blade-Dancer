@@ -1,0 +1,40 @@
+{
+	"animation_name": "charging",
+	"animation_style": "",
+	"animation_type": "charging",
+	"columns": 3,
+	"directions": [],
+	"frame_count": 3,
+	"frame_height": 128,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 128,
+			"w": 160,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 160,
+			"x": 160,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 160,
+			"x": 320,
+			"y": 0
+		}
+	],
+	"frame_width": 160,
+	"name": "hd_enemy_warg_charge",
+	"prompt": "charging",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_enemy_warg_charger_frame_0.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 128,
+	"spritesheet_path": "res://assets/generated/hd_enemy_warg_charge.png",
+	"spritesheet_width": 480,
+	"type": "animation"
+}

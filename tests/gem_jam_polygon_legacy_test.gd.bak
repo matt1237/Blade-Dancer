@@ -1,0 +1,192 @@
+class_name GemJamTest extends Node
+
+const GEM_JAM_SCENE: PackedScene = preload("res://scenes/minigames/gem_jam.tscn")
+
+func _make_game() -> GemJamGame:
+	var game: GemJamGame = GEM_JAM_SCENE.instantiate() as GemJamGame
+	add_child(game)
+	# Keep tests independent of whether the runner has completed the first
+	# scene frame and therefore fired @onready/_ready yet.
+	game._build_volume()
+	game.status_label = game.get_node("HUD/StatusLabel") as Label
+	game.metrics_label = game.get_node("HUD/MetricsLabel") as Label
+	game.view_label = game.get_node("HUD/ViewLabel") as Label
+	game.station_label = game.get_node("HUD/StationLabel") as Label
+	game.progress_bar = game.get_node("HUD/ResonanceProgress") as ProgressBar
+	game.frequency_label = game.get_node("ResonancePanel/FrequencyLabel") as Label
+	game.amplitude_label = game.get_node("ResonancePanel/AmplitudeLabel") as Label
+	game.resonance_panel = game.get_node("ResonancePanel") as Control
+	game.chisel_hint = game.get_node("HUD/ChiselHint") as Label
+	return game
+
+func _clear_all_rock(game: GemJamGame) -> void:
+	for z: int in range(GemJamGame.GRID_DEPTH):
+		for y: int in range(GemJamGame.GRID_HEIGHT):
+			for x: int in range(GemJamGame.GRID_WIDTH):
+				if game.cells[game._cell_index(x, y, z)] == GemJamGame.Cell.ROCK:
+					game._remove_cell(x, y, z)
+
+func test_volume_contains_rock_and_gem_cells() -> void:
+	var game: GemJamGame = _make_game()
+	assert(game.total_rock > 0)
+	assert(game._count_cells(GemJamGame.Cell.GEM) > 0)
+	game.free()
+
+func test_top_and_side_views_use_the_same_gem_volume() -> void:
+	var game: GemJamGame = _make_game()
+	game.view_mode = GemJamGame.ViewMode.TOP
+	var top_gem: GemJamGame.Cell = game._projected_cell(7, 8)
+	game.view_mode = GemJamGame.ViewMode.SIDE
+	var side_gem: GemJamGame.Cell = game._projected_cell(7, 3)
+	assert(top_gem == GemJamGame.Cell.GEM)
+	assert(side_gem == GemJamGame.Cell.GEM)
+	game.free()
+
+func test_chisel_strike_starts_a_crack_at_the_rocks_actual_edge() -> void:
+	# Regression coverage for "the rock body should dissect with cuts, not
+	# just lose a stray cell": a strike must anchor its crack on the rock's
+	# real current boundary in the clicked direction, not at the click's raw
+	# (possibly far-away) screen position.
+	var game: GemJamGame = _make_game()
+	game.station = GemJamGame.Station.CHISEL
+	game._ensure_polygon_fresh()
+	assert(game._current_rock_polygon().size() >= 3)
+	var click_position: Vector2 = game.rock_position + Vector2(400.0, 0.0)
+	game._chisel_strike(click_position)
+	assert(game.cracks.size() == 1)
+	var start: Vector2 = game.cracks[0]["local_start"]
+	assert(start.length() > 10.0 and start.length() < 200.0, "The crack must start at the rock's edge, well short of the distant click point.")
+	game.free()
+
+func test_crack_grows_over_time_and_then_matures() -> void:
+	var game: GemJamGame = _make_game()
+	game.station = GemJamGame.Station.CHISEL
+	game._chisel_strike(game.rock_position + Vector2(200.0, 0.0))
+	assert(not bool(game.cracks[0]["matured"]))
+	assert(is_equal_approx(float(game.cracks[0]["length"]), 0.0))
+	game._process(1.0)
+	assert(game.cracks.size() == 1, "A single unconnected crack must persist, not vanish.")
+	assert(bool(game.cracks[0]["matured"]))
+	assert(is_equal_approx(float(game.cracks[0]["length"]), float(game.cracks[0]["max_length"])))
+	game.free()
+
+func test_two_connecting_cracks_break_off_a_chunk_and_clear_voxels() -> void:
+	# The core requested mechanic: two angled cracks growing in from the edge
+	# that meet must visibly remove a real chunk from the canonical volume.
+	var game: GemJamGame = _make_game()
+	game.station = GemJamGame.Station.CHISEL
+	game.power_value = 1.0
+	game.chisel_angle = -0.35
+	game._chisel_strike(game.rock_position + Vector2(-35.0, -120.0))
+	game.chisel_angle = 0.35
+	game._chisel_strike(game.rock_position + Vector2(35.0, -120.0))
+	game._process(1.0)
+	assert(game.cracks.is_empty(), "Connected cracks must be consumed by the break they cause.")
+	assert(game.removed_rock > 0, "Breaking a chunk off the polygon must also clear the matching voxel cells.")
+	game.free()
+
+func test_gem_cell_becomes_exposed_once_its_covering_rock_is_cleared() -> void:
+	var game: GemJamGame = _make_game()
+	var target_cell: Vector3i = Vector3i(-1, -1, -1)
+	var target_neighbor: Vector3i = Vector3i(-1, -1, -1)
+	var offsets: Array[Vector3i] = [Vector3i(1, 0, 0), Vector3i(-1, 0, 0), Vector3i(0, 1, 0), Vector3i(0, -1, 0), Vector3i(0, 0, 1), Vector3i(0, 0, -1)]
+	for cell: Vector3i in game.gem_cells:
+		for offset: Vector3i in offsets:
+			var neighbor: Vector3i = cell + offset
+			if neighbor.x < 0 or neighbor.x >= GemJamGame.GRID_WIDTH or neighbor.y < 0 or neighbor.y >= GemJamGame.GRID_HEIGHT or neighbor.z < 0 or neighbor.z >= GemJamGame.GRID_DEPTH: continue
+			if game.cells[game._cell_index(neighbor.x, neighbor.y, neighbor.z)] == GemJamGame.Cell.ROCK:
+				target_cell = cell
+				target_neighbor = neighbor
+				break
+		if target_cell.x >= 0: break
+	assert(target_cell.x >= 0, "Setup assumption: at least one gem cell must have a rock neighbor.")
+	assert(not game._gem_cell_is_exposed(target_cell), "This gem cell must start fully covered.")
+	game._remove_cell(target_neighbor.x, target_neighbor.y, target_neighbor.z)
+	assert(game._gem_cell_is_exposed(target_cell), "Clearing the one covering rock neighbor must expose the gem cell.")
+	game.free()
+
+func test_chisel_angle_controls_the_world_space_trajectory() -> void:
+	var game: GemJamGame = _make_game()
+	game.station = GemJamGame.Station.CHISEL
+	game.chisel_angle = 0.0
+	game._chisel_strike(game.rock_position + Vector2(0.0, -300.0))
+	var straight_direction: Vector2 = game.cracks.back()["direction"]
+	assert(straight_direction.is_equal_approx(Vector2.DOWN), "Angle 0 must always cut straight down, matching the dotted trajectory.")
+	game.cracks.clear()
+	game.chisel_angle = PI * 0.5
+	game._chisel_strike(game.rock_position + Vector2(0.0, -300.0))
+	var clockwise_direction: Vector2 = game.cracks.back()["direction"]
+	assert(clockwise_direction.x < -0.9, "D/positive rotation must turn the trajectory clockwise on screen.")
+	game.free()
+
+func test_same_chisel_angle_stays_parallel_at_different_strike_positions() -> void:
+	var game: GemJamGame = _make_game()
+	game.station = GemJamGame.Station.CHISEL
+	game.chisel_angle = -0.42
+	game._chisel_strike(game.rock_position + Vector2(-70.0, -120.0))
+	var first_direction: Vector2 = game.cracks.back()["direction"]
+	game._chisel_strike(game.rock_position + Vector2(75.0, 30.0))
+	var second_direction: Vector2 = game.cracks.back()["direction"]
+	assert(first_direction.is_equal_approx(second_direction), "Moving the chisel around the rock must not bend its trajectory toward the center.")
+	assert(first_direction.is_equal_approx(game._chisel_trajectory_direction()), "Stored cracks and the dotted guide must share exactly one trajectory vector.")
+	game.free()
+
+func test_resonance_requires_gem_exposure() -> void:
+	var game: GemJamGame = _make_game()
+	game._select_resonance()
+	assert(game.station == GemJamGame.Station.CHISEL)
+	_clear_all_rock(game)
+	game.rock_position = GemJamGame.RESONANCE_STATION_RECT.get_center()
+	game._select_resonance()
+	assert(game.station == GemJamGame.Station.RESONANCE)
+	game.free()
+
+func test_resonance_alignment_accumulates_and_completes() -> void:
+	var game: GemJamGame = _make_game()
+	_clear_all_rock(game)
+	game.station = GemJamGame.Station.RESONANCE
+	game.resonance_frequency = game.target_frequency
+	game.resonance_amplitude = game.target_amplitude
+	game._process(game.resonance_hold_seconds)
+	assert(game.completed)
+	assert(is_equal_approx(game.resonance_good_time, game.resonance_hold_seconds))
+	game.free()
+
+func test_unexposed_gem_destabilizes_resonance_alignment() -> void:
+	# "The more of the gem revealed, the easier resonance is" — a solid gem's
+	# innermost cells stay covered by other gem cells even with all rock
+	# cleared (there's always some un-exposed core), so this checks the
+	# direction of the effect rather than assuming a literal 1.0 ceiling.
+	var game: GemJamGame = _make_game()
+	game.resonance_frequency = game.target_frequency
+	game.resonance_amplitude = game.target_amplitude
+	game.resonance_time = 0.3
+	var covered_alignment: float = game._alignment_score()
+	_clear_all_rock(game)
+	var less_covered_alignment: float = game._alignment_score()
+	assert(game.gem_exposure_ratio() > 0.0, "Clearing all rock must expose at least the gem's own outer surface.")
+	assert(less_covered_alignment > covered_alignment, "Exposing more of the gem must make the same perfect tuning read as more aligned, not less.")
+	game.free()
+
+func test_station_shortcuts_move_the_physical_rock_with_the_mode() -> void:
+	var game: GemJamGame = _make_game()
+	game._select_xray()
+	assert(game.station == GemJamGame.Station.XRAY)
+	assert(game.rock_station == GemJamGame.Station.XRAY)
+	assert(game.rock_position.is_equal_approx(GemJamGame.XRAY_STATION_RECT.get_center()))
+	game._select_chisel()
+	assert(game.station == GemJamGame.Station.CHISEL)
+	assert(game.rock_station == GemJamGame.Station.CHISEL)
+	assert(game.rock_position.is_equal_approx(GemJamGame.CHISEL_STATION_RECT.get_center()))
+	game.free()
+
+func test_underexposed_resonance_drop_snaps_back_to_origin() -> void:
+	var game: GemJamGame = _make_game()
+	game.drag_origin_position = GemJamGame.CHISEL_STATION_RECT.get_center()
+	game.drag_origin_station = GemJamGame.Station.CHISEL
+	game.rock_position = GemJamGame.RESONANCE_STATION_RECT.get_center()
+	game._place_rock_in_station()
+	assert(game.station == GemJamGame.Station.CHISEL)
+	assert(game.rock_station == GemJamGame.Station.CHISEL)
+	assert(game.rock_position.is_equal_approx(GemJamGame.CHISEL_STATION_RECT.get_center()))
+	game.free()

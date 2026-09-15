@@ -1,0 +1,19 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/terrain/arena_generator.gd" id="1_generator"]
+[ext_resource type="Resource" path="res://resources/terrain/forest_terrain_config.tres" id="2_config"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/forest_wall_i.tscn" id="3_i"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/forest_wall_l.tscn" id="4_l"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/forest_wall_t.tscn" id="5_t"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/forest_wall_hall.tscn" id="6_hall"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/mud_patch.tscn" id="7_mud"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/bear_trap.tscn" id="8_trap"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/arena_population.tscn" id="9_population"]
+
+[node name="ArenaGenerator" type="Node2D"]
+script = ExtResource("1_generator")
+config = ExtResource("2_config")
+wall_modules = Array[PackedScene]([ExtResource("3_i"), ExtResource("4_l"), ExtResource("5_t"), ExtResource("6_hall")])
+mud_patch_scene = ExtResource("7_mud")
+bear_trap_scene = ExtResource("8_trap")
+population_scene = ExtResource("9_population")

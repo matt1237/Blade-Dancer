@@ -1,0 +1,347 @@
+[gd_scene format=3 uid="uid://cxqexenmpwnuk"]
+
+[ext_resource type="Script" uid="uid://diupa4hp12jfe" path="res://scripts/minigames/resonance_rush_chunk_playtest.gd" id="1_playtest"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/markers/rush_grapple_point.tscn" id="2_6mwfd"]
+[ext_resource type="Script" uid="uid://cw7ers71q36kp" path="res://scripts/minigames/resonance_rush_track_world.gd" id="2_track_world"]
+[ext_resource type="PackedScene" uid="uid://k7lsqkkg4xkc" path="res://scenes/minigames/resonance_rush/chunks/track_forest_road_a.tscn" id="3_road_a"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/track_loop.tscn" id="4_loop"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/track_forest_road_b.tscn" id="5_road_b"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/chunks/track_mountain_platform.tscn" id="6_mountain"]
+[ext_resource type="Script" uid="uid://cqay2exu6n4q8" path="res://scripts/minigames/resonance_rush_land_sail.gd" id="7_sail"]
+[ext_resource type="Texture2D" uid="uid://ckmg7sy6byc73" path="res://assets/generated/resonance_rush_land_sail_frame_0.png" id="8_sail_tex"]
+[ext_resource type="Texture2D" uid="uid://qr8668v2ibxn" path="res://assets/generated/resonance_rush_land_sail_glider_frame_0.png" id="9_glider_tex"]
+[ext_resource type="Script" uid="uid://cdwht4dyl3gji" path="res://scripts/minigames/resonance_rush_clouds.gd" id="14_clouds"]
+[ext_resource type="Texture2D" uid="uid://1m6hdunmkd4n" path="res://assets/generated/resonance_rush_cloud_frame_0.png" id="15_cloud_tex"]
+[ext_resource type="Script" uid="uid://f7qpfs8mkj6x" path="res://scripts/minigames/resonance_rush_ambient.gd" id="16_ambient"]
+[ext_resource type="Texture2D" uid="uid://bpty4uibstr25" path="res://assets/generated/resonance_rush_bird_frame_0.png" id="17_bird_tex"]
+[ext_resource type="Shader" uid="uid://dfqb6qtgwap7p" path="res://shaders/resonance_rush_sky.gdshader" id="18_sky_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("18_sky_shader")
+shader_parameter/camera_world_pos = Vector2(0, 0)
+shader_parameter/viewport_size = Vector2(1280, 720)
+shader_parameter/sky_top = Color(0.043, 0.067, 0.145, 1)
+shader_parameter/sky_bottom = Color(0.32, 0.5, 0.68, 1)
+shader_parameter/sun_color = Color(1, 0.85, 0.55, 0.55)
+shader_parameter/far_mountain_color = Color(0.28, 0.38, 0.58, 1)
+shader_parameter/mid_mountain_color = Color(0.16, 0.3, 0.32, 1)
+shader_parameter/forest_color = Color(0.07, 0.13, 0.09, 1)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_bounce"]
+radius = 30.0
+
+[node name="RushTrackWorldProof" type="Node2D" unique_id=1065686655]
+script = ExtResource("1_playtest")
+course_title = "RESONANCE RUSH"
+camera_follow_speed = 6.0
+camera_look_ahead = Vector2(300, -120)
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="." unique_id=1315272362]
+layer = -10
+
+[node name="SkyGradient" type="ColorRect" parent="BackgroundLayer" unique_id=360997799]
+material = SubResource("ShaderMaterial_sky")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="TerrainRoot" type="Node2D" parent="." unique_id=1266343128]
+script = ExtResource("2_track_world")
+
+[node name="RoadA1" parent="TerrainRoot" unique_id=1788137239 instance=ExtResource("3_road_a")]
+position = Vector2(200, 600)
+
+[node name="RoadB1" parent="TerrainRoot" unique_id=178004503 instance=ExtResource("5_road_b")]
+position = Vector2(1800, 570)
+forced_next_chunk = NodePath("../LoopA")
+
+[node name="LoopA" parent="TerrainRoot" unique_id=496794308 instance=ExtResource("4_loop")]
+position = Vector2(4200, 570)
+forced_next_chunk = NodePath("../RoadA2")
+forced_previous_chunk = NodePath("../RoadB1")
+
+[node name="RoadA2" parent="TerrainRoot" unique_id=505334440 instance=ExtResource("3_road_a")]
+position = Vector2(4200, 570)
+forced_previous_chunk = NodePath("../LoopA")
+
+[node name="RoadB2" parent="TerrainRoot" unique_id=1203279490 instance=ExtResource("5_road_b")]
+position = Vector2(5800, 540)
+
+[node name="RoadA3" parent="TerrainRoot" unique_id=93586568 instance=ExtResource("3_road_a")]
+position = Vector2(8200, 540)
+
+[node name="RoadB3" parent="TerrainRoot" unique_id=1475917094 instance=ExtResource("5_road_b")]
+position = Vector2(9800, 510)
+
+[node name="RoadA4" parent="TerrainRoot" unique_id=1688978973 instance=ExtResource("3_road_a")]
+position = Vector2(12200, 510)
+
+[node name="RoadB4" parent="TerrainRoot" unique_id=1439837762 instance=ExtResource("5_road_b")]
+position = Vector2(13800, 480)
+
+[node name="RoadA5" parent="TerrainRoot" unique_id=1267047870 instance=ExtResource("3_road_a")]
+position = Vector2(16200, 480)
+
+[node name="RoadB5" parent="TerrainRoot" unique_id=954379714 instance=ExtResource("5_road_b")]
+position = Vector2(17800, 450)
+
+[node name="MountainPlatform1" parent="TerrainRoot" unique_id=1880773155 instance=ExtResource("6_mountain")]
+position = Vector2(2600, 260)
+
+[node name="MountainPlatform2" parent="TerrainRoot" unique_id=161327856 instance=ExtResource("6_mountain")]
+position = Vector2(5000, 200)
+
+[node name="MountainPlatform3" parent="TerrainRoot" unique_id=1695909606 instance=ExtResource("6_mountain")]
+position = Vector2(7000, 230)
+
+[node name="MountainPlatform4" parent="TerrainRoot" unique_id=1416120684 instance=ExtResource("6_mountain")]
+position = Vector2(9000, 200)
+
+[node name="MountainPlatform5" parent="TerrainRoot" unique_id=1438598107 instance=ExtResource("6_mountain")]
+position = Vector2(11000, 230)
+
+[node name="MountainPlatform6" parent="TerrainRoot" unique_id=244684819 instance=ExtResource("6_mountain")]
+position = Vector2(13000, 200)
+
+[node name="MountainPlatform7" parent="TerrainRoot" unique_id=1046906874 instance=ExtResource("6_mountain")]
+position = Vector2(15000, 230)
+
+[node name="MountainPlatform8" parent="TerrainRoot" unique_id=1661851969 instance=ExtResource("6_mountain")]
+position = Vector2(17000, 200)
+
+[node name="MountainPlatform9" parent="TerrainRoot" unique_id=2519332 instance=ExtResource("6_mountain")]
+position = Vector2(19000, 230)
+
+[node name="GrapplePoints" type="Node2D" parent="." unique_id=1083214839]
+
+[node name="Grapple01" parent="GrapplePoints" unique_id=786264644 instance=ExtResource("2_6mwfd")]
+position = Vector2(600, 373)
+
+[node name="Grapple02" parent="GrapplePoints" unique_id=2018784340 instance=ExtResource("2_6mwfd")]
+position = Vector2(1000, 365)
+
+[node name="Grapple03" parent="GrapplePoints" unique_id=1925579839 instance=ExtResource("2_6mwfd")]
+position = Vector2(1400, 358)
+
+[node name="Grapple04" parent="GrapplePoints" unique_id=1197308318 instance=ExtResource("2_6mwfd")]
+position = Vector2(2200, 350)
+
+[node name="Grapple05" parent="GrapplePoints" unique_id=1336985894 instance=ExtResource("2_6mwfd")]
+position = Vector2(3000, 350)
+
+[node name="Grapple06" parent="GrapplePoints" unique_id=1044336661 instance=ExtResource("2_6mwfd")]
+position = Vector2(3800, 350)
+
+[node name="Grapple07" parent="GrapplePoints" unique_id=1594933795 instance=ExtResource("2_6mwfd")]
+position = Vector2(4600, 343)
+
+[node name="Grapple08" parent="GrapplePoints" unique_id=975165790 instance=ExtResource("2_6mwfd")]
+position = Vector2(5400, 328)
+
+[node name="Grapple09" parent="GrapplePoints" unique_id=784228342 instance=ExtResource("2_6mwfd")]
+position = Vector2(6200, 320)
+
+[node name="Grapple10" parent="GrapplePoints" unique_id=1868384512 instance=ExtResource("2_6mwfd")]
+position = Vector2(7000, 320)
+
+[node name="Grapple11" parent="GrapplePoints" unique_id=1539926806 instance=ExtResource("2_6mwfd")]
+position = Vector2(7800, 320)
+
+[node name="Grapple12" parent="GrapplePoints" unique_id=1480798021 instance=ExtResource("2_6mwfd")]
+position = Vector2(8600, 313)
+
+[node name="Grapple13" parent="GrapplePoints" unique_id=1020697535 instance=ExtResource("2_6mwfd")]
+position = Vector2(9400, 298)
+
+[node name="Grapple14" parent="GrapplePoints" unique_id=709482481 instance=ExtResource("2_6mwfd")]
+position = Vector2(10200, 290)
+
+[node name="Grapple15" parent="GrapplePoints" unique_id=761229758 instance=ExtResource("2_6mwfd")]
+position = Vector2(11000, 290)
+
+[node name="Grapple16" parent="GrapplePoints" unique_id=2059140364 instance=ExtResource("2_6mwfd")]
+position = Vector2(11800, 290)
+
+[node name="Grapple17" parent="GrapplePoints" unique_id=2104708682 instance=ExtResource("2_6mwfd")]
+position = Vector2(12600, 283)
+
+[node name="Grapple18" parent="GrapplePoints" unique_id=640997555 instance=ExtResource("2_6mwfd")]
+position = Vector2(13400, 268)
+
+[node name="Grapple19" parent="GrapplePoints" unique_id=1844437748 instance=ExtResource("2_6mwfd")]
+position = Vector2(14200, 260)
+
+[node name="Grapple20" parent="GrapplePoints" unique_id=1498799265 instance=ExtResource("2_6mwfd")]
+position = Vector2(15000, 260)
+
+[node name="Grapple21" parent="GrapplePoints" unique_id=648124333 instance=ExtResource("2_6mwfd")]
+position = Vector2(15800, 260)
+
+[node name="Grapple22" parent="GrapplePoints" unique_id=1067306372 instance=ExtResource("2_6mwfd")]
+position = Vector2(16600, 253)
+
+[node name="Grapple23" parent="GrapplePoints" unique_id=105890522 instance=ExtResource("2_6mwfd")]
+position = Vector2(17400, 238)
+
+[node name="Grapple24" parent="GrapplePoints" unique_id=100537323 instance=ExtResource("2_6mwfd")]
+position = Vector2(18200, 230)
+
+[node name="Grapple25" parent="GrapplePoints" unique_id=1173001269 instance=ExtResource("2_6mwfd")]
+position = Vector2(19000, 230)
+
+[node name="Grapple26" parent="GrapplePoints" unique_id=757782361 instance=ExtResource("2_6mwfd")]
+position = Vector2(19800, 230)
+
+[node name="GrappleToMP1" parent="GrapplePoints" unique_id=1892830145 instance=ExtResource("2_6mwfd")]
+position = Vector2(2600, 415)
+
+[node name="GrappleToMP2" parent="GrapplePoints" unique_id=1989891305 instance=ExtResource("2_6mwfd")]
+position = Vector2(5000, 375)
+
+[node name="GrappleToMP3" parent="GrapplePoints" unique_id=1681322143 instance=ExtResource("2_6mwfd")]
+position = Vector2(7100, 385)
+
+[node name="GrappleToMP4" parent="GrapplePoints" unique_id=1517249814 instance=ExtResource("2_6mwfd")]
+position = Vector2(9000, 360)
+
+[node name="GrappleToMP5" parent="GrapplePoints" unique_id=1238699252 instance=ExtResource("2_6mwfd")]
+position = Vector2(11100, 370)
+
+[node name="GrappleToMP6" parent="GrapplePoints" unique_id=579072065 instance=ExtResource("2_6mwfd")]
+position = Vector2(13000, 345)
+
+[node name="GrappleToMP7" parent="GrapplePoints" unique_id=1125237588 instance=ExtResource("2_6mwfd")]
+position = Vector2(15100, 355)
+
+[node name="GrappleToMP8" parent="GrapplePoints" unique_id=1090189697 instance=ExtResource("2_6mwfd")]
+position = Vector2(17000, 333)
+
+[node name="GrappleToMP9" parent="GrapplePoints" unique_id=1027389298 instance=ExtResource("2_6mwfd")]
+position = Vector2(19100, 340)
+
+[node name="CourseLabels" type="Node2D" parent="." unique_id=488130327]
+
+[node name="ForestLabel" type="Label" parent="CourseLabels" unique_id=1071626221]
+offset_left = 360.0
+offset_top = 500.0
+offset_right = 360.0
+offset_bottom = 500.0
+theme_override_colors/font_color = Color(0.55, 1, 0.65, 0.9)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "FOREST ROAD — never a gap"
+
+[node name="LoopLabel" type="Label" parent="CourseLabels" unique_id=1247694912]
+offset_left = 4000.0
+offset_top = 200.0
+offset_right = 4000.0
+offset_bottom = 200.0
+theme_override_colors/font_color = Color(1, 0.72, 0.3, 0.95)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "TRUE 360° LOOP"
+
+[node name="StackedLabel" type="Label" parent="CourseLabels" unique_id=1816959205]
+offset_left = 2400.0
+offset_top = 130.0
+offset_right = 2400.0
+offset_bottom = 130.0
+theme_override_colors/font_color = Color(0.82, 0.75, 0.95, 0.95)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "GRAPPLE UP TO THE PLATFORMS"
+
+[node name="FinishLabel" type="Label" parent="CourseLabels" unique_id=1407375847]
+offset_left = 19600.0
+offset_top = 300.0
+offset_right = 19600.0
+offset_bottom = 300.0
+theme_override_colors/font_color = Color(0.4, 0.88, 1, 0.95)
+theme_override_colors/font_outline_color = Color(0.03, 0.05, 0.08, 1)
+theme_override_constants/outline_size = 5
+theme_override_font_sizes/font_size = 22
+text = "FINISH"
+
+[node name="LandSail" type="CharacterBody2D" parent="." unique_id=455900102]
+script = ExtResource("7_sail")
+initial_ground_speed = 100.0
+show_grapple_range_debug = true
+
+[node name="Sprite2D" type="Sprite2D" parent="LandSail" unique_id=1188628169]
+texture_filter = 1
+texture = ExtResource("8_sail_tex")
+offset = Vector2(0, -30)
+
+[node name="GliderSprite" type="Sprite2D" parent="LandSail" unique_id=269603534]
+visible = false
+modulate = Color(1, 1, 1, 0)
+texture_filter = 1
+texture = ExtResource("9_glider_tex")
+offset = Vector2(0, -30)
+
+[node name="GrappleLine" type="Line2D" parent="LandSail" unique_id=1502333619]
+width = 3.0
+default_color = Color(0.4, 0.9, 1, 0.9)
+
+[node name="GrappleTip" type="Polygon2D" parent="LandSail" unique_id=544799462]
+visible = false
+z_index = 6
+color = Color(0.65, 0.95, 1, 1)
+polygon = PackedVector2Array(-8, 0, 0, -5, 10, 0, 0, 5)
+
+[node name="GlideTrail" type="Line2D" parent="LandSail" unique_id=550080529]
+top_level = true
+width = 6.0
+default_color = Color(0.75, 0.95, 1, 0.75)
+begin_cap_mode = 2
+end_cap_mode = 2
+
+[node name="BounceDetector" type="Area2D" parent="LandSail" unique_id=2017413282]
+collision_layer = 0
+collision_mask = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="LandSail/BounceDetector" unique_id=1025072601]
+shape = SubResource("CircleShape2D_bounce")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1962088741]
+
+[node name="AmbientSpawner" type="Node2D" parent="." unique_id=264956013]
+script = ExtResource("16_ambient")
+bird_texture = ExtResource("17_bird_tex")
+
+[node name="Clouds" type="Node2D" parent="." unique_id=1180135807]
+script = ExtResource("14_clouds")
+cloud_texture = ExtResource("15_cloud_tex")
+spawn_height_range = Vector2(-2000, 520)
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1351417181]
+
+[node name="Panel" type="ColorRect" parent="CanvasLayer" unique_id=2095330258]
+offset_left = 18.0
+offset_top = 16.0
+offset_right = 700.0
+offset_bottom = 78.0
+color = Color(0.03, 0.045, 0.065, 0.9)
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer" unique_id=1092328396]
+offset_left = 32.0
+offset_top = 24.0
+offset_right = 688.0
+offset_bottom = 78.0
+theme_override_colors/font_color = Color(0.83, 0.93, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "TRACK WORLD PROOF
+D/→ drive   Space jump   Aim + hold Left Click to fire hook"
+
+[node name="CloseButton" type="Button" parent="CanvasLayer" unique_id=1958530089]
+offset_left = 1220.0
+offset_top = 16.0
+offset_right = 1264.0
+offset_bottom = 56.0
+text = "X"

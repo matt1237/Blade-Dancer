@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="ChasmArtStyle" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://resources/styles/chasm_art_style.gd" id="1_chasm_style"]
+[ext_resource type="Texture2D" path="res://assets/source/chasm/hand_painted_crystal_cavern_arena.png" id="2_chasm_source"]
+
+[resource]
+script = ExtResource("1_chasm_style")
+style_id = "chasm"
+style_version = "0.1"
+source_image = ExtResource("2_chasm_source")
+art_direction = "Open-concept crystal cavern. Preserve the source illustration's composition, palette, depth, and hand-painted atmosphere."
+asset_rules = "Keep the original source image untouched. Derive isolated props as separate transparent assets. Keep decorative art separate from gameplay collision."
+texture_filter = 1
+world_scale = 1.0
+playable_arena_size = Vector2(1280, 720)
+background_tint = Color(1, 1, 1, 1)
+ambient_tint = Color(1, 1, 1, 1)
+background_z_index = -20
+decoration_z_index = 0
+actor_z_index = 2
+foreground_z_index = 10
+collision_is_invisible = true
+collision_follows_playable_rect = true
+palette_notes = "Palette is intentionally left as a documented extraction task until the reference image is formally analyzed."
+lighting_notes = "Lighting and atmosphere should be authored independently from collision and actor readability."

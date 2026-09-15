@@ -1,0 +1,730 @@
+class_name GemJamGame extends Control
+
+## Jewel Jam mask prototype.
+##
+## The rock and gemstone live in one canonical 256x256 material mask. Chisel
+## cracks rasterize directly into that mask. After every strike, connected
+## components of remaining material are found; only the component containing
+## the main gemstone core remains, and every disconnected exterior component
+## falls away exactly as represented by its mask pixels.
+
+signal closed()
+
+enum Cell { EMPTY, ROCK, GEM, CUT }
+enum Station { XRAY, CHISEL, RESONANCE }
+enum ViewMode { TOP, SIDE }
+
+const MASK_SIZE: int = 256
+const MASK_HALF: float = MASK_SIZE * 0.5
+const ROCK_COLOR: Color = Color("725846")
+const ROCK_HIGHLIGHT: Color = Color("a68162")
+const GEM_COLOR: Color = Color("54e5e0")
+const GEM_GLOW: Color = Color("b5fff2")
+const XRAY_STATION_RECT: Rect2 = Rect2(60.0, 175.0, 350.0, 420.0)
+const CHISEL_STATION_RECT: Rect2 = Rect2(465.0, 175.0, 350.0, 420.0)
+const RESONANCE_STATION_RECT: Rect2 = Rect2(870.0, 175.0, 350.0, 420.0)
+const CARDINAL_NEIGHBORS: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]
+
+@export_category("Chiseling")
+@export var chisel_angle_speed_degrees: float = 110.0
+@export var crack_min_length: float = 55.0
+@export var crack_max_length: float = 230.0
+@export_range(1.0, 6.0, 0.5) var crack_radius: float = 2.
+@export_range(0.0, 1.0, 0.05) var resonance_exposure_required: float = 0.35
+
+@export_category("Resonance")
+@export var resonance_hold_seconds: float = 5.0
+@export_range(0.01, 0.5, 0.01) var resonance_frequency_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_amplitude_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_tolerance: float = 0.08
+## The gemstone target never becomes static. These are the gentle 100%-exposed
+## drift amounts and the additional erratic motion present at <=80% exposure.
+@export_range(0.0, 0.2, 0.005) var resonance_gentle_frequency_motion: float = 0.06
+@export_range(0.0, 0.2, 0.005) var resonance_gentle_amplitude_motion: float = 0.06
+@export_range(0.0, 0.4, 0.01) var resonance_erratic_frequency_motion: float = 0.30
+@export_range(0.0, 0.4, 0.01) var resonance_erratic_amplitude_motion: float = 0.35
+
+var material_mask: Array[int] = []
+var total_rock: int = 0
+var total_gem_cells: int = 0
+var removed_rock: int = 0
+var gem_damage: int = 0
+var last_detached_cells: int = 0
+
+var station: Station = Station.CHISEL
+var rock_station: Station = Station.CHISEL
+var view_mode: ViewMode = ViewMode.TOP
+var rock_position: Vector2 = Vector2(640.0, 385.0)
+var dragging_rock: bool = false
+var pending_rock_drag: bool = false
+var drag_start_position: Vector2 = Vector2.ZERO
+var drag_origin_position: Vector2 = Vector2.ZERO
+var drag_origin_station: Station = Station.CHISEL
+var chisel_mouse_position: Vector2 = Vector2.ZERO
+var chisel_angle: float = 0.0
+var power_phase: float = 0.0
+var power_value: float = 0.5
+var falling_chunks: Array[Dictionary] = []
+
+var chisel_texture: ImageTexture
+var xray_texture: ImageTexture
+var gem_texture: ImageTexture
+var textures_dirty: bool = true
+var exposure_dirty: bool = true
+var exposed_gem_cells_cache: int = 0
+var remaining_gem_cells_cache: int = 0
+
+var completed: bool = false
+var resonance_time: float = 0.0
+var resonance_frequency: float = 0.50
+var resonance_amplitude: float = 0.50
+var target_base_frequency: float = 0.60
+var target_base_amplitude: float = 0.66
+var target_frequency: float = 0.60
+var target_amplitude: float = 0.66
+var resonance_good_time: float = 0.0
+
+@onready var station_label: Label = $HUD/StationLabel
+@onready var view_label: Label = $HUD/ViewLabel
+@onready var status_label: Label = $HUD/StatusLabel
+@onready var metrics_label: Label = $HUD/MetricsLabel
+@onready var progress_bar: ProgressBar = $HUD/ResonanceProgress
+@onready var frequency_label: Label = $ResonancePanel/FrequencyLabel
+@onready var amplitude_label: Label = $ResonancePanel/AmplitudeLabel
+@onready var resonance_panel: Control = $ResonancePanel
+@onready var chisel_hint: Label = $HUD/ChiselHint
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_build_material_mask()
+	$StationBar/XRayButton.pressed.connect(_select_xray)
+	$StationBar/ChiselButton.pressed.connect(_select_chisel)
+	$StationBar/ResonanceButton.pressed.connect(_select_resonance)
+	$ResonancePanel/FrequencyDown.pressed.connect(_frequency_down)
+	$ResonancePanel/FrequencyUp.pressed.connect(_frequency_up)
+	$ResonancePanel/AmplitudeDown.pressed.connect(_amplitude_down)
+	$ResonancePanel/AmplitudeUp.pressed.connect(_amplitude_up)
+	$CloseButton.pressed.connect(_close)
+	_update_ui()
+	queue_redraw()
+
+## Builds the only rock/gem geometry used by X-ray and chiseling.
+func _build_material_mask() -> void:
+	material_mask.clear()
+	material_mask.resize(MASK_SIZE * MASK_SIZE)
+	material_mask.fill(Cell.EMPTY)
+	total_rock = 0
+	total_gem_cells = 0
+	removed_rock = 0
+	gem_damage = 0
+	last_detached_cells = 0
+	var center: Vector2 = Vector2(128.0, 130.0)
+	var gem_polygon: PackedVector2Array = PackedVector2Array([
+		Vector2(128.0, 82.0), Vector2(158.0, 102.0), Vector2(166.0, 136.0),
+		Vector2(145.0, 174.0), Vector2(112.0, 169.0), Vector2(94.0, 134.0),
+		Vector2(101.0, 101.0)
+	])
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var offset: Vector2 = Vector2(float(x), float(y)) - center
+			var angle: float = atan2(offset.y, offset.x)
+			var rough_radius: float = 1.0 + 0.045 * sin(angle * 7.0) + 0.025 * sin(angle * 13.0 + 0.8)
+			var normalized_radius: float = sqrt(pow(offset.x / 108.0, 2.0) + pow(offset.y / 105.0, 2.0))
+			if normalized_radius <= rough_radius:
+				_set_mask_cell(x, y, Cell.ROCK)
+				total_rock += 1
+	for y: int in range(76, 180):
+		for x: int in range(86, 174):
+			if Geometry2D.is_point_in_polygon(Vector2(x + 0.5, y + 0.5), gem_polygon):
+				if _mask_cell(x, y) == Cell.ROCK:
+					_set_mask_cell(x, y, Cell.GEM)
+					total_rock -= 1
+					total_gem_cells += 1
+	textures_dirty = true
+	exposure_dirty = true
+
+func _process(delta: float) -> void:
+	if station == Station.CHISEL and not dragging_rock:
+		if Input.is_physical_key_pressed(KEY_A):
+			chisel_angle -= deg_to_rad(chisel_angle_speed_degrees) * delta
+		if Input.is_physical_key_pressed(KEY_D):
+			chisel_angle += deg_to_rad(chisel_angle_speed_degrees) * delta
+	power_phase += delta * 3.2
+	power_value = (sin(power_phase) + 1.0) * 0.5
+	_update_falling_chunks(delta)
+	if not completed and station == Station.RESONANCE:
+		_update_resonance(delta)
+	_update_ui()
+	queue_redraw()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		view_mode = ViewMode.SIDE if view_mode == ViewMode.TOP else ViewMode.TOP
+		_update_ui()
+		queue_redraw()
+
+func _view_scale() -> Vector2:
+	return Vector2.ONE if view_mode == ViewMode.TOP else Vector2(1.0, 0.52)
+
+func _update_resonance(delta: float) -> void:
+	resonance_time += delta
+	_update_resonance_target()
+	if Input.is_physical_key_pressed(KEY_A):
+		resonance_frequency = clampf(resonance_frequency - resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_D):
+		resonance_frequency = clampf(resonance_frequency + resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_S):
+		resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_W):
+		resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+	if _alignment_score() >= 1.0 - resonance_tolerance:
+		resonance_good_time = minf(resonance_hold_seconds, resonance_good_time + delta)
+	else:
+		resonance_good_time = maxf(0.0, resonance_good_time - delta * 1.5)
+	if resonance_good_time >= resonance_hold_seconds:
+		completed = true
+		status_label.text = "JEWEL REFINED!  Resonance stabilized."
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		chisel_mouse_position = event.position
+		if pending_rock_drag and not dragging_rock and drag_start_position.distance_to(event.position) > 10.0:
+			dragging_rock = true
+		if dragging_rock:
+			rock_position = event.position
+		queue_redraw()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if _rock_display_rect().grow(8.0).has_point(event.position):
+				pending_rock_drag = true
+				drag_start_position = event.position
+				drag_origin_position = rock_position
+				drag_origin_station = rock_station
+				chisel_mouse_position = event.position
+			else:
+				pending_rock_drag = false
+		else:
+			if dragging_rock:
+				dragging_rock = false
+				pending_rock_drag = false
+				_place_rock_in_station()
+			elif station == Station.CHISEL and CHISEL_STATION_RECT.has_point(event.position):
+				pending_rock_drag = false
+				_chisel_strike(event.position)
+			else:
+				pending_rock_drag = false
+
+## The guide and cut use this exact same vector. A is negative/CCW; D is
+## positive/CW in screen space.
+func _chisel_trajectory_direction() -> Vector2:
+	return Vector2.DOWN.rotated(chisel_angle)
+
+func _chisel_mask_direction() -> Vector2:
+	var screen_direction: Vector2 = _chisel_trajectory_direction()
+	var view_transform_scale: Vector2 = _view_scale()
+	return Vector2(screen_direction.x / view_transform_scale.x, screen_direction.y / view_transform_scale.y).normalized()
+
+func _chisel_strike(click_position: Vector2) -> void:
+	var mask_click: Vector2 = _screen_to_mask(click_position)
+	var start: Vector2i = _closest_exposed_material_pixel(mask_click)
+	if start.x < 0:
+		status_label.text = "No remaining material beneath the chisel."
+		return
+	var strike_length: float = lerpf(crack_min_length, crack_max_length, power_value)
+	var cut_cells: int = _rasterize_crack(Vector2(start), _chisel_mask_direction(), strike_length, crack_radius)
+	if cut_cells == 0:
+		status_label.text = "The chisel travelled away from the rock. Rotate it toward material."
+		return
+	last_detached_cells = _remove_disconnected_components()
+	textures_dirty = true
+	if last_detached_cells > 0:
+		status_label.text = "Crack connected to the exterior — the disconnected section falls away."
+	else:
+		status_label.text = "Crack cut into the material. Connect it to another crack or the exterior."
+	_update_ui()
+	queue_redraw()
+
+## Rasterizes the actual narrow crack into ROCK and GEM cells. No wedge or
+## replacement polygon is inferred.
+func _rasterize_crack(start: Vector2, direction: Vector2, length: float, radius: float) -> int:
+	if direction.length_squared() < 0.0001:
+		return 0
+	var normalized_direction: Vector2 = direction.normalized()
+	var changed: int = 0
+	var steps: int = ceili(length * 2.0)
+	for step: int in range(steps + 1):
+		var point: Vector2 = start + normalized_direction * (float(step) * 0.5)
+		changed += _cut_disk(Vector2i(roundi(point.x), roundi(point.y)), radius)
+	textures_dirty = textures_dirty or changed > 0
+	return changed
+
+func _cut_disk(center: Vector2i, radius: float) -> int:
+	var changed: int = 0
+	var integer_radius: int = ceili(radius)
+	var radius_squared: float = radius * radius
+	for y: int in range(center.y - integer_radius, center.y + integer_radius + 1):
+		for x: int in range(center.x - integer_radius, center.x + integer_radius + 1):
+			if Vector2(x - center.x, y - center.y).length_squared() <= radius_squared:
+				if _cut_mask_cell(x, y):
+					changed += 1
+	return changed
+
+func _cut_mask_cell(x: int, y: int) -> bool:
+	if not _mask_in_bounds(x, y):
+		return false
+	var current: Cell = _mask_cell(x, y)
+	if current == Cell.ROCK:
+		_set_mask_cell(x, y, Cell.CUT)
+		removed_rock += 1
+		exposure_dirty = true
+		return true
+	if current == Cell.GEM:
+		_set_mask_cell(x, y, Cell.CUT)
+		gem_damage += 1
+		exposure_dirty = true
+		return true
+	return false
+
+## Flood-fills all remaining material using 4-neighbor connectivity. The
+## component with the most surviving gemstone cells is the primary body.
+## Every other component is removed exactly, pixel-for-pixel.
+func _remove_disconnected_components() -> int:
+	var visited: PackedByteArray = PackedByteArray()
+	visited.resize(MASK_SIZE * MASK_SIZE)
+	var components: Array[PackedInt32Array] = []
+	var component_gem_counts: Array[int] = []
+	for index: int in range(material_mask.size()):
+		if visited[index] != 0 or not _is_material(material_mask[index] as Cell):
+			continue
+		var component: PackedInt32Array = PackedInt32Array()
+		var queue: PackedInt32Array = PackedInt32Array([index])
+		var head: int = 0
+		var gem_count: int = 0
+		visited[index] = 1
+		while head < queue.size():
+			var current_index: int = queue[head]
+			head += 1
+			component.append(current_index)
+			if material_mask[current_index] == Cell.GEM:
+				gem_count += 1
+			var x: int = current_index % MASK_SIZE
+			var y: int = current_index >> 8
+			for offset: Vector2i in CARDINAL_NEIGHBORS:
+				var nx: int = x + offset.x
+				var ny: int = y + offset.y
+				if not _mask_in_bounds(nx, ny):
+					continue
+				var neighbor_index: int = _mask_index(nx, ny)
+				if visited[neighbor_index] == 0 and _is_material(material_mask[neighbor_index] as Cell):
+					visited[neighbor_index] = 1
+					queue.append(neighbor_index)
+		components.append(component)
+		component_gem_counts.append(gem_count)
+	if components.size() <= 1:
+		return 0
+	var primary_index: int = 0
+	for index: int in range(1, components.size()):
+		if component_gem_counts[index] > component_gem_counts[primary_index]:
+			primary_index = index
+		elif component_gem_counts[index] == component_gem_counts[primary_index] and components[index].size() > components[primary_index].size():
+			primary_index = index
+	var detached: int = 0
+	for component_index: int in range(components.size()):
+		if component_index == primary_index:
+			continue
+		var component: PackedInt32Array = components[component_index]
+		_spawn_falling_component(component)
+		for mask_index: int in component:
+			if material_mask[mask_index] == Cell.ROCK:
+				removed_rock += 1
+			elif material_mask[mask_index] == Cell.GEM:
+				gem_damage += 1
+			material_mask[mask_index] = Cell.EMPTY
+			detached += 1
+	textures_dirty = textures_dirty or detached > 0
+	exposure_dirty = exposure_dirty or detached > 0
+	return detached
+
+func _spawn_falling_component(component: PackedInt32Array) -> void:
+	if component.is_empty():
+		return
+	var image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	image.fill(Color.TRANSPARENT)
+	var centroid: Vector2 = Vector2.ZERO
+	for mask_index: int in component:
+		var x: int = mask_index % MASK_SIZE
+		var y: int = mask_index >> 8
+		centroid += Vector2(x, y)
+		var color: Color = GEM_COLOR if material_mask[mask_index] == Cell.GEM else ROCK_COLOR
+		image.set_pixel(x, y, color)
+	centroid /= float(component.size())
+	var outward: Vector2 = (centroid - Vector2(MASK_HALF, MASK_HALF)).normalized()
+	if outward.length_squared() < 0.01:
+		outward = Vector2.UP
+	var texture: ImageTexture = ImageTexture.create_from_image(image)
+	falling_chunks.append({
+		"texture": texture,
+		"position": rock_position,
+		"scale": _view_scale(),
+		"velocity": outward * 85.0 + Vector2(0.0, -35.0),
+		"rotation": 0.0,
+		"spin": randf_range(-1.8, 1.8),
+		"life": 1.25,
+	})
+
+func _update_falling_chunks(delta: float) -> void:
+	for chunk: Dictionary in falling_chunks:
+		var velocity: Vector2 = chunk["velocity"]
+		chunk["position"] = (chunk["position"] as Vector2) + velocity * delta
+		chunk["velocity"] = velocity + Vector2(0.0, 280.0) * delta
+		chunk["rotation"] = float(chunk["rotation"]) + float(chunk["spin"]) * delta
+		chunk["life"] = float(chunk["life"]) - delta
+	for index: int in range(falling_chunks.size() - 1, -1, -1):
+		if float(falling_chunks[index]["life"]) <= 0.0:
+			falling_chunks.remove_at(index)
+
+func _closest_exposed_material_pixel(point: Vector2) -> Vector2i:
+	var closest: Vector2i = Vector2i(-1, -1)
+	var closest_distance_squared: float = INF
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			if not _is_material(_mask_cell(x, y)) or not _is_material_boundary(x, y):
+				continue
+			var distance_squared: float = Vector2(x, y).distance_squared_to(point)
+			if distance_squared < closest_distance_squared:
+				closest_distance_squared = distance_squared
+				closest = Vector2i(x, y)
+	return closest
+
+func _is_material_boundary(x: int, y: int) -> bool:
+	if not _is_material(_mask_cell(x, y)):
+		return false
+	for offset: Vector2i in CARDINAL_NEIGHBORS:
+		var nx: int = x + offset.x
+		var ny: int = y + offset.y
+		if not _mask_in_bounds(nx, ny) or not _is_material(_mask_cell(nx, ny)):
+			return true
+	return false
+
+func _is_material(cell: Cell) -> bool:
+	return cell == Cell.ROCK or cell == Cell.GEM
+
+func _mask_index(x: int, y: int) -> int:
+	return x + y * MASK_SIZE
+
+func _mask_in_bounds(x: int, y: int) -> bool:
+	return x >= 0 and x < MASK_SIZE and y >= 0 and y < MASK_SIZE
+
+func _mask_cell(x: int, y: int) -> Cell:
+	if not _mask_in_bounds(x, y):
+		return Cell.EMPTY
+	return material_mask[_mask_index(x, y)] as Cell
+
+func _set_mask_cell(x: int, y: int, cell: Cell) -> void:
+	if _mask_in_bounds(x, y):
+		material_mask[_mask_index(x, y)] = cell
+		textures_dirty = true
+		exposure_dirty = true
+
+func _count_mask_cells(cell: Cell) -> int:
+	var count: int = 0
+	for value: int in material_mask:
+		if value == cell:
+			count += 1
+	return count
+
+func _find_any_cell(cell: Cell) -> Vector2i:
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			if _mask_cell(x, y) == cell:
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+func _find_exposable_gem_cell() -> Vector2i:
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			if _mask_cell(x, y) == Cell.GEM and _find_rock_neighbor(Vector2i(x, y)).x >= 0:
+				return Vector2i(x, y)
+	return Vector2i(-1, -1)
+
+func _find_rock_neighbor(point: Vector2i) -> Vector2i:
+	for offset: Vector2i in CARDINAL_NEIGHBORS:
+		var neighbor: Vector2i = point + offset
+		if _mask_cell(neighbor.x, neighbor.y) == Cell.ROCK:
+			return neighbor
+	return Vector2i(-1, -1)
+
+func _gem_cell_is_exposed(x: int, y: int) -> bool:
+	if _mask_cell(x, y) != Cell.GEM:
+		return false
+	# This is 2D occlusion, not a perimeter count. GEM/EMPTY/CUT are transparent
+	# to the visibility test; only intact ROCK can cover a canonical gem pixel.
+	# Therefore removing all surrounding rock exposes the entire gem (100%).
+	for direction: Vector2i in CARDINAL_NEIGHBORS:
+		var cursor: Vector2i = Vector2i(x, y) + direction
+		var blocked: bool = false
+		while _mask_in_bounds(cursor.x, cursor.y):
+			if _mask_cell(cursor.x, cursor.y) == Cell.ROCK:
+				blocked = true
+				break
+			cursor += direction
+		if not blocked:
+			return true
+	return false
+
+## X-ray and chisel read the same cell. The only difference is visibility:
+## intact hidden GEM is rendered as ROCK at the chisel bench.
+func _visible_material_at(x: int, y: int, xray: bool) -> Cell:
+	var cell: Cell = _mask_cell(x, y)
+	if cell == Cell.GEM and not xray and not _gem_cell_is_exposed(x, y):
+		return Cell.ROCK
+	return cell
+
+func exposure_ratio() -> float:
+	return clampf(float(removed_rock) / maxf(1.0, float(total_rock)), 0.0, 1.0)
+
+func gem_exposure_ratio() -> float:
+	if exposure_dirty:
+		exposed_gem_cells_cache = 0
+		remaining_gem_cells_cache = 0
+		for y: int in range(MASK_SIZE):
+			for x: int in range(MASK_SIZE):
+				if _mask_cell(x, y) == Cell.GEM:
+					remaining_gem_cells_cache += 1
+					if _gem_cell_is_exposed(x, y):
+						exposed_gem_cells_cache += 1
+		exposure_dirty = false
+	if remaining_gem_cells_cache <= 0:
+		return 0.0
+	return clampf(float(exposed_gem_cells_cache) / float(remaining_gem_cells_cache), 0.0, 1.0)
+
+func _refresh_textures() -> void:
+	if not textures_dirty:
+		return
+	var chisel_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	var xray_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	var gem_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	chisel_image.fill(Color.TRANSPARENT)
+	xray_image.fill(Color.TRANSPARENT)
+	gem_image.fill(Color.TRANSPARENT)
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var canonical: Cell = _mask_cell(x, y)
+			var visible_chisel: Cell = _visible_material_at(x, y, false)
+			if visible_chisel == Cell.ROCK:
+				var rock_color: Color = ROCK_HIGHLIGHT if _is_material_boundary(x, y) else ROCK_COLOR
+				chisel_image.set_pixel(x, y, rock_color)
+			elif visible_chisel == Cell.GEM:
+				chisel_image.set_pixel(x, y, GEM_GLOW if _is_material_boundary(x, y) else GEM_COLOR)
+			if canonical == Cell.ROCK:
+				xray_image.set_pixel(x, y, Color(ROCK_COLOR.r, ROCK_COLOR.g, ROCK_COLOR.b, 0.38))
+			elif canonical == Cell.GEM:
+				xray_image.set_pixel(x, y, GEM_COLOR)
+				gem_image.set_pixel(x, y, GEM_COLOR)
+	chisel_texture = ImageTexture.create_from_image(chisel_image)
+	xray_texture = ImageTexture.create_from_image(xray_image)
+	gem_texture = ImageTexture.create_from_image(gem_image)
+	textures_dirty = false
+
+func _screen_to_mask(screen_point: Vector2) -> Vector2:
+	var view_transform_scale: Vector2 = _view_scale()
+	var local: Vector2 = screen_point - rock_position
+	return Vector2(local.x / view_transform_scale.x, local.y / view_transform_scale.y) + Vector2(MASK_HALF, MASK_HALF)
+
+func _rock_display_rect() -> Rect2:
+	var display_size: Vector2 = Vector2(MASK_SIZE, MASK_SIZE) * _view_scale()
+	return Rect2(rock_position - display_size * 0.5, display_size)
+
+func _station_center(target_station: Station) -> Vector2:
+	match target_station:
+		Station.XRAY:
+			return XRAY_STATION_RECT.get_center()
+		Station.RESONANCE:
+			return RESONANCE_STATION_RECT.get_center()
+		_:
+			return CHISEL_STATION_RECT.get_center()
+
+func _move_rock_to_station(target_station: Station) -> void:
+	rock_station = target_station
+	station = target_station
+	rock_position = _station_center(target_station)
+	if target_station == Station.RESONANCE:
+		_update_resonance_target()
+
+func _place_rock_in_station() -> void:
+	if XRAY_STATION_RECT.grow(20.0).has_point(rock_position):
+		_move_rock_to_station(Station.XRAY)
+		status_label.text = "Scanner active — the canonical gemstone is visible through rock."
+	elif CHISEL_STATION_RECT.grow(20.0).has_point(rock_position):
+		_move_rock_to_station(Station.CHISEL)
+		status_label.text = "Cut cracks that isolate material from the gemstone body."
+	elif RESONANCE_STATION_RECT.grow(20.0).has_point(rock_position):
+		if gem_exposure_ratio() >= resonance_exposure_required:
+			_move_rock_to_station(Station.RESONANCE)
+			status_label.text = "Tune frequency and amplitude with A/D and W/S."
+		else:
+			rock_position = drag_origin_position
+			rock_station = drag_origin_station
+			station = drag_origin_station
+			status_label.text = "Expose at least %d%% of the gem before resonance." % roundi(resonance_exposure_required * 100.0)
+	else:
+		rock_position = drag_origin_position
+		rock_station = drag_origin_station
+		station = drag_origin_station
+		status_label.text = "Place the rock inside a workstation."
+	_update_ui()
+	queue_redraw()
+
+func _select_xray() -> void:
+	_move_rock_to_station(Station.XRAY)
+	status_label.text = "X-ray reveals the canonical gemstone through intact rock."
+	_update_ui()
+	queue_redraw()
+
+func _select_chisel() -> void:
+	_move_rock_to_station(Station.CHISEL)
+	status_label.text = "Cut cracks that isolate material from the gemstone body."
+	_update_ui()
+	queue_redraw()
+
+func _select_resonance() -> void:
+	if gem_exposure_ratio() < resonance_exposure_required:
+		status_label.text = "Expose at least %d%% of the gem before resonance." % roundi(resonance_exposure_required * 100.0)
+		return
+	_move_rock_to_station(Station.RESONANCE)
+	status_label.text = "Match the live waveform to the target and hold steady."
+	_update_ui()
+	queue_redraw()
+
+func _resonance_erratic_weight(exposure: float) -> float:
+	# Deliberately stays fully volatile through 80%, then eases sharply toward
+	# gentle drift over the final 20% of exposure.
+	var final_band: float = clampf((exposure - 0.80) / 0.20, 0.0, 1.0)
+	var smoothed: float = final_band * final_band * (3.0 - 2.0 * final_band)
+	return 1.0 - smoothed
+
+func _resonance_target_at_time(exposure: float, time: float) -> Vector2:
+	var erratic_weight: float = _resonance_erratic_weight(exposure)
+	var gentle_frequency: float = resonance_gentle_frequency_motion * (0.72 * sin(time * 0.72) + 0.28 * sin(time * 1.19 + 1.1))
+	var gentle_amplitude: float = resonance_gentle_amplitude_motion * (0.70 * sin(time * 0.61 + 0.8) + 0.30 * sin(time * 1.07 + 2.0))
+	var erratic_frequency: float = resonance_erratic_frequency_motion * (0.56 * sin(time * 2.25 + 0.4) + 0.29 * sin(time * 5.15) + 0.15 * sin(time * 8.6 + 1.7))
+	var erratic_amplitude: float = resonance_erratic_amplitude_motion * (0.55 * sin(time * 1.85 + 2.2) + 0.30 * sin(time * 4.65 + 0.3) + 0.15 * sin(time * 7.9))
+	return Vector2(
+		clampf(target_base_frequency + gentle_frequency + erratic_frequency * erratic_weight, 0.08, 0.92),
+		clampf(target_base_amplitude + gentle_amplitude + erratic_amplitude * erratic_weight, 0.08, 0.92)
+	)
+
+func _update_resonance_target() -> void:
+	var live_target: Vector2 = _resonance_target_at_time(gem_exposure_ratio(), resonance_time)
+	target_frequency = live_target.x
+	target_amplitude = live_target.y
+
+func _alignment_score() -> float:
+	# The red gemstone wave itself moves. The player's teal wave is stable and
+	# scores directly against the current visible target—there is no hidden
+	# noise applied to the player controls.
+	return 1.0 - clampf(absf(resonance_frequency - target_frequency) + absf(resonance_amplitude - target_amplitude), 0.0, 1.0)
+
+func _frequency_down() -> void:
+	resonance_frequency = clampf(resonance_frequency - resonance_frequency_step, 0.0, 1.0)
+
+func _frequency_up() -> void:
+	resonance_frequency = clampf(resonance_frequency + resonance_frequency_step, 0.0, 1.0)
+
+func _amplitude_down() -> void:
+	resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step, 0.0, 1.0)
+
+func _amplitude_up() -> void:
+	resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step, 0.0, 1.0)
+
+func _update_ui() -> void:
+	var station_name: String = ["X-RAY STATION", "CHISELING STATION", "RESONANCE STATION"][station]
+	station_label.text = station_name
+	view_label.text = "VIEW: TOP  (F TO SWITCH)" if view_mode == ViewMode.TOP else "VIEW: SIDE  (F TO SWITCH)"
+	metrics_label.text = "ROCK REMOVED  %d%%    GEM DAMAGE  %d    GEM EXPOSED  %d%%" % [roundi(exposure_ratio() * 100.0), gem_damage, roundi(gem_exposure_ratio() * 100.0)]
+	progress_bar.value = resonance_good_time / maxf(0.01, resonance_hold_seconds) * 100.0
+	frequency_label.text = "YOUR FREQUENCY  %.2f" % resonance_frequency
+	amplitude_label.text = "YOUR AMPLITUDE  %.2f" % resonance_amplitude
+	resonance_panel.visible = station == Station.RESONANCE
+	chisel_hint.visible = station == Station.CHISEL
+
+func _draw() -> void:
+	_refresh_textures()
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("100c16"))
+	_draw_shop_background()
+	_draw_station(XRAY_STATION_RECT, "X-RAY SCANNER", Color("4b8490"))
+	_draw_station(CHISEL_STATION_RECT, "CHISEL BENCH", Color("8b684d"))
+	_draw_station(RESONANCE_STATION_RECT, "RESONANCE PAD", Color("66518d"))
+	_draw_material_body()
+	if station == Station.CHISEL:
+		_draw_power_meter()
+		if not dragging_rock:
+			_draw_chisel_tool()
+	elif station == Station.RESONANCE:
+		_draw_waveforms()
+
+func _draw_shop_background() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("17121b"))
+	draw_line(Vector2(0.0, 155.0), Vector2(size.x, 155.0), Color("4b3540"), 3.0)
+	for x: int in range(0, 1280, 80):
+		draw_line(Vector2(x, 0.0), Vector2(x + 180.0, 155.0), Color(0.18, 0.12, 0.18, 0.45), 2.0)
+
+func _draw_station(rect: Rect2, title: String, color: Color) -> void:
+	draw_rect(rect, Color("211a25"), true)
+	draw_rect(rect, color, false, 4.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 32.0), title, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 20, color)
+
+func _draw_material_body() -> void:
+	var texture: ImageTexture = chisel_texture
+	if station == Station.XRAY:
+		texture = xray_texture
+	elif station == Station.RESONANCE:
+		texture = gem_texture
+	# TOP and SIDE are orthographic presentations of this exact texture. SIDE
+	# compresses the whole canonical mask uniformly on Y; it never creates or
+	# independently rescales a different rock, crack, or gemstone.
+	draw_set_transform(rock_position, 0.0, _view_scale())
+	draw_texture(texture, Vector2(-MASK_HALF, -MASK_HALF))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	for chunk: Dictionary in falling_chunks:
+		var chunk_scale: Vector2 = chunk["scale"]
+		draw_set_transform(chunk["position"], float(chunk["rotation"]), chunk_scale)
+		var alpha: float = clampf(float(chunk["life"]), 0.0, 1.0)
+		draw_texture(chunk["texture"], Vector2(-MASK_HALF, -MASK_HALF), Color(1.0, 1.0, 1.0, alpha))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_power_meter() -> void:
+	var power_rect: Rect2 = Rect2(505.0, 545.0, 270.0, 20.0)
+	draw_rect(power_rect, Color("120e18"), true)
+	draw_rect(Rect2(power_rect.position, Vector2(power_rect.size.x * power_value, power_rect.size.y)), Color("e6ad4e"), true)
+	draw_rect(power_rect, Color("f6d68b"), false, 2.0)
+	draw_string(ThemeDB.fallback_font, Vector2(505.0, 540.0), "POWER  %.0f%%  — crack length" % (power_value * 100.0), HORIZONTAL_ALIGNMENT_LEFT, 270.0, 15, Color("f6d68b"))
+
+func _draw_chisel_tool() -> void:
+	var tip: Vector2 = chisel_mouse_position if CHISEL_STATION_RECT.has_point(chisel_mouse_position) else rock_position + Vector2(0.0, -MASK_HALF * _view_scale().y)
+	var direction: Vector2 = _chisel_trajectory_direction()
+	var handle: Vector2 = tip - direction * 58.0
+	draw_line(handle, tip, Color("e8d7b1"), 9.0)
+	draw_circle(handle, 7.0, Color("f5c765"))
+	for dot_index: int in range(1, 8):
+		draw_circle(tip + direction * float(dot_index * 7), 2.5, Color("f6d68b"))
+	draw_string(ThemeDB.fallback_font, tip + Vector2(12.0, -12.0), "A/D ANGLE  %+.0f°" % rad_to_deg(chisel_angle), HORIZONTAL_ALIGNMENT_LEFT, 170.0, 14, Color("f6d68b"))
+
+func _draw_waveforms() -> void:
+	var exposure: float = gem_exposure_ratio()
+	var erratic_weight: float = _resonance_erratic_weight(exposure)
+	var target_points: PackedVector2Array = PackedVector2Array()
+	var player_points: PackedVector2Array = PackedVector2Array()
+	for index: int in range(101):
+		var x: float = 680.0 + index * 5.0
+		var normalized: float = float(index) / 100.0
+		target_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + target_frequency * 2.0)) * (35.0 + target_amplitude * 35.0)))
+		player_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + resonance_frequency * 2.0)) * (35.0 + resonance_amplitude * 35.0)))
+	draw_rect(Rect2(665.0, 235.0, 520.0, 210.0), Color("1b1524"), true)
+	draw_line(Vector2(680.0, 340.0), Vector2(1180.0, 340.0), Color(0.45, 0.38, 0.5, 0.45), 1.0)
+	draw_polyline(target_points, Color(1.0, 0.35, 0.30, 0.95), 4.0)
+	draw_polyline(player_points, Color(0.4, 0.95, 0.85, 0.95), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(665.0, 225.0), "RED GEM  F %.2f  A %.2f    VOLATILITY %d%%    ALIGN %d%%" % [target_frequency, target_amplitude, roundi(erratic_weight * 100.0), roundi(_alignment_score() * 100.0)], HORIZONTAL_ALIGNMENT_LEFT, 520.0, 14, Color(0.95, 0.72, 0.72))
+
+func _close() -> void:
+	closed.emit()

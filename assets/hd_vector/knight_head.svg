@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<defs>
+ <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7b473d"/><stop offset="1" stop-color="#3a2635"/></linearGradient>
+ <linearGradient id="skin" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#ffe1bd"/><stop offset="1" stop-color="#d89578"/></linearGradient>
+ <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e8f3f1"/><stop offset="0.55" stop-color="#91a9b8"/><stop offset="1" stop-color="#506278"/></linearGradient>
+</defs>
+<!-- neck -->
+<path d="M91 190 L165 190 L177 224 L78 224 Z" fill="#c17d69" stroke="#172133" stroke-width="9" stroke-linejoin="round"/>
+<!-- hair silhouette -->
+<path d="M50 109 Q37 75 61 43 Q84 12 130 19 Q178 12 204 49 Q220 72 205 117 L186 104 L178 72 L151 91 L132 61 L105 96 L77 80 L71 116 Z" fill="url(#hair)" stroke="#172133" stroke-width="10" stroke-linejoin="round"/>
+<!-- face -->
+<path d="M70 92 Q73 53 128 50 Q183 53 188 98 L179 157 Q164 190 128 196 Q92 190 76 157 Z" fill="url(#skin)" stroke="#172133" stroke-width="9" stroke-linejoin="round"/>
+<!-- hair fringe -->
+<path d="M62 93 Q70 48 126 43 Q171 43 195 82 L174 105 L155 74 L131 104 L111 72 L88 106 Z" fill="url(#hair)" stroke="#172133" stroke-width="8" stroke-linejoin="round"/>
+<!-- eyes and brow -->
+<path d="M89 119 Q103 111 115 119" fill="none" stroke="#3a2635" stroke-width="8" stroke-linecap="round"/>
+<path d="M141 119 Q155 111 169 119" fill="none" stroke="#3a2635" stroke-width="8" stroke-linecap="round"/>
+<ellipse cx="103" cy="128" rx="6" ry="8" fill="#172133"/><ellipse cx="157" cy="128" rx="6" ry="8" fill="#172133"/>
+<circle cx="105" cy="125" r="2.5" fill="#fff4d5"/><circle cx="159" cy="125" r="2.5" fill="#fff4d5"/>
+<!-- nose and smile -->
+<path d="M128 127 L120 151 Q128 156 137 151" fill="none" stroke="#b96f63" stroke-width="5" stroke-linecap="round"/>
+<path d="M108 164 Q128 177 148 164" fill="none" stroke="#7f4050" stroke-width="6" stroke-linecap="round"/>
+<!-- blue scarf collar -->
+<path d="M72 180 Q128 203 184 180 L195 218 Q128 239 61 218 Z" fill="#2864a0" stroke="#172133" stroke-width="9" stroke-linejoin="round"/>
+<path d="M78 198 Q128 216 179 198" fill="none" stroke="#65b3d0" stroke-width="7" stroke-linecap="round" opacity=".8"/>
+<!-- highlight -->
+<path d="M84 82 Q93 59 119 55" fill="none" stroke="#ffefd3" stroke-width="7" stroke-linecap="round" opacity=".7"/>
+</svg>

@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://b555fpvoi0sc1"]
+
+[ext_resource type="Script" uid="uid://q4lm5si070g4" path="res://scripts/terrain/mud_patch.gd" id="1_mud"]
+
+[sub_resource type="CircleShape2D" id="MudShape"]
+radius = 46.0
+
+[node name="MudPatch" type="Area2D" unique_id=1724183602]
+collision_layer = 0
+monitorable = false
+script = ExtResource("1_mud")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1664382333]
+shape = SubResource("MudShape")

@@ -1,0 +1,30 @@
+# Godot 4+ specific ignores
+.godot/
+.nomedia
+
+
+# Godot-specific ignores
+.import/
+export.cfg
+export_credentials.cfg
+
+# Imported translations (automatically generated from CSV files)
+*.translation
+
+# Mono-specific ignores
+.mono/
+data_*/
+mono_crash.*.json
+
+# Ziva local data
+.ziva/
+addons/ziva_agent/
+
+# Old nested repo / backup
+BD No Ziva/
+
+# Exported web build
+BladeDancerWeb/
+
+# Local gameplay capture
+blade_dancer_capture.ogv

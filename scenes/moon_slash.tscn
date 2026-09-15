@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/moon_slash.gd" id="1_moon"]
+
+[node name="MoonSlash" type="Area2D"]
+script = ExtResource("1_moon")
+monitoring = false
+monitorable = false

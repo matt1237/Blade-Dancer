@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dseqqt72fyubw"
+path="res://.godot/imported/Resonance Cue.mp3-037d7410032f8b932b7e96b1f3101d24.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Gem Jammer/Resonance Cue.mp3"
+dest_files=["res://.godot/imported/Resonance Cue.mp3-037d7410032f8b932b7e96b1f3101d24.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

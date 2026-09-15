@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Texture2D" path="res://assets/source/Visualizer/Visualizer All 3 Colors.png" id="1_palette"]
+[ext_resource type="Shader" path="res://shaders/metronome_visualizer.gdshader" id="2_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_palette"]
+shader = ExtResource("2_shader")
+
+[node name="VisualizerPalettePreview" type="Node2D"]
+
+[node name="Background" type="ColorRect" parent="."]
+offset_right = 1280.0
+offset_bottom = 720.0
+color = Color(0.16, 0.27, 0.18, 1)
+mouse_filter = 2
+
+[node name="Effect" type="Sprite2D" parent="."]
+texture = ExtResource("1_palette")
+material = SubResource("ShaderMaterial_palette")
+position = Vector2(640, 360)
+scale = Vector2(0.52, 0.52)
+region_enabled = true
+region_rect = Rect2(1013.7143, 591.3333, 253.4286, 295.6667)

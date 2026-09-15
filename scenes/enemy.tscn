@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://bl5g8gm77qg1i"]
+
+[ext_resource type="Script" uid="uid://dne7dlvvn654h" path="res://scripts/enemy.gd" id="1_script"]
+
+[sub_resource type="CircleShape2D" id="EnemyShape"]
+radius = 14.0
+
+[sub_resource type="StyleBoxFlat" id="HealthRed"]
+bg_color = Color(0.55, 0.03, 0.03, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HealthGreen"]
+bg_color = Color(0.1, 0.85, 0.18, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[node name="Enemy" type="CharacterBody2D" unique_id=688125636 groups=["enemies"]]
+collision_layer = 2
+collision_mask = 6
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=871743592]
+shape = SubResource("EnemyShape")
+
+[node name="HealthBar" type="ProgressBar" parent="." unique_id=950126472]
+offset_left = -22.0
+offset_top = -29.0
+offset_right = 22.0
+offset_bottom = -24.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("HealthRed")
+theme_override_styles/fill = SubResource("HealthGreen")
+show_percentage = false

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://163cxolnp1v1"
+path="res://.godot/imported/Horn of the Void.mp3-82501ff5083936616d198c20a4196191.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Elite&Boss Tracks/Horn of the Void.mp3"
+dest_files=["res://.godot/imported/Horn of the Void.mp3-82501ff5083936616d198c20a4196191.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

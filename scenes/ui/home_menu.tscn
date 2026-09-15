@@ -1,0 +1,671 @@
+[gd_scene format=3 uid="uid://lvdg87ggupt4"]
+
+[ext_resource type="Script" uid="uid://cmr2cxo0hlf4k" path="res://scripts/ui/home_menu.gd" id="1_home"]
+[ext_resource type="Script" uid="uid://63tqmnaaabg5" path="res://scripts/ui/home_player_portrait.gd" id="2_portrait"]
+
+[node name="HomeMenu" type="Control" unique_id=1540440840]
+process_mode = 3
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_home")
+
+[node name="HomeTitle" type="Label" parent="." unique_id=723197138]
+layout_mode = 0
+offset_left = 220.0
+offset_top = 68.0
+offset_right = 1060.0
+offset_bottom = 112.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 34
+text = "HOME AT THE MOSSY HEARTH"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="." unique_id=253377945]
+layout_mode = 0
+offset_left = 300.0
+offset_top = 112.0
+offset_right = 980.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(0.7, 0.82, 0.65, 1)
+theme_override_font_sizes/font_size = 17
+text = "Rest, prepare, and let Grandma fuss over you for a while."
+horizontal_alignment = 1
+
+[node name="TopBar" type="Control" parent="." unique_id=456961590]
+anchors_preset = 0
+offset_left = 164.0
+offset_top = 154.0
+offset_right = 1116.0
+offset_bottom = 208.0
+
+[node name="PreviousTab" type="Button" parent="TopBar"]
+layout_mode = 0
+offset_right = 54.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 25
+text = "‹"
+tooltip_text = "Previous home section"
+
+[node name="StatusTab" type="Button" parent="TopBar" unique_id=191355509]
+layout_mode = 0
+offset_left = 64.0
+offset_right = 174.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 19
+text = "STATUS"
+
+[node name="CraftingTab" type="Button" parent="TopBar"]
+layout_mode = 0
+offset_left = 184.0
+offset_right = 294.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 19
+text = "CRAFTING"
+
+[node name="OptionsTab" type="Button" parent="TopBar"]
+layout_mode = 0
+offset_left = 304.0
+offset_right = 414.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 18
+text = "OPTIONS"
+
+[node name="SettingsTab" type="Button" parent="TopBar"]
+layout_mode = 0
+offset_left = 424.0
+offset_right = 534.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 18
+text = "SETTINGS"
+
+[node name="NextTab" type="Button" parent="TopBar"]
+layout_mode = 0
+offset_left = 544.0
+offset_right = 598.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 25
+text = "›"
+tooltip_text = "Next home section"
+
+[node name="StorageTab" type="Button" parent="TopBar" unique_id=1873849727]
+visible = false
+
+[node name="KitchenTab" type="Button" parent="TopBar" unique_id=846481892]
+visible = false
+
+[node name="AdventureButton" type="Button" parent="TopBar" unique_id=1219328399]
+layout_mode = 0
+offset_left = 710.0
+offset_right = 952.0
+offset_bottom = 50.0
+theme_override_font_sizes/font_size = 19
+text = "RETURN TO ADVENTURE"
+
+[node name="OptionsPage" type="Panel" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="OptionsTitle" type="Label" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 46.0
+offset_right = 872.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.95, 0.74, 0.45, 1)
+theme_override_font_sizes/font_size = 28
+text = "CONTROL OPTIONS"
+horizontal_alignment = 1
+
+[node name="KeyboardMouse" type="Button" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 132.0
+offset_right = 456.0
+offset_bottom = 202.0
+theme_override_font_sizes/font_size = 20
+text = "KEYBOARD + MOUSE"
+
+[node name="Controller" type="Button" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 496.0
+offset_top = 132.0
+offset_right = 802.0
+offset_bottom = 202.0
+theme_override_font_sizes/font_size = 20
+text = "CONTROLLER"
+
+[node name="ControlDescription" type="Label" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 236.0
+offset_right = 802.0
+offset_bottom = 344.0
+theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
+theme_override_font_sizes/font_size = 18
+text = "Keyboard + Mouse\nWASD: Move    Mouse: Aim    Space: Dash    Left Click: Chakram    Hold RMB: Grapple    Z / X: Sword Style"
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+
+[node name="MetronomeVisualizer" type="Button" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 72.0
+offset_right = 802.0
+offset_bottom = 116.0
+theme_override_font_sizes/font_size = 18
+text = "METRONOME VISUALIZER: ON"
+
+[node name="ControllerStatus" type="Label" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 360.0
+offset_right = 802.0
+offset_bottom = 402.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 18
+text = "ACTIVE: KEYBOARD + MOUSE"
+horizontal_alignment = 1
+
+[node name="VisualStyle" type="Button" parent="OptionsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 406.0
+offset_right = 802.0
+offset_bottom = 432.0
+theme_override_font_sizes/font_size = 18
+text = "VISUAL STYLE: CLASSIC"
+
+[node name="SettingsPage" type="Panel" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="SettingsTitle" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 44.0
+offset_right = 872.0
+offset_bottom = 88.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 28
+text = "AUDIO SETTINGS"
+horizontal_alignment = 1
+
+[node name="SettingsHint" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 94.0
+offset_right = 802.0
+offset_bottom = 130.0
+theme_override_colors/font_color = Color(0.7, 0.82, 0.65, 1)
+theme_override_font_sizes/font_size = 17
+text = "Adjust the mix for music and sound effects. Changes apply immediately."
+horizontal_alignment = 1
+
+[node name="MusicVolumeLabel" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 164.0
+offset_right = 320.0
+offset_bottom = 198.0
+theme_override_font_sizes/font_size = 20
+text = "MUSIC VOLUME"
+
+[node name="MusicVolumeSlider" type="HSlider" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 350.0
+offset_top = 164.0
+offset_right = 720.0
+offset_bottom = 198.0
+min_value = 0.0
+max_value = 100.0
+step = 1.0
+value = 100.0
+focus_mode = 2
+
+[node name="MusicVolumeValue" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 740.0
+offset_top = 164.0
+offset_right = 802.0
+offset_bottom = 198.0
+theme_override_font_sizes/font_size = 20
+text = "100%"
+horizontal_alignment = 2
+
+[node name="SfxVolumeLabel" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 246.0
+offset_right = 320.0
+offset_bottom = 280.0
+theme_override_font_sizes/font_size = 20
+text = "SOUND FX VOLUME"
+
+[node name="SfxVolumeSlider" type="HSlider" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 350.0
+offset_top = 246.0
+offset_right = 720.0
+offset_bottom = 280.0
+min_value = 0.0
+max_value = 100.0
+step = 1.0
+value = 100.0
+focus_mode = 2
+
+[node name="SfxVolumeValue" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 740.0
+offset_top = 246.0
+offset_right = 802.0
+offset_bottom = 280.0
+theme_override_font_sizes/font_size = 20
+text = "100%"
+horizontal_alignment = 2
+
+[node name="MetronomeColorButton" type="Button" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 250.0
+offset_top = 324.0
+offset_right = 702.0
+offset_bottom = 368.0
+theme_override_font_sizes/font_size = 18
+text = "METRONOME COLOR: SUN GOLD"
+
+[node name="SettingsFooter" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 382.0
+offset_right = 802.0
+offset_bottom = 416.0
+theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
+theme_override_font_sizes/font_size = 16
+text = "Volume preferences are saved automatically."
+horizontal_alignment = 1
+
+[node name="StatusPage" type="Panel" parent="." unique_id=170298948]
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="Portrait" type="Control" parent="StatusPage" unique_id=865525864]
+anchors_preset = 0
+offset_left = 42.0
+offset_top = 38.0
+offset_right = 362.0
+offset_bottom = 385.0
+script = ExtResource("2_portrait")
+
+[node name="EquipmentText" type="RichTextLabel" parent="StatusPage" unique_id=774386491]
+layout_mode = 0
+offset_left = 400.0
+offset_top = 48.0
+offset_right = 890.0
+offset_bottom = 260.0
+theme_override_font_sizes/normal_font_size = 20
+bbcode_enabled = true
+scroll_active = false
+
+[node name="FoodSlotLabel" type="Label" parent="StatusPage" unique_id=1856990651]
+layout_mode = 0
+offset_left = 402.0
+offset_top = 270.0
+offset_right = 620.0
+offset_bottom = 302.0
+theme_override_colors/font_color = Color(0.72, 0.9, 0.62, 1)
+theme_override_font_sizes/font_size = 19
+text = "PREPARED FOOD SLOT"
+
+[node name="FoodSlot" type="Button" parent="StatusPage" unique_id=1301656735]
+layout_mode = 0
+offset_left = 402.0
+offset_top = 310.0
+offset_right = 662.0
+offset_bottom = 392.0
+theme_override_font_sizes/font_size = 18
+text = "PREPARED FOOD
+None"
+
+[node name="StatusHint" type="Label" parent="StatusPage" unique_id=1177097171]
+layout_mode = 0
+offset_left = 682.0
+offset_top = 310.0
+offset_right = 904.0
+offset_bottom = 392.0
+theme_override_colors/font_color = Color(0.65, 0.72, 0.65, 1)
+theme_override_font_sizes/font_size = 15
+text = "Prepare meals in the Kitchen.
+Additional food slots can be
+unlocked later."
+
+[node name="FoodListPanel" type="Panel" parent="StatusPage" unique_id=378472941]
+visible = false
+layout_mode = 0
+offset_left = 380.0
+offset_top = 28.0
+offset_right = 650.0
+offset_bottom = 258.0
+
+[node name="Title" type="Label" parent="StatusPage/FoodListPanel" unique_id=950040626]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 12.0
+offset_right = 256.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(0.72, 0.9, 0.62, 1)
+theme_override_font_sizes/font_size = 19
+text = "CHOOSE PREPARED FOOD"
+horizontal_alignment = 1
+
+[node name="FoodButtons" type="VBoxContainer" parent="StatusPage/FoodListPanel" unique_id=200234595]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 56.0
+offset_right = 256.0
+offset_bottom = 214.0
+theme_override_constants/separation = 8
+
+[node name="FoodTooltipPanel" type="Panel" parent="StatusPage" unique_id=610714495]
+visible = false
+layout_mode = 0
+offset_left = 660.0
+offset_top = 28.0
+offset_right = 920.0
+offset_bottom = 258.0
+
+[node name="FoodTooltipText" type="RichTextLabel" parent="StatusPage/FoodTooltipPanel" unique_id=156340259]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 12.0
+offset_right = 246.0
+offset_bottom = 216.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+scroll_active = false
+
+[node name="StatusFeedback" type="Label" parent="StatusPage" unique_id=1721363040]
+layout_mode = 0
+offset_left = 402.0
+offset_top = 397.0
+offset_right = 904.0
+offset_bottom = 425.0
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 15
+horizontal_alignment = 1
+
+[node name="CraftingPage" type="Panel" parent="."]
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="CraftingTitle" type="Label" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 42.0
+offset_right = 872.0
+offset_bottom = 86.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 28
+text = "CRAFTING"
+horizontal_alignment = 1
+
+[node name="CraftingHint" type="Label" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 92.0
+offset_right = 832.0
+offset_bottom = 128.0
+theme_override_colors/font_color = Color(0.7, 0.82, 0.65, 1)
+theme_override_font_sizes/font_size = 17
+text = "Choose a place to prepare, store, or improve your gear."
+horizontal_alignment = 1
+
+[node name="StorageButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 156.0
+offset_right = 350.0
+offset_bottom = 224.0
+theme_override_font_sizes/font_size = 20
+text = "STORAGE"
+
+[node name="KitchenButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 361.0
+offset_top = 156.0
+offset_right = 591.0
+offset_bottom = 224.0
+theme_override_font_sizes/font_size = 20
+text = "KITCHEN"
+
+[node name="ForgeButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 602.0
+offset_top = 156.0
+offset_right = 832.0
+offset_bottom = 224.0
+theme_override_colors/font_color = Color(0.82, 0.82, 0.82, 1)
+theme_override_font_sizes/font_size = 20
+text = "FORGE — LOCKED"
+
+[node name="ForgeRequirement" type="Label" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 232.0
+offset_right = 832.0
+offset_bottom = 264.0
+theme_override_colors/font_color = Color(0.66, 0.74, 0.64, 1)
+theme_override_font_sizes/font_size = 16
+text = "Rescue the Blacksmith after Mine Wave 10, then purchase the Forge."
+horizontal_alignment = 1
+
+[node name="GrindstoneButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 284.0
+offset_right = 350.0
+offset_bottom = 352.0
+theme_override_font_sizes/font_size = 20
+text = "GRINDSTONE"
+
+[node name="GemJamButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 361.0
+offset_top = 284.0
+offset_right = 591.0
+offset_bottom = 352.0
+theme_override_font_sizes/font_size = 20
+text = "JEWEL JAM"
+tooltip_text = "Refine a gemstone at the Jewel Guy's workshop."
+
+[node name="ArmoryButton" type="Button" parent="CraftingPage"]
+layout_mode = 0
+offset_left = 602.0
+offset_top = 284.0
+offset_right = 832.0
+offset_bottom = 352.0
+theme_override_font_sizes/font_size = 20
+text = "ARMORY"
+tooltip_text = "Browse and equip gear found in chests."
+
+[node name="StoragePage" type="Panel" parent="." unique_id=730444274]
+visible = false
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="StorageText" type="RichTextLabel" parent="StoragePage" unique_id=2066390799]
+layout_mode = 0
+offset_left = 115.0
+offset_top = 42.0
+offset_right = 837.0
+offset_bottom = 394.0
+theme_override_font_sizes/normal_font_size = 20
+bbcode_enabled = true
+
+[node name="KitchenPage" type="Panel" parent="." unique_id=761151564]
+visible = false
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="GrandmaLabel" type="Label" parent="KitchenPage" unique_id=687992006]
+layout_mode = 0
+offset_left = 38.0
+offset_top = 34.0
+offset_right = 350.0
+offset_bottom = 82.0
+theme_override_colors/font_color = Color(0.94, 0.78, 0.5, 1)
+theme_override_font_sizes/font_size = 22
+text = "Grandma's Stove"
+horizontal_alignment = 1
+
+[node name="CraftingSlot" type="Button" parent="KitchenPage" unique_id=964490724]
+layout_mode = 0
+offset_left = 92.0
+offset_top = 98.0
+offset_right = 296.0
+offset_bottom = 302.0
+theme_override_font_sizes/font_size = 24
+text = "+"
+
+[node name="CraftProgress" type="ProgressBar" parent="KitchenPage" unique_id=1849627492]
+visible = false
+layout_mode = 0
+offset_left = 98.0
+offset_top = 264.0
+offset_right = 290.0
+offset_bottom = 294.0
+show_percentage = false
+
+[node name="CraftTimer" type="Label" parent="KitchenPage" unique_id=1505844490]
+visible = false
+layout_mode = 0
+offset_left = 92.0
+offset_top = 304.0
+offset_right = 296.0
+offset_bottom = 338.0
+theme_override_colors/font_color = Color(1, 0.84, 0.42, 1)
+theme_override_font_sizes/font_size = 20
+text = "50s"
+horizontal_alignment = 1
+
+[node name="SlotHint" type="Label" parent="KitchenPage" unique_id=365928581]
+layout_mode = 0
+offset_left = 56.0
+offset_top = 342.0
+offset_right = 332.0
+offset_bottom = 394.0
+theme_override_colors/font_color = Color(0.66, 0.74, 0.64, 1)
+theme_override_font_sizes/font_size = 15
+text = "One cooking slot available.
+Homestead upgrades can add more."
+horizontal_alignment = 1
+
+[node name="CookingText" type="RichTextLabel" parent="KitchenPage" unique_id=2120546476]
+layout_mode = 0
+offset_left = 380.0
+offset_top = 30.0
+offset_right = 902.0
+offset_bottom = 285.0
+theme_override_font_sizes/normal_font_size = 19
+bbcode_enabled = true
+scroll_active = false
+
+[node name="RecipeListPanel" type="Panel" parent="KitchenPage" unique_id=627652719]
+visible = false
+layout_mode = 0
+offset_left = 340.0
+offset_top = 44.0
+offset_right = 610.0
+offset_bottom = 286.0
+
+[node name="Title" type="Label" parent="KitchenPage/RecipeListPanel" unique_id=1261011038]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = 254.0
+offset_bottom = 44.0
+theme_override_colors/font_color = Color(1, 0.82, 0.42, 1)
+theme_override_font_sizes/font_size = 20
+text = "CHOOSE A RECIPE"
+horizontal_alignment = 1
+
+[node name="RecipeButtons" type="VBoxContainer" parent="KitchenPage/RecipeListPanel" unique_id=332038994]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 56.0
+offset_right = 254.0
+offset_bottom = 224.0
+theme_override_constants/separation = 8
+
+[node name="RecipeTooltipPanel" type="Panel" parent="KitchenPage" unique_id=1878884785]
+visible = false
+layout_mode = 0
+offset_left = 620.0
+offset_top = 44.0
+offset_right = 920.0
+offset_bottom = 286.0
+
+[node name="RecipeTooltipText" type="RichTextLabel" parent="KitchenPage/RecipeTooltipPanel" unique_id=1647318305]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 12.0
+offset_right = 286.0
+offset_bottom = 228.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+scroll_active = false
+
+[node name="CauldronCatchButton" type="Button" parent="KitchenPage"]
+layout_mode = 0
+offset_left = 481.0
+offset_top = 296.0
+offset_right = 801.0
+offset_bottom = 346.0
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 19
+text = "🍲 PLAY CAULDRON CATCH"
+
+[node name="CauldronCatchHighScoreLabel" type="Label" parent="KitchenPage"]
+layout_mode = 0
+offset_left = 481.0
+offset_top = 349.0
+offset_right = 801.0
+offset_bottom = 367.0
+theme_override_colors/font_color = Color(0.66, 0.74, 0.64, 1)
+theme_override_font_sizes/font_size = 14
+text = "High Score: 0"
+horizontal_alignment = 1
+
+[node name="FeedbackLabel" type="Label" parent="KitchenPage" unique_id=599808570]
+layout_mode = 0
+offset_left = 380.0
+offset_top = 370.0
+offset_right = 902.0
+offset_bottom = 406.0
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 16
+horizontal_alignment = 1

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://b34luapwnkuow"
+path="res://.godot/imported/Lanterns at Dusk.mp3-599ef5904bc5f9346b1f10554d059ff6.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Home/Lanterns at Dusk.mp3"
+dest_files=["res://.godot/imported/Lanterns at Dusk.mp3-599ef5904bc5f9346b1f10554d059ff6.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

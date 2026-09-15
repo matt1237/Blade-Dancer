@@ -1,0 +1,207 @@
+[gd_scene format=3 uid="uid://k1xevxjodugm"]
+
+[ext_resource type="Script" uid="uid://d1yyalramk0ar" path="res://scripts/minigames/sword_smithing.gd" id="1_smith"]
+
+[node name="SwordSmithing" type="Control" unique_id=1732886124]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_smith")
+
+[node name="HUD" type="Control" parent="." unique_id=822425308]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="HUD" unique_id=52278968]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 56.0
+offset_right = 1160.0
+offset_bottom = 100.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 34
+text = "SWORD SMITHING"
+horizontal_alignment = 1
+
+[node name="Instructions" type="Label" parent="HUD" unique_id=551097597]
+layout_mode = 0
+offset_left = 120.0
+offset_top = 108.0
+offset_right = 1080.0
+offset_bottom = 150.0
+theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
+theme_override_font_sizes/font_size = 17
+text = "Drag the billet: forge to heat, anvil to hammer, trough to quench. Press F to flip it."
+horizontal_alignment = 1
+
+[node name="Timer" type="Label" parent="HUD" unique_id=2087983056]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 165.0
+offset_right = 400.0
+offset_bottom = 205.0
+theme_override_colors/font_color = Color(1, 0.84, 0.42, 1)
+theme_override_font_sizes/font_size = 24
+text = "TIME  2:00"
+
+[node name="StrikeCount" type="Label" parent="HUD" unique_id=1908764499]
+layout_mode = 0
+offset_left = 450.0
+offset_top = 165.0
+offset_right = 750.0
+offset_bottom = 205.0
+theme_override_colors/font_color = Color(0.82, 0.82, 0.76, 1)
+theme_override_font_sizes/font_size = 20
+text = "HAMMER STRIKES  0"
+horizontal_alignment = 1
+
+[node name="Score" type="Label" parent="HUD" unique_id=308352277]
+layout_mode = 0
+offset_left = 820.0
+offset_top = 165.0
+offset_right = 1160.0
+offset_bottom = 205.0
+theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 1)
+theme_override_font_sizes/font_size = 20
+text = "PROJECTED SCORE  0"
+horizontal_alignment = 2
+
+[node name="HammerCharge" type="ProgressBar" parent="HUD" unique_id=1902935388]
+layout_mode = 0
+offset_left = 505.0
+offset_top = 462.0
+offset_right = 895.0
+offset_bottom = 482.0
+value = 100.0
+show_percentage = false
+
+[node name="HammerChargeLabel" type="Label" parent="HUD" unique_id=1494671524]
+layout_mode = 0
+offset_left = 505.0
+offset_top = 484.0
+offset_right = 895.0
+offset_bottom = 506.0
+theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
+theme_override_font_sizes/font_size = 13
+text = "HAMMER POWER — WAIT FOR A FULL BAR"
+horizontal_alignment = 1
+
+[node name="Bellows" type="Button" parent="HUD" unique_id=967047222]
+layout_mode = 0
+offset_left = 90.0
+offset_top = 485.0
+offset_right = 210.0
+offset_bottom = 527.0
+theme_override_font_sizes/font_size = 16
+text = "BELLOWS"
+
+[node name="BellowsCharge" type="ProgressBar" parent="HUD" unique_id=688450902]
+layout_mode = 0
+offset_left = 225.0
+offset_top = 496.0
+offset_right = 420.0
+offset_bottom = 516.0
+value = 100.0
+show_percentage = false
+
+[node name="ForgeStage" type="Label" parent="HUD" unique_id=657185778]
+layout_mode = 0
+offset_left = 90.0
+offset_top = 530.0
+offset_right = 420.0
+offset_bottom = 558.0
+theme_override_colors/font_color = Color(1, 0.55, 0.25, 1)
+theme_override_font_sizes/font_size = 16
+text = "FORGE: COOLING"
+
+[node name="QuenchHeat" type="Label" parent="HUD" unique_id=1566487768]
+layout_mode = 0
+offset_left = 820.0
+offset_top = 202.0
+offset_right = 1160.0
+offset_bottom = 232.0
+theme_override_colors/font_color = Color(0.45, 0.8, 0.95, 1)
+theme_override_font_sizes/font_size = 16
+text = "IDEAL QUENCH HEAT  0%"
+horizontal_alignment = 2
+
+[node name="Accuracy" type="Label" parent="HUD" unique_id=1908054229]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 565.0
+offset_right = 400.0
+offset_bottom = 603.0
+theme_override_colors/font_color = Color(1, 0.84, 0.42, 1)
+theme_override_font_sizes/font_size = 22
+text = "SHAPE ACCURACY  0.0%"
+
+[node name="Heat" type="Label" parent="HUD" unique_id=1915201799]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 607.0
+offset_right = 400.0
+offset_bottom = 641.0
+theme_override_colors/font_color = Color(1, 0.55, 0.25, 1)
+theme_override_font_sizes/font_size = 18
+text = "HEAT  COLD"
+
+[node name="Quality" type="Label" parent="HUD" unique_id=1813509979]
+layout_mode = 0
+offset_left = 510.0
+offset_top = 510.0
+offset_right = 900.0
+offset_bottom = 548.0
+theme_override_colors/font_color = Color(0.7, 0.9, 0.7, 1)
+theme_override_font_sizes/font_size = 22
+text = "CRUDE"
+horizontal_alignment = 1
+
+[node name="Status" type="Label" parent="HUD" unique_id=1569951046]
+layout_mode = 0
+offset_left = 400.0
+offset_top = 550.0
+offset_right = 920.0
+offset_bottom = 584.0
+theme_override_colors/font_color = Color(0.82, 0.82, 0.76, 1)
+theme_override_font_sizes/font_size = 17
+text = "Move the billet into the forge to heat it."
+horizontal_alignment = 1
+
+[node name="Reset" type="Button" parent="HUD" unique_id=1059127180]
+layout_mode = 0
+offset_left = 950.0
+offset_top = 510.0
+offset_right = 1080.0
+offset_bottom = 554.0
+theme_override_font_sizes/font_size = 16
+text = "RESET"
+
+[node name="Close" type="Button" parent="HUD" unique_id=1258157787]
+layout_mode = 0
+offset_left = 1110.0
+offset_top = 510.0
+offset_right = 1200.0
+offset_bottom = 554.0
+theme_override_font_sizes/font_size = 16
+text = "CLOSE"
+
+[node name="Finish" type="Label" parent="HUD" unique_id=863301643]
+visible = false
+layout_mode = 0
+offset_left = 420.0
+offset_top = 210.0
+offset_right = 840.0
+offset_bottom = 330.0
+theme_override_colors/font_color = Color(1, 0.86, 0.45, 1)
+theme_override_font_sizes/font_size = 25
+text = "QUENCHED!"
+horizontal_alignment = 1
+vertical_alignment = 1

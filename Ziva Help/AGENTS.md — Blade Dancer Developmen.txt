@@ -1,0 +1,206 @@
+AGENTS.md — Blade Dancer Development Protocol
+
+Mission
+
+Work on Blade Dancer efficiently, conservatively, and with minimal unnecessary repository scanning.
+Prefer targeted inspection and small patches over broad rewrites.
+
+Golden Rules
+
+DO NOT scan the entire project unless the task genuinely requires it.
+
+Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
+
+Read PROJECT_MAP.md first for system/file locations.
+
+Start with the smallest plausible set of files. Initial inspection target: 3–6 files.
+
+Do not inspect binary art/audio/video assets unless the task explicitly concerns them.
+
+Ignore build/export/cache/import folders.
+
+Preserve working systems outside the requested scope.
+
+Prefer minimal patches. Do not refactor unrelated code during a bug fix or tuning task.
+
+For tuning tasks, change exposed/config values before rewriting behavior.
+
+If two hypotheses fail, stop broad experimentation and summarize:
+
+what was tested
+
+what was ruled out
+
+the next most likely cause
+
+Efficient Investigation Protocol
+
+For every task:
+
+1. Define the target
+
+State internally:
+
+desired behavior
+
+current incorrect behavior
+
+likely subsystem
+
+likely files
+
+2. Locate before reading
+
+Use symbol/text search first.
+Examples:
+
+class names
+
+function names
+
+node names
+
+signals
+
+exported variables
+
+scene names
+
+resource names
+
+Do not recursively read every script.
+
+3. Inspect narrowly
+
+Open only the files directly connected to the target.
+Expand outward only when a concrete dependency points there.
+
+4. Form a hypothesis
+
+Before editing, identify the most likely cause.
+Avoid changing several unrelated systems at once.
+
+5. Patch minimally
+
+Make the smallest change that can prove or fix the hypothesis.
+
+6. Validate
+
+Run the narrowest useful test/check first.
+Do not run expensive project-wide operations unless necessary.
+
+7. Report
+
+Summarize:
+
+files changed
+
+behavior changed
+
+important values changed
+
+anything still uncertain
+
+Godot-Specific Rules
+
+Treat .godot/, imported caches, exports, builds, screenshots, recordings, reference art, and generated files as non-source unless explicitly needed.
+
+Prefer script/resource inspection over parsing large scenes when the script reference is already known.
+
+Do not rewrite .tscn files wholesale for small changes.
+
+Preserve node paths, signal wiring, resource UIDs, and scene inheritance unless the task specifically requires changing them.
+
+Prefer @export variables or dedicated Resources for gameplay tuning.
+
+Keep boss balance/tuning values separate from core combat logic where practical.
+
+Do not alter global combat systems to fix one boss unless evidence shows the bug is global.
+
+Search for all references to a function/signal before renaming or deleting it.
+
+Boss-Fight Tuning Protocol
+
+When tuning a boss:
+
+Identify the boss scene and primary behavior script.
+
+Identify the boss tuning/config resource or exported variables.
+
+Identify only the player/combat systems directly touched by the boss.
+
+Tune data first:
+
+health
+
+damage
+
+cooldowns
+
+telegraph timings
+
+movement speed
+
+recovery windows
+
+phase thresholds
+
+aggression/range values
+
+Change logic only when tuning cannot produce the desired behavior.
+
+Never perform a repo-wide combat rewrite for a boss-specific tuning request without explicit approval.
+
+Debugging Protocol
+
+Use this order:
+
+Reproduce / understand symptom.
+
+Search exact relevant symbols.
+
+Trace one execution path.
+
+Check state/timing/signals.
+
+Check collision/layers/masks if physical interaction is involved.
+
+Check scene wiring/resources.
+
+Patch one likely cause.
+
+Re-test.
+
+Only then broaden scope.
+
+Avoid shotgun debugging.
+
+Context Budget
+
+Treat context as expensive.
+
+Prefer summaries over dumping entire files.
+
+Do not reopen unchanged files unnecessarily.
+
+Keep a short working set.
+
+Use PROJECT_MAP.md and DEBUG_LOG.md instead of rediscovering architecture every prompt.
+
+Blade Dancer Design Constraint
+
+Technical changes should preserve the game's core identity:
+
+physical, momentum-aware sword combat
+
+readable, tactile impacts and parries
+
+high player agency and skill expression
+
+strong combat clarity
+
+minimal unnecessary complexity
+
+systems should earn their place through feel, gameplay, or progression
+
+When a requested implementation conflicts with an established design rule, flag the conflict before making a large architectural change.

@@ -1,0 +1,380 @@
+[gd_scene format=3 uid="uid://7pimktqretkv"]
+
+[ext_resource type="Script" uid="uid://cxv3chsa37x5y" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="PackedScene" uid="uid://bjkk6ridxq32u" path="res://scenes/player.tscn" id="2_player"]
+[ext_resource type="Script" uid="uid://ck6hpchpuqjgm" path="res://scripts/wave_spawner.gd" id="4_spawner"]
+[ext_resource type="PackedScene" uid="uid://diqb4kj5ha7b1" path="res://scenes/arena_bounds.tscn" id="5_bounds"]
+[ext_resource type="AudioStream" uid="uid://bnal7oir7d7p0" path="res://scenes/New_Project.mp3" id="6_tefeu"]
+[ext_resource type="Script" uid="uid://coc8ntld1rtne" path="res://scripts/forest_floor.gd" id="8_forest_floor"]
+[ext_resource type="Script" uid="uid://ch2o20nmco8b8" path="res://scripts/combat_presentation_fx.gd" id="9_presentation_fx"]
+[ext_resource type="PackedScene" path="res://scenes/terrain/arena_generator.tscn" id="10_terrain"]
+[ext_resource type="Script" uid="uid://dtqs4kc3847s7" path="res://scripts/combat/melee_engagement_director.gd" id="11_engagement"]
+[ext_resource type="PackedScene" path="res://scenes/ui/end_run_hub.tscn" id="12_end_hub"]
+[ext_resource type="PackedScene" uid="uid://lvdg87ggupt4" path="res://scenes/ui/home_menu.tscn" id="13_home_menu"]
+[ext_resource type="Script" uid="uid://o45dewrdk17v" path="res://scripts/ui/metronome_top_bar.gd" id="14_metronome_bar"]
+[ext_resource type="Script" uid="uid://myejp7jm60cp" path="res://scripts/forest_road.gd" id="15_forest_road"]
+[ext_resource type="Script" uid="uid://crsx47ons3hhp" path="res://scripts/forest_ambient_fx.gd" id="16_forest_ambient_fx"]
+[ext_resource type="PackedScene" path="res://scenes/chasm/chasm_stage.tscn" id="17_chasm_stage"]
+[ext_resource type="PackedScene" path="res://scenes/ui/mobile_controls.tscn" id="18_mobile_controls"]
+
+[sub_resource type="Environment" id="Environment_fx"]
+background_mode = 3
+glow_levels/1 = 0.2
+glow_levels/2 = 0.06
+glow_levels/3 = 0.02
+glow_intensity = 0.24
+glow_strength = 0.35
+glow_bloom = 0.015
+glow_hdr_threshold = 2.0
+glow_hdr_scale = 1.0
+
+[node name="Main" type="Node2D" unique_id=989204033]
+script = ExtResource("1_main")
+
+[node name="ForestFloor" type="Node2D" parent="." unique_id=1685159871]
+script = ExtResource("8_forest_floor")
+
+[node name="ForestRoad" type="Node2D" parent="." unique_id=1257125729]
+script = ExtResource("15_forest_road")
+
+[node name="ForestAmbientFX" type="Node2D" parent="." unique_id=1921020497]
+script = ExtResource("16_forest_ambient_fx")
+
+[node name="ChasmStage" parent="." instance=ExtResource("17_chasm_stage")]
+visible = false
+
+[node name="PresentationCamera" type="Camera2D" parent="." unique_id=594291055]
+position = Vector2(640, 360)
+enabled = false
+
+[node name="ForestEnvironment" type="WorldEnvironment" parent="." unique_id=1689947316]
+environment = SubResource("Environment_fx")
+
+[node name="CombatPresentationFX" type="Node2D" parent="." unique_id=1409471463]
+script = ExtResource("9_presentation_fx")
+
+[node name="Player" parent="." unique_id=1620303111 instance=ExtResource("2_player")]
+z_index = 2
+position = Vector2(640, 360)
+
+[node name="MeleeEngagementDirector" type="Node2D" parent="." unique_id=234598162]
+script = ExtResource("11_engagement")
+
+[node name="ArenaBounds" parent="." unique_id=1993100453 instance=ExtResource("5_bounds")]
+
+[node name="ArenaGenerator" parent="." unique_id=1396902278 instance=ExtResource("10_terrain")]
+z_index = 1
+
+[node name="WaveSpawner" type="Node2D" parent="." unique_id=876560019]
+script = ExtResource("4_spawner")
+
+[node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1858005260]
+layer = 2
+
+[node name="MetronomeTopBar" type="Control" parent="CanvasLayer" unique_id=715980016]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("14_metronome_bar")
+
+[node name="WaveLabel" type="Label" parent="CanvasLayer" unique_id=373610654]
+offset_left = 20.0
+offset_top = 18.0
+offset_right = 420.0
+offset_bottom = 48.0
+theme_override_font_sizes/font_size = 24
+text = "Wave: 0"
+
+[node name="WaveTimerLabel" type="Label" parent="CanvasLayer" unique_id=37799744]
+offset_left = 127.0
+offset_top = 21.0
+offset_right = 288.0
+offset_bottom = 47.0
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+theme_override_font_sizes/font_size = 18
+text = "TIME: 30"
+
+[node name="HealthLabel" type="Label" parent="CanvasLayer" unique_id=1248065138]
+offset_left = 20.0
+offset_top = 48.0
+offset_right = 420.0
+offset_bottom = 78.0
+theme_override_colors/font_color = Color(0.3, 1, 0.35, 1)
+theme_override_font_sizes/font_size = 24
+text = "HP: 100 / 100"
+
+[node name="StatusLabel" type="Label" parent="CanvasLayer" unique_id=1145134835]
+offset_left = 20.0
+offset_top = 99.0
+offset_right = 500.0
+offset_bottom = 129.0
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+theme_override_font_sizes/font_size = 20
+text = "Chakram: READY"
+
+[node name="StyleLabel" type="Label" parent="CanvasLayer" unique_id=173059501]
+offset_left = 20.0
+offset_top = 122.0
+offset_right = 470.0
+offset_bottom = 148.0
+theme_override_colors/font_color = Color(0.65, 0.82, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Sword: Metronome | Z / X to change"
+
+[node name="FlowLabel" type="Label" parent="CanvasLayer" unique_id=1616805849]
+offset_left = 20.0
+offset_top = 238.0
+offset_right = 300.0
+offset_bottom = 264.0
+theme_override_colors/font_color = Color(0.65, 0.82, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "Flow: 0%"
+
+[node name="FlowBar" type="ProgressBar" parent="CanvasLayer" unique_id=1563572663]
+offset_left = 20.0
+offset_top = 78.0
+offset_right = 240.0
+offset_bottom = 90.0
+show_percentage = false
+
+[node name="FlowTrack" type="ColorRect" parent="CanvasLayer" unique_id=329096316]
+offset_left = 20.0
+offset_top = 78.0
+offset_right = 240.0
+offset_bottom = 90.0
+mouse_filter = 2
+color = Color(0.08, 0.1, 0.15, 0.95)
+
+[node name="FlowFill" type="ColorRect" parent="CanvasLayer" unique_id=1074333201]
+offset_left = 20.0
+offset_top = 78.0
+offset_right = 20.0
+offset_bottom = 90.0
+mouse_filter = 2
+
+[node name="FlowSparkle" type="Label" parent="CanvasLayer" unique_id=1781559524]
+offset_left = 245.0
+offset_top = 73.0
+offset_right = 285.0
+offset_bottom = 103.0
+theme_override_colors/font_color = Color(1, 0.9, 0.35, 1)
+theme_override_font_sizes/font_size = 22
+text = "✦"
+
+[node name="DashBar" type="ProgressBar" parent="CanvasLayer" unique_id=1054801143]
+offset_left = 20.0
+offset_top = 136.0
+offset_right = 190.0
+offset_bottom = 148.0
+show_percentage = false
+
+[node name="DashLabel" type="Label" parent="CanvasLayer" unique_id=1044347078]
+offset_left = 26.0
+offset_top = 155.0
+offset_right = 161.0
+offset_bottom = 181.0
+theme_override_colors/font_color = Color(0.55, 0.85, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "Dash: 1 / 1"
+
+[node name="GrappleLabel" type="Label" parent="CanvasLayer" unique_id=562714382]
+offset_left = 26.0
+offset_top = 182.0
+offset_right = 250.0
+offset_bottom = 208.0
+theme_override_colors/font_color = Color(1, 0.72, 0.3, 1)
+theme_override_font_sizes/font_size = 16
+text = "Grapple: READY x1"
+
+[node name="DeflectLabel" type="Label" parent="CanvasLayer" unique_id=259376165]
+offset_left = 26.0
+offset_top = 206.0
+offset_right = 240.0
+offset_bottom = 231.0
+theme_override_colors/font_color = Color(0.7, 0.9, 1, 1)
+theme_override_font_sizes/font_size = 16
+text = "Deflect: -"
+
+[node name="ScoreLabel" type="Label" parent="CanvasLayer" unique_id=1940100778]
+offset_left = 1067.0
+offset_top = 21.0
+offset_right = 1266.0
+offset_bottom = 49.0
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+theme_override_font_sizes/font_size = 20
+text = "Score: 0"
+
+[node name="BonusPanel" type="Panel" parent="CanvasLayer" unique_id=1509715708]
+process_mode = 3
+visible = false
+offset_left = 190.0
+offset_top = 90.0
+offset_right = 1090.0
+offset_bottom = 660.0
+
+[node name="BonusTitle" type="Label" parent="CanvasLayer/BonusPanel" unique_id=1932837863]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 20.0
+offset_right = 870.0
+offset_bottom = 58.0
+theme_override_font_sizes/font_size = 24
+text = "WAVE COMPLETE - CHOOSE A BONUS"
+
+[node name="Bonus1" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1402814263]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 78.0
+offset_right = 500.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 18
+text = "Bonus 1 | Rank 1 / 7"
+
+[node name="Bonus1Help" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1366352622]
+layout_mode = 0
+offset_left = 508.0
+offset_top = 78.0
+offset_right = 552.0
+offset_bottom = 120.0
+theme_override_font_sizes/font_size = 20
+text = "?"
+
+[node name="Bonus1Details" type="RichTextLabel" parent="CanvasLayer/BonusPanel" unique_id=252019523]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 122.0
+offset_right = 552.0
+offset_bottom = 166.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="Bonus2" type="Button" parent="CanvasLayer/BonusPanel" unique_id=703944368]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 176.0
+offset_right = 500.0
+offset_bottom = 218.0
+theme_override_font_sizes/font_size = 18
+text = "Bonus 2 | Rank 1 / 7"
+
+[node name="Bonus2Help" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1727407172]
+layout_mode = 0
+offset_left = 508.0
+offset_top = 176.0
+offset_right = 552.0
+offset_bottom = 218.0
+theme_override_font_sizes/font_size = 20
+text = "?"
+
+[node name="Bonus2Details" type="RichTextLabel" parent="CanvasLayer/BonusPanel" unique_id=432731446]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 220.0
+offset_right = 552.0
+offset_bottom = 264.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="Bonus3" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1255954400]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 274.0
+offset_right = 500.0
+offset_bottom = 316.0
+theme_override_font_sizes/font_size = 18
+text = "Bonus 3 | Rank 1 / 7"
+
+[node name="Bonus3Help" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1786123583]
+layout_mode = 0
+offset_left = 508.0
+offset_top = 274.0
+offset_right = 552.0
+offset_bottom = 316.0
+theme_override_font_sizes/font_size = 20
+text = "?"
+
+[node name="Bonus3Details" type="RichTextLabel" parent="CanvasLayer/BonusPanel" unique_id=808793825]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 318.0
+offset_right = 552.0
+offset_bottom = 362.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="BonusTooltipPanel" type="Panel" parent="CanvasLayer/BonusPanel" unique_id=243019695]
+visible = false
+layout_mode = 0
+offset_left = 575.0
+offset_top = 76.0
+offset_right = 870.0
+offset_bottom = 500.0
+mouse_filter = 2
+
+[node name="TooltipText" type="RichTextLabel" parent="CanvasLayer/BonusPanel/BonusTooltipPanel" unique_id=2043475819]
+layout_mode = 0
+offset_left = 16.0
+offset_top = 14.0
+offset_right = 279.0
+offset_bottom = 408.0
+theme_override_font_sizes/normal_font_size = 15
+bbcode_enabled = true
+
+[node name="RerollBonuses" type="Button" parent="CanvasLayer/BonusPanel" unique_id=527853793]
+layout_mode = 0
+offset_left = 30.0
+offset_top = 382.0
+offset_right = 552.0
+offset_bottom = 434.0
+theme_override_font_sizes/font_size = 18
+text = "REROLL ALL BONUSES — 0 CHARGES"
+
+[node name="StartNextWave" type="Button" parent="CanvasLayer/BonusPanel" unique_id=498031019]
+layout_mode = 0
+offset_left = 55.0
+offset_top = 458.0
+offset_right = 285.0
+offset_bottom = 510.0
+disabled = true
+text = "START NEXT WAVE"
+
+[node name="EndRun" type="Button" parent="CanvasLayer/BonusPanel" unique_id=1627293140]
+layout_mode = 0
+offset_left = 300.0
+offset_top = 458.0
+offset_right = 530.0
+offset_bottom = 510.0
+text = "END RUN"
+
+[node name="EndRunHub" parent="CanvasLayer" unique_id=748299446 instance=ExtResource("12_end_hub")]
+
+[node name="HomeMenu" parent="CanvasLayer" unique_id=420102869 instance=ExtResource("13_home_menu")]
+
+[node name="ZoneTransitionFade" type="ColorRect" parent="CanvasLayer" unique_id=1858725814]
+process_mode = 3
+modulate = Color(1, 1, 1, 0)
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="MobileControlsLayer" type="CanvasLayer" parent="." unique_id=1837194401]
+layer = 3
+
+[node name="MobileControls" parent="MobileControlsLayer" unique_id=1837194402 instance=ExtResource("18_mobile_controls")]
+
+[node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1748045528]
+stream = ExtResource("6_tefeu")

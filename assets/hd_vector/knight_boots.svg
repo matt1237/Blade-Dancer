@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="192" viewBox="0 0 256 192">
+<defs>
+ <linearGradient id="boot" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#b87554"/><stop offset=".55" stop-color="#704347"/><stop offset="1" stop-color="#35283a"/></linearGradient>
+ <linearGradient id="guard" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#eff7ee"/><stop offset="1" stop-color="#72889a"/></linearGradient>
+</defs>
+<!-- back boot -->
+<path d="M45 16 Q77 5 101 29 L108 99 L83 128 L32 121 Q22 111 33 97 L51 80 Z" fill="url(#boot)" stroke="#172133" stroke-width="11" stroke-linejoin="round"/>
+<path d="M49 23 L88 31 L92 65 L48 59 Z" fill="url(#guard)" stroke="#172133" stroke-width="8"/>
+<path d="M42 99 Q70 109 101 99" fill="none" stroke="#d99b68" stroke-width="7" opacity=".7" stroke-linecap="round"/>
+<!-- forward boot -->
+<path d="M148 25 Q178 7 207 30 L218 102 Q228 114 217 128 L168 135 L140 103 Z" fill="url(#boot)" stroke="#172133" stroke-width="11" stroke-linejoin="round"/>
+<path d="M153 28 L196 30 L203 66 L159 72 Z" fill="url(#guard)" stroke="#172133" stroke-width="8"/>
+<path d="M151 104 Q183 113 214 100" fill="none" stroke="#d99b68" stroke-width="7" opacity=".7" stroke-linecap="round"/>
+<!-- sole highlights -->
+<path d="M34 119 Q66 132 99 119" fill="none" stroke="#f2c17b" stroke-width="6" stroke-linecap="round"/>
+<path d="M168 132 Q199 136 219 119" fill="none" stroke="#f2c17b" stroke-width="6" stroke-linecap="round"/>
+</svg>

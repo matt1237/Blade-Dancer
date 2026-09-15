@@ -1,0 +1,40 @@
+{
+	"animation_name": "heavy_breathing_and_bracing_behind_the_shield",
+	"animation_style": "",
+	"animation_type": "heavy breathing and bracing behind the shield",
+	"columns": 3,
+	"directions": [],
+	"frame_count": 3,
+	"frame_height": 160,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 160,
+			"w": 160,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 160,
+			"w": 160,
+			"x": 160,
+			"y": 0
+		},
+		{
+			"h": 160,
+			"w": 160,
+			"x": 320,
+			"y": 0
+		}
+	],
+	"frame_width": 160,
+	"name": "hd_enemy_elite_idle",
+	"prompt": "heavy breathing and bracing behind the shield",
+	"rows": 1,
+	"source_image": "res://assets/generated/hd_enemy_elite_brute_frame_0.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 160,
+	"spritesheet_path": "res://assets/generated/hd_enemy_elite_idle.png",
+	"spritesheet_width": 480,
+	"type": "animation"
+}

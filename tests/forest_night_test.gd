@@ -1,0 +1,41 @@
+extends SceneTree
+## Standalone: --path <project> --script res://tests/forest_night_test.gd
+## Never instantiates Main or invokes profile/save APIs.
+const Math: GDScript = preload("res://scripts/forest_night_math.gd")
+const Lighting: GDScript = preload("res://scripts/forest_night_lighting.gd")
+
+func _initialize() -> void:
+	var defaults: Dictionary = Math.sanitized({})
+	assert(defaults["night_strength"] == 0.0)
+	assert(defaults["light_radius"] == 240.0)
+	assert(defaults["mist_strength"] == 0.0)
+	assert(defaults["mood_temperature"] == 0.0)
+	var bounded: Dictionary = Math.sanitized({"night_strength": 4.0, "light_radius": 1.0, "mood_temperature": -8.0, "mist_strength": 3.0})
+	assert(bounded["night_strength"] == 1.0 and bounded["light_radius"] == 160.0)
+	assert(bounded["mood_temperature"] == -1.0 and bounded["mist_strength"] == 1.0)
+	assert(Math.enabled(true, true, false, 1.0))
+	assert(not Math.enabled(false, true, false, 1.0))
+	assert(not Math.enabled(true, false, false, 1.0))
+	assert(not Math.enabled(true, true, true, 1.0))
+	assert(not Math.enabled(true, true, false, 0.0))
+	var light: Vector4 = Vector4(300.0, 200.0, 240.0, 1.0)
+	assert(Math.reveal_at(Vector2(300.0, 200.0), light) == 1.0)
+	assert(Math.reveal_at(Vector2(390.0, 200.0), light) == 1.0)
+	assert(Math.reveal_at(Vector2(540.0, 200.0), light) == 0.0)
+	assert(Math.reveal_at(Vector2(470.0, 200.0), light) > 0.0)
+	var overlay: ForestNightLighting = Lighting.new()
+	overlay.apply_visual_settings({"night_strength": 1.0})
+	assert(overlay.night_material.get_shader_parameter("night_strength") == 1.0)
+	for index: int in range(80):
+		overlay._append_light(Vector2(index, 0.0), 40.0)
+	assert(overlay.light_count == 64)
+	assert(overlay.lights.size() == 64)
+	overlay.apply_visual_settings({})
+	assert(not overlay.visible)
+	overlay.free()
+	# Compile Main integration off-tree, without running its save-writing _ready.
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	assert(main != null)
+	main.free()
+	print("Forest night: defaults, bounds, guards, reveal falloff, budget and Main parse PASS")
+	quit()

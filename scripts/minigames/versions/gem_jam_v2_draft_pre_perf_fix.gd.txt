@@ -1,0 +1,673 @@
+class_name GemJamGame extends Control
+
+## Jewel Jam V2 — continuous 2D lap-wheel extraction.
+## One canonical 256x256 ROCK/GEM/EMPTY mask is shared by X-ray, grinding, and
+## resonance. The grind station transforms that same mask against a fixed wheel;
+## only exposed material physically overlapping the wheel can erode.
+
+signal closed()
+
+enum Cell { EMPTY, ROCK, GEM }
+enum Station { XRAY, GRIND, RESONANCE }
+enum ViewMode { TOP, SIDE }
+
+const MASK_SIZE: int = 256
+const MASK_HALF: float = MASK_SIZE * 0.5
+const ROCK_COLOR: Color = Color("725846")
+const ROCK_HIGHLIGHT: Color = Color("a68162")
+const GEM_COLOR: Color = Color("54e5e0")
+const GEM_GLOW: Color = Color("b5fff2")
+const TARGET_COLOR: Color = Color("ffd56a")
+const XRAY_STATION_RECT: Rect2 = Rect2(60.0, 175.0, 350.0, 420.0)
+const GRIND_STATION_RECT: Rect2 = Rect2(465.0, 175.0, 350.0, 420.0)
+const RESONANCE_STATION_RECT: Rect2 = Rect2(870.0, 175.0, 350.0, 420.0)
+const GRIND_WHEEL_CENTER: Vector2 = Vector2(640.0, 518.0)
+const GRIND_WHEEL_RADIUS: float = 66.0
+const GRIND_REST_POSITION: Vector2 = Vector2(640.0, 298.0)
+const CARDINAL_NEIGHBORS: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]
+const TARGET_SHAPES: Array[String] = ["OVAL", "CIRCLE", "DIAMOND", "EMERALD", "TEARDROP", "HEXAGON"]
+
+@export_category("Generation")
+## Negative uses a new random seed each attempt; non-negative is deterministic.
+@export var generation_seed: int = -1
+@export_range(0.15, 0.8, 0.05) var target_reveal_exposure: float = 0.35
+
+@export_category("Grinding")
+@export var object_rotation_speed_degrees: float = 105.0
+## Boundary pixels per second at shallow contact. Penetration scales this up.
+@export_range(1.0, 40.0, 0.5) var rock_grind_rate: float = 16.0
+@export_range(0.5, 15.0, 0.25) var gem_grind_rate: float = 3.5
+@export_range(1.0, 5.0, 0.1) var deep_contact_multiplier: float = 3.0
+@export_range(0.0, 1.0, 0.05) var resonance_exposure_required: float = 0.35
+
+@export_category("Resonance")
+@export var resonance_hold_seconds: float = 5.0
+@export_range(0.01, 0.5, 0.01) var resonance_frequency_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_amplitude_step: float = 0.04
+@export_range(0.01, 0.5, 0.01) var resonance_tolerance: float = 0.08
+@export_range(0.0, 0.2, 0.005) var resonance_gentle_frequency_motion: float = 0.06
+@export_range(0.0, 0.2, 0.005) var resonance_gentle_amplitude_motion: float = 0.06
+@export_range(0.0, 0.4, 0.01) var resonance_erratic_frequency_motion: float = 0.30
+@export_range(0.0, 0.4, 0.01) var resonance_erratic_amplitude_motion: float = 0.35
+
+var material_mask: Array[int] = []
+var original_gem_mask: PackedByteArray = PackedByteArray()
+var target_mask: PackedByteArray = PackedByteArray()
+var grind_progress: Array[float] = []
+var total_rock: int = 0
+var total_gem_cells: int = 0
+var removed_rock: int = 0
+var removed_gem: int = 0
+var target_shape_name: String = ""
+var rough_gem_center: Vector2 = Vector2(MASK_HALF, MASK_HALF)
+
+var station: Station = Station.GRIND
+var rock_station: Station = Station.GRIND
+var view_mode: ViewMode = ViewMode.TOP
+var rock_position: Vector2 = GRIND_REST_POSITION
+var object_rotation: float = 0.0
+var dragging_rock: bool = false
+var pending_rock_drag: bool = false
+var drag_start_position: Vector2 = Vector2.ZERO
+var drag_origin_position: Vector2 = Vector2.ZERO
+var drag_origin_station: Station = Station.GRIND
+var grinding_active: bool = false
+var grind_contact_cells: int = 0
+var wheel_rotation: float = 0.0
+
+var grind_texture: ImageTexture
+var xray_texture: ImageTexture
+var gem_texture: ImageTexture
+var target_texture: ImageTexture
+var textures_dirty: bool = true
+var exposure_dirty: bool = true
+var exposed_gem_cells_cache: int = 0
+var remaining_gem_cells_cache: int = 0
+
+var completed: bool = false
+var resonance_time: float = 0.0
+var resonance_frequency: float = 0.50
+var resonance_amplitude: float = 0.50
+var target_base_frequency: float = 0.60
+var target_base_amplitude: float = 0.66
+var target_frequency: float = 0.60
+var target_amplitude: float = 0.66
+var resonance_good_time: float = 0.0
+
+@onready var station_label: Label = $HUD/StationLabel
+@onready var view_label: Label = $HUD/ViewLabel
+@onready var status_label: Label = $HUD/StatusLabel
+@onready var metrics_label: Label = $HUD/MetricsLabel
+@onready var progress_bar: ProgressBar = $HUD/ResonanceProgress
+@onready var frequency_label: Label = $ResonancePanel/FrequencyLabel
+@onready var amplitude_label: Label = $ResonancePanel/AmplitudeLabel
+@onready var resonance_panel: Control = $ResonancePanel
+@onready var grind_hint: Label = $HUD/GrindHint
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_build_material_mask()
+	$StationBar/XRayButton.pressed.connect(_select_xray)
+	$StationBar/GrindButton.pressed.connect(_select_grind)
+	$StationBar/ResonanceButton.pressed.connect(_select_resonance)
+	$ResonancePanel/FrequencyDown.pressed.connect(_frequency_down)
+	$ResonancePanel/FrequencyUp.pressed.connect(_frequency_up)
+	$ResonancePanel/AmplitudeDown.pressed.connect(_amplitude_down)
+	$ResonancePanel/AmplitudeUp.pressed.connect(_amplitude_up)
+	$CloseButton.pressed.connect(_close)
+	_update_ui()
+	queue_redraw()
+
+## Random outer rock -> random rough gem -> target generated strictly inside it.
+func _build_material_mask() -> void:
+	material_mask.resize(MASK_SIZE * MASK_SIZE)
+	material_mask.fill(Cell.EMPTY)
+	original_gem_mask.resize(MASK_SIZE * MASK_SIZE)
+	original_gem_mask.fill(0)
+	target_mask.resize(MASK_SIZE * MASK_SIZE)
+	target_mask.fill(0)
+	grind_progress.resize(MASK_SIZE * MASK_SIZE)
+	grind_progress.fill(0.0)
+	total_rock = 0
+	total_gem_cells = 0
+	removed_rock = 0
+	removed_gem = 0
+	var random: RandomNumberGenerator = RandomNumberGenerator.new()
+	if generation_seed >= 0:
+		random.seed = generation_seed
+	else:
+		random.randomize()
+	var rock_center: Vector2 = Vector2(128.0 + random.randf_range(-5.0, 5.0), 129.0 + random.randf_range(-4.0, 4.0))
+	var rock_rx: float = random.randf_range(102.0, 112.0)
+	var rock_ry: float = random.randf_range(96.0, 108.0)
+	var rock_phase_a: float = random.randf_range(0.0, TAU)
+	var rock_phase_b: float = random.randf_range(0.0, TAU)
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var offset: Vector2 = Vector2(x, y) - rock_center
+			var angle: float = atan2(offset.y, offset.x)
+			var rough_limit: float = 1.0 + 0.065 * sin(angle * 5.0 + rock_phase_a) + 0.038 * sin(angle * 9.0 + rock_phase_b)
+			var normalized: float = sqrt(pow(offset.x / rock_rx, 2.0) + pow(offset.y / rock_ry, 2.0))
+			if normalized <= rough_limit:
+				_set_mask_cell_raw(x, y, Cell.ROCK)
+				total_rock += 1
+	rough_gem_center = rock_center + Vector2(random.randf_range(-7.0, 7.0), random.randf_range(-6.0, 6.0))
+	var gem_rx: float = random.randf_range(43.0, 54.0)
+	var gem_ry: float = random.randf_range(45.0, 59.0)
+	var gem_phase_a: float = random.randf_range(0.0, TAU)
+	var gem_phase_b: float = random.randf_range(0.0, TAU)
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var offset: Vector2 = Vector2(x, y) - rough_gem_center
+			var angle: float = atan2(offset.y, offset.x)
+			var rough_limit: float = 1.0 + 0.10 * sin(angle * 5.0 + gem_phase_a) + 0.055 * sin(angle * 8.0 + gem_phase_b)
+			var normalized: float = sqrt(pow(offset.x / gem_rx, 2.0) + pow(offset.y / gem_ry, 2.0))
+			if normalized <= rough_limit and _mask_cell(x, y) == Cell.ROCK:
+				_set_mask_cell_raw(x, y, Cell.GEM)
+				original_gem_mask[_mask_index(x, y)] = 1
+				total_rock -= 1
+				total_gem_cells += 1
+	_generate_achievable_target(random, gem_rx, gem_ry)
+	textures_dirty = true
+	exposure_dirty = true
+
+func _generate_achievable_target(random: RandomNumberGenerator, rough_rx: float, rough_ry: float) -> void:
+	target_shape_name = TARGET_SHAPES[random.randi_range(0, TARGET_SHAPES.size() - 1)]
+	var half_size: Vector2 = Vector2(rough_rx * random.randf_range(0.58, 0.72), rough_ry * random.randf_range(0.58, 0.72))
+	if target_shape_name == "CIRCLE":
+		var radius: float = minf(half_size.x, half_size.y)
+		half_size = Vector2(radius, radius)
+	var target_center: Vector2 = rough_gem_center + Vector2(random.randf_range(-2.5, 2.5), random.randf_range(-2.5, 2.5))
+	for attempt: int in range(24):
+		target_mask.fill(0)
+		var fits: bool = true
+		for y: int in range(MASK_SIZE):
+			for x: int in range(MASK_SIZE):
+				var local: Vector2 = Vector2(x, y) - target_center
+				if _target_shape_contains(target_shape_name, local, half_size):
+					var index: int = _mask_index(x, y)
+					target_mask[index] = 1
+					if original_gem_mask[index] == 0:
+						fits = false
+		if fits and _count_target_cells() > 80:
+			return
+		half_size *= 0.93
+	# The centered tiny fallback is guaranteed by shrinking inside the gem core.
+	target_mask.fill(0)
+	half_size = Vector2(14.0, 14.0)
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var index: int = _mask_index(x, y)
+			if original_gem_mask[index] != 0 and _target_shape_contains("CIRCLE", Vector2(x, y) - rough_gem_center, half_size):
+				target_mask[index] = 1
+	target_shape_name = "CIRCLE"
+
+func _target_shape_contains(shape_name: String, local: Vector2, half_size: Vector2) -> bool:
+	var width: float = maxf(1.0, half_size.x)
+	var height: float = maxf(1.0, half_size.y)
+	var nx: float = local.x / width
+	var ny: float = local.y / height
+	match shape_name:
+		"OVAL", "CIRCLE":
+			return nx * nx + ny * ny <= 1.0
+		"DIAMOND":
+			return absf(nx) + absf(ny) <= 1.0
+		"EMERALD":
+			return absf(nx) <= 1.0 and absf(ny) <= 1.0 and absf(nx) + absf(ny) <= 1.72
+		"TEARDROP":
+			var teardrop: PackedVector2Array = PackedVector2Array([Vector2(0.0, -height), Vector2(width * 0.82, -height * 0.10), Vector2(width * 0.62, height * 0.72), Vector2(0.0, height), Vector2(-width * 0.62, height * 0.72), Vector2(-width * 0.82, -height * 0.10)])
+			return Geometry2D.is_point_in_polygon(local, teardrop)
+		"HEXAGON":
+			return absf(ny) <= 1.0 and absf(nx) <= 1.0 and absf(nx) + absf(ny) * 0.52 <= 1.15
+	return false
+
+func _process(delta: float) -> void:
+	wheel_rotation += delta * 5.0
+	if station == Station.GRIND:
+		if Input.is_physical_key_pressed(KEY_A):
+			object_rotation -= deg_to_rad(object_rotation_speed_degrees) * delta
+		if Input.is_physical_key_pressed(KEY_D):
+			object_rotation += deg_to_rad(object_rotation_speed_degrees) * delta
+	if station == Station.GRIND:
+		_update_grinding(delta)
+	else:
+		grinding_active = false
+		grind_contact_cells = 0
+	if not completed and station == Station.RESONANCE:
+		_update_resonance(delta)
+	_update_ui()
+	queue_redraw()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_F:
+		view_mode = ViewMode.SIDE if view_mode == ViewMode.TOP else ViewMode.TOP
+		_update_ui()
+		queue_redraw()
+
+func _view_scale() -> Vector2:
+	return Vector2.ONE if view_mode == ViewMode.TOP else Vector2(1.0, 0.52)
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		if pending_rock_drag and not dragging_rock and drag_start_position.distance_to(event.position) > 8.0:
+			dragging_rock = true
+		if dragging_rock:
+			rock_position = event.position
+		queue_redraw()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			if _rock_display_rect().grow(8.0).has_point(event.position):
+				pending_rock_drag = true
+				drag_start_position = event.position
+				drag_origin_position = rock_position
+				drag_origin_station = rock_station
+			else:
+				pending_rock_drag = false
+		else:
+			if dragging_rock:
+				dragging_rock = false
+				pending_rock_drag = false
+				_place_rock_in_station()
+			else:
+				pending_rock_drag = false
+
+## Continuous erosion of exposed boundary cells overlapping the fixed wheel.
+func _update_grinding(delta: float) -> int:
+	var candidates: PackedInt32Array = PackedInt32Array()
+	grind_contact_cells = 0
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var cell: Cell = _mask_cell(x, y)
+			if not _is_material(cell) or not _is_material_boundary(x, y):
+				continue
+			var screen_point: Vector2 = _mask_to_screen(Vector2(x, y))
+			var penetration: float = _wheel_penetration(screen_point)
+			if penetration <= 0.0:
+				continue
+			grind_contact_cells += 1
+			var rate: float = rock_grind_rate if cell == Cell.ROCK else gem_grind_rate
+			var speed_scale: float = 0.20 + penetration * deep_contact_multiplier
+			var index: int = _mask_index(x, y)
+			grind_progress[index] += delta * rate * speed_scale
+			if grind_progress[index] >= 1.0:
+				candidates.append(index)
+	var removed: int = 0
+	for index: int in candidates:
+		if _remove_material_index(index):
+			removed += 1
+	grinding_active = grind_contact_cells > 0
+	if removed > 0:
+		textures_dirty = true
+		exposure_dirty = true
+	return removed
+
+func _wheel_penetration(screen_point: Vector2) -> float:
+	return clampf((GRIND_WHEEL_RADIUS - screen_point.distance_to(GRIND_WHEEL_CENTER)) / GRIND_WHEEL_RADIUS, 0.0, 1.0)
+
+func _remove_material_index(index: int) -> bool:
+	var cell: Cell = material_mask[index] as Cell
+	if cell == Cell.ROCK:
+		material_mask[index] = Cell.EMPTY
+		removed_rock += 1
+		grind_progress[index] = 0.0
+		return true
+	if cell == Cell.GEM:
+		material_mask[index] = Cell.EMPTY
+		removed_gem += 1
+		grind_progress[index] = 0.0
+		return true
+	return false
+
+func _mask_to_screen(mask_point: Vector2) -> Vector2:
+	var local: Vector2 = (mask_point - Vector2(MASK_HALF, MASK_HALF)) * _view_scale()
+	return rock_position + local.rotated(object_rotation)
+
+func _screen_to_mask(screen_point: Vector2) -> Vector2:
+	var unrotated: Vector2 = (screen_point - rock_position).rotated(-object_rotation)
+	var view_transform_scale: Vector2 = _view_scale()
+	return Vector2(unrotated.x / view_transform_scale.x, unrotated.y / view_transform_scale.y) + Vector2(MASK_HALF, MASK_HALF)
+
+func _rock_display_rect() -> Rect2:
+	# Rotation-safe grab bounds use the full diagonal radius.
+	var radius: float = MASK_HALF * 1.42
+	return Rect2(rock_position - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0))
+
+func _mask_index(x: int, y: int) -> int:
+	return x + y * MASK_SIZE
+
+func _mask_in_bounds(x: int, y: int) -> bool:
+	return x >= 0 and x < MASK_SIZE and y >= 0 and y < MASK_SIZE
+
+func _mask_cell(x: int, y: int) -> Cell:
+	if not _mask_in_bounds(x, y):
+		return Cell.EMPTY
+	return material_mask[_mask_index(x, y)] as Cell
+
+func _set_mask_cell_raw(x: int, y: int, cell: Cell) -> void:
+	if _mask_in_bounds(x, y):
+		material_mask[_mask_index(x, y)] = cell
+
+func _is_material(cell: Cell) -> bool:
+	return cell == Cell.ROCK or cell == Cell.GEM
+
+func _is_material_boundary(x: int, y: int) -> bool:
+	if not _is_material(_mask_cell(x, y)):
+		return false
+	for offset: Vector2i in CARDINAL_NEIGHBORS:
+		if not _is_material(_mask_cell(x + offset.x, y + offset.y)):
+			return true
+	return false
+
+func _count_mask_cells(cell: Cell) -> int:
+	var count: int = 0
+	for value: int in material_mask:
+		if value == cell:
+			count += 1
+	return count
+
+func _count_target_cells() -> int:
+	var count: int = 0
+	for value: int in target_mask:
+		if value != 0:
+			count += 1
+	return count
+
+func _target_is_subset_of_original_gem() -> bool:
+	for index: int in range(target_mask.size()):
+		if target_mask[index] != 0 and original_gem_mask[index] == 0:
+			return false
+	return true
+
+func _gem_cell_is_exposed(x: int, y: int) -> bool:
+	if _mask_cell(x, y) != Cell.GEM:
+		return false
+	for direction: Vector2i in CARDINAL_NEIGHBORS:
+		var cursor: Vector2i = Vector2i(x, y) + direction
+		var blocked: bool = false
+		while _mask_in_bounds(cursor.x, cursor.y):
+			if _mask_cell(cursor.x, cursor.y) == Cell.ROCK:
+				blocked = true
+				break
+			cursor += direction
+		if not blocked:
+			return true
+	return false
+
+func _visible_material_at(x: int, y: int, xray: bool) -> Cell:
+	var cell: Cell = _mask_cell(x, y)
+	if cell == Cell.GEM and not xray and not _gem_cell_is_exposed(x, y):
+		return Cell.ROCK
+	return cell
+
+func gem_exposure_ratio() -> float:
+	if exposure_dirty:
+		exposed_gem_cells_cache = 0
+		remaining_gem_cells_cache = 0
+		for y: int in range(MASK_SIZE):
+			for x: int in range(MASK_SIZE):
+				if _mask_cell(x, y) == Cell.GEM:
+					remaining_gem_cells_cache += 1
+					if _gem_cell_is_exposed(x, y):
+						exposed_gem_cells_cache += 1
+		exposure_dirty = false
+	if remaining_gem_cells_cache <= 0:
+		return 0.0
+	return clampf(float(exposed_gem_cells_cache) / float(remaining_gem_cells_cache), 0.0, 1.0)
+
+func gem_preserved_ratio() -> float:
+	return clampf(float(_count_mask_cells(Cell.GEM)) / maxf(1.0, float(total_gem_cells)), 0.0, 1.0)
+
+func rock_removal_ratio() -> float:
+	return clampf(float(removed_rock) / maxf(1.0, float(total_rock)), 0.0, 1.0)
+
+func target_match_ratio() -> float:
+	var intersection: int = 0
+	var union: int = 0
+	for index: int in range(material_mask.size()):
+		var current_gem: bool = material_mask[index] == Cell.GEM
+		var target_gem: bool = target_mask[index] != 0
+		if current_gem and target_gem:
+			intersection += 1
+		if current_gem or target_gem:
+			union += 1
+	if union <= 0:
+		return 0.0
+	return float(intersection) / float(union)
+
+func _refresh_textures() -> void:
+	if not textures_dirty:
+		return
+	var grind_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	var xray_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	var gem_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	var target_image: Image = Image.create_empty(MASK_SIZE, MASK_SIZE, false, Image.FORMAT_RGBA8)
+	grind_image.fill(Color.TRANSPARENT)
+	xray_image.fill(Color.TRANSPARENT)
+	gem_image.fill(Color.TRANSPARENT)
+	target_image.fill(Color.TRANSPARENT)
+	for y: int in range(MASK_SIZE):
+		for x: int in range(MASK_SIZE):
+			var canonical: Cell = _mask_cell(x, y)
+			var visible_grind: Cell = _visible_material_at(x, y, false)
+			if visible_grind == Cell.ROCK:
+				grind_image.set_pixel(x, y, ROCK_HIGHLIGHT if _is_material_boundary(x, y) else ROCK_COLOR)
+			elif visible_grind == Cell.GEM:
+				grind_image.set_pixel(x, y, GEM_GLOW if _is_material_boundary(x, y) else GEM_COLOR)
+			if canonical == Cell.ROCK:
+				xray_image.set_pixel(x, y, Color(ROCK_COLOR.r, ROCK_COLOR.g, ROCK_COLOR.b, 0.38))
+			elif canonical == Cell.GEM:
+				xray_image.set_pixel(x, y, GEM_COLOR)
+				gem_image.set_pixel(x, y, GEM_COLOR)
+			var index: int = _mask_index(x, y)
+			if target_mask[index] != 0 and _target_is_boundary(x, y):
+				target_image.set_pixel(x, y, TARGET_COLOR)
+	grind_texture = ImageTexture.create_from_image(grind_image)
+	xray_texture = ImageTexture.create_from_image(xray_image)
+	gem_texture = ImageTexture.create_from_image(gem_image)
+	target_texture = ImageTexture.create_from_image(target_image)
+	textures_dirty = false
+
+func _target_is_boundary(x: int, y: int) -> bool:
+	var index: int = _mask_index(x, y)
+	if target_mask[index] == 0:
+		return false
+	for offset: Vector2i in CARDINAL_NEIGHBORS:
+		var nx: int = x + offset.x
+		var ny: int = y + offset.y
+		if not _mask_in_bounds(nx, ny) or target_mask[_mask_index(nx, ny)] == 0:
+			return true
+	return false
+
+func _station_center(target_station: Station) -> Vector2:
+	match target_station:
+		Station.XRAY:
+			return XRAY_STATION_RECT.get_center()
+		Station.RESONANCE:
+			return RESONANCE_STATION_RECT.get_center()
+		_:
+			return GRIND_REST_POSITION
+
+func _move_rock_to_station(target_station: Station) -> void:
+	rock_station = target_station
+	station = target_station
+	rock_position = _station_center(target_station)
+	if target_station == Station.RESONANCE:
+		_update_resonance_target()
+
+func _place_rock_in_station() -> void:
+	if XRAY_STATION_RECT.grow(20.0).has_point(rock_position):
+		_move_rock_to_station(Station.XRAY)
+		status_label.text = "X-ray reveals the same canonical rough gem."
+	elif GRIND_STATION_RECT.grow(20.0).has_point(rock_position):
+		rock_station = Station.GRIND
+		station = Station.GRIND
+		rock_position.x = clampf(rock_position.x, GRIND_STATION_RECT.position.x + 35.0, GRIND_STATION_RECT.end.x - 35.0)
+		rock_position.y = clampf(rock_position.y, GRIND_STATION_RECT.position.y + 35.0, GRIND_STATION_RECT.end.y - 35.0)
+		status_label.text = "Lower the formation into the wheel; rotate with A/D."
+	elif RESONANCE_STATION_RECT.grow(20.0).has_point(rock_position) and gem_exposure_ratio() >= resonance_exposure_required:
+		_move_rock_to_station(Station.RESONANCE)
+		status_label.text = "Match the moving gemstone resonance."
+	else:
+		rock_position = drag_origin_position
+		rock_station = drag_origin_station
+		station = drag_origin_station
+		status_label.text = "Keep the formation in a workstation."
+	_update_ui()
+	queue_redraw()
+
+func _select_xray() -> void:
+	_move_rock_to_station(Station.XRAY)
+	status_label.text = "X-ray reveals the canonical rough gemstone through rock."
+	_update_ui()
+	queue_redraw()
+
+func _select_grind() -> void:
+	_move_rock_to_station(Station.GRIND)
+	status_label.text = "Drag downward into the lap wheel. A/D rotates the formation."
+	_update_ui()
+	queue_redraw()
+
+func _select_resonance() -> void:
+	if gem_exposure_ratio() < resonance_exposure_required:
+		status_label.text = "Expose at least %d%% of the gem before resonance." % roundi(resonance_exposure_required * 100.0)
+		return
+	_move_rock_to_station(Station.RESONANCE)
+	status_label.text = "Match the live waveform to the target and hold steady."
+	_update_ui()
+	queue_redraw()
+
+func _update_resonance(delta: float) -> void:
+	resonance_time += delta
+	_update_resonance_target()
+	if Input.is_physical_key_pressed(KEY_A):
+		resonance_frequency = clampf(resonance_frequency - resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_D):
+		resonance_frequency = clampf(resonance_frequency + resonance_frequency_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_S):
+		resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+	if Input.is_physical_key_pressed(KEY_W):
+		resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step * delta * 4.0, 0.0, 1.0)
+	if _alignment_score() >= 1.0 - resonance_tolerance:
+		resonance_good_time = minf(resonance_hold_seconds, resonance_good_time + delta)
+	else:
+		resonance_good_time = maxf(0.0, resonance_good_time - delta * 1.5)
+	if resonance_good_time >= resonance_hold_seconds:
+		completed = true
+		status_label.text = "JEWEL REFINED!  Resonance stabilized."
+
+func _resonance_erratic_weight(exposure: float) -> float:
+	var final_band: float = clampf((exposure - 0.80) / 0.20, 0.0, 1.0)
+	var smoothed: float = final_band * final_band * (3.0 - 2.0 * final_band)
+	return 1.0 - smoothed
+
+func _resonance_target_at_time(exposure: float, time: float) -> Vector2:
+	var erratic_weight: float = _resonance_erratic_weight(exposure)
+	var gentle_frequency: float = resonance_gentle_frequency_motion * (0.72 * sin(time * 0.72) + 0.28 * sin(time * 1.19 + 1.1))
+	var gentle_amplitude: float = resonance_gentle_amplitude_motion * (0.70 * sin(time * 0.61 + 0.8) + 0.30 * sin(time * 1.07 + 2.0))
+	var erratic_frequency: float = resonance_erratic_frequency_motion * (0.56 * sin(time * 2.25 + 0.4) + 0.29 * sin(time * 5.15) + 0.15 * sin(time * 8.6 + 1.7))
+	var erratic_amplitude: float = resonance_erratic_amplitude_motion * (0.55 * sin(time * 1.85 + 2.2) + 0.30 * sin(time * 4.65 + 0.3) + 0.15 * sin(time * 7.9))
+	return Vector2(clampf(target_base_frequency + gentle_frequency + erratic_frequency * erratic_weight, 0.08, 0.92), clampf(target_base_amplitude + gentle_amplitude + erratic_amplitude * erratic_weight, 0.08, 0.92))
+
+func _update_resonance_target() -> void:
+	var live_target: Vector2 = _resonance_target_at_time(gem_exposure_ratio(), resonance_time)
+	target_frequency = live_target.x
+	target_amplitude = live_target.y
+
+func _alignment_score() -> float:
+	return 1.0 - clampf(absf(resonance_frequency - target_frequency) + absf(resonance_amplitude - target_amplitude), 0.0, 1.0)
+
+func _frequency_down() -> void:
+	resonance_frequency = clampf(resonance_frequency - resonance_frequency_step, 0.0, 1.0)
+
+func _frequency_up() -> void:
+	resonance_frequency = clampf(resonance_frequency + resonance_frequency_step, 0.0, 1.0)
+
+func _amplitude_down() -> void:
+	resonance_amplitude = clampf(resonance_amplitude - resonance_amplitude_step, 0.0, 1.0)
+
+func _amplitude_up() -> void:
+	resonance_amplitude = clampf(resonance_amplitude + resonance_amplitude_step, 0.0, 1.0)
+
+func _update_ui() -> void:
+	var station_name: String = ["X-RAY STATION", "GRIND WHEEL STATION", "RESONANCE STATION"][station]
+	station_label.text = station_name
+	view_label.text = "VIEW: TOP  (F TO SWITCH)" if view_mode == ViewMode.TOP else "VIEW: SIDE  (F TO SWITCH)"
+	metrics_label.text = "GEM PRESERVED %d%%    TARGET MATCH %d%%    ROCK REMOVED %d%%" % [roundi(gem_preserved_ratio() * 100.0), roundi(target_match_ratio() * 100.0), roundi(rock_removal_ratio() * 100.0)]
+	progress_bar.value = resonance_good_time / maxf(0.01, resonance_hold_seconds) * 100.0
+	frequency_label.text = "YOUR FREQUENCY  %.2f" % resonance_frequency
+	amplitude_label.text = "YOUR AMPLITUDE  %.2f" % resonance_amplitude
+	resonance_panel.visible = station == Station.RESONANCE
+	grind_hint.visible = station == Station.GRIND
+
+func _draw() -> void:
+	_refresh_textures()
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("100c16"))
+	_draw_shop_background()
+	_draw_station(XRAY_STATION_RECT, "X-RAY SCANNER", Color("4b8490"))
+	_draw_station(GRIND_STATION_RECT, "LAP GRIND WHEEL", Color("8b684d"))
+	_draw_station(RESONANCE_STATION_RECT, "RESONANCE PAD", Color("66518d"))
+	_draw_material_body()
+	if station == Station.GRIND:
+		_draw_grind_wheel()
+		_draw_target_guide()
+	elif station == Station.RESONANCE:
+		_draw_waveforms()
+
+func _draw_shop_background() -> void:
+	draw_rect(Rect2(0.0, 0.0, size.x, size.y), Color("17121b"))
+	draw_line(Vector2(0.0, 155.0), Vector2(size.x, 155.0), Color("4b3540"), 3.0)
+	for x: int in range(0, 1280, 80):
+		draw_line(Vector2(x, 0.0), Vector2(x + 180.0, 155.0), Color(0.18, 0.12, 0.18, 0.45), 2.0)
+
+func _draw_station(rect: Rect2, title: String, color: Color) -> void:
+	draw_rect(rect, Color("211a25"), true)
+	draw_rect(rect, color, false, 4.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(18.0, 32.0), title, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 36.0, 20, color)
+
+func _draw_material_body() -> void:
+	var texture: ImageTexture = grind_texture
+	if station == Station.XRAY:
+		texture = xray_texture
+	elif station == Station.RESONANCE:
+		texture = gem_texture
+	draw_set_transform(rock_position, object_rotation, _view_scale())
+	draw_texture(texture, Vector2(-MASK_HALF, -MASK_HALF))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_grind_wheel() -> void:
+	draw_circle(GRIND_WHEEL_CENTER, GRIND_WHEEL_RADIUS + 8.0, Color("2b2730"))
+	draw_circle(GRIND_WHEEL_CENTER, GRIND_WHEEL_RADIUS, Color("777782"))
+	draw_circle(GRIND_WHEEL_CENTER, 13.0, Color("30303a"))
+	for spoke: int in range(8):
+		var angle: float = wheel_rotation + TAU * float(spoke) / 8.0
+		draw_line(GRIND_WHEEL_CENTER + Vector2.from_angle(angle) * 18.0, GRIND_WHEEL_CENTER + Vector2.from_angle(angle) * (GRIND_WHEEL_RADIUS - 6.0), Color(0.82, 0.82, 0.86, 0.48), 3.0)
+	if grinding_active:
+		draw_arc(GRIND_WHEEL_CENTER, GRIND_WHEEL_RADIUS + 4.0, PI, TAU, 40, Color("ffd56a"), 5.0)
+		draw_string(ThemeDB.fallback_font, Vector2(505.0, 570.0), "GRINDING — contact cells %d" % grind_contact_cells, HORIZONTAL_ALIGNMENT_CENTER, 270.0, 15, Color("ffd56a"))
+
+func _draw_target_guide() -> void:
+	if gem_exposure_ratio() < target_reveal_exposure:
+		return
+	draw_set_transform(rock_position, object_rotation, _view_scale())
+	draw_texture(target_texture, Vector2(-MASK_HALF, -MASK_HALF), Color(1.0, 1.0, 1.0, 0.92))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	draw_string(ThemeDB.fallback_font, Vector2(505.0, 245.0), "TARGET: %s  — grind cyan gem toward gold outline" % target_shape_name, HORIZONTAL_ALIGNMENT_CENTER, 270.0, 14, TARGET_COLOR)
+
+func _draw_waveforms() -> void:
+	var exposure: float = gem_exposure_ratio()
+	var erratic_weight: float = _resonance_erratic_weight(exposure)
+	var target_points: PackedVector2Array = PackedVector2Array()
+	var player_points: PackedVector2Array = PackedVector2Array()
+	for index: int in range(101):
+		var x: float = 680.0 + index * 5.0
+		var normalized: float = float(index) / 100.0
+		target_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + target_frequency * 2.0)) * (35.0 + target_amplitude * 35.0)))
+		player_points.append(Vector2(x, 340.0 - sin(normalized * TAU * (1.0 + resonance_frequency * 2.0)) * (35.0 + resonance_amplitude * 35.0)))
+	draw_rect(Rect2(665.0, 235.0, 520.0, 210.0), Color("1b1524"), true)
+	draw_line(Vector2(680.0, 340.0), Vector2(1180.0, 340.0), Color(0.45, 0.38, 0.5, 0.45), 1.0)
+	draw_polyline(target_points, Color(1.0, 0.35, 0.30, 0.95), 4.0)
+	draw_polyline(player_points, Color(0.4, 0.95, 0.85, 0.95), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(665.0, 225.0), "RED GEM  F %.2f  A %.2f    VOLATILITY %d%%    ALIGN %d%%" % [target_frequency, target_amplitude, roundi(erratic_weight * 100.0), roundi(_alignment_score() * 100.0)], HORIZONTAL_ALIGNMENT_LEFT, 520.0, 14, Color(0.95, 0.72, 0.72))
+
+func _close() -> void:
+	closed.emit()

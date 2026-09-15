@@ -1,0 +1,61 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/minigames/resonance_rush_chunk.gd" id="1_chunk"]
+[ext_resource type="PackedScene" path="res://scenes/minigames/resonance_rush/markers/rush_grapple_point.tscn" id="2_grapple"]
+[ext_resource type="Texture2D" uid="uid://ce8iu7pjesny8" path="res://assets/generated/resonance_rush_ground_forest_frame_0.png" id="3_ground_tex"]
+
+[sub_resource type="Curve2D" id="Curve2D_drive"]
+bake_interval = 10.0
+_data = {
+"points": PackedVector2Array(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 400, 60, 0, 0, 0, 0, 900, -20, 0, 0, 0, 0, 1400, 80, 0, 0, 0, 0, 1900, 20, 0, 0, 0, 0, 2400, 0)
+}
+point_count = 6
+
+[node name="TrackForestRoadB" type="Node2D"]
+script = ExtResource("1_chunk")
+chunk_id = "track_forest_road_b"
+ground_depth = 900.0
+ground_color = Color(0.16, 0.24, 0.17, 1)
+surface_color = Color(0.45, 0.95, 0.55, 1)
+ground_texture = ExtResource("3_ground_tex")
+ground_texture_scale = Vector2(1, 1)
+
+[node name="GroundPreview" type="Polygon2D" parent="."]
+z_index = -10
+[node name="SurfacePreview" type="Line2D" parent="."]
+z_index = -8
+width = 8.0
+default_color = Color(0.45, 0.95, 0.55, 1)
+joint_mode = 2
+begin_cap_mode = 2
+end_cap_mode = 2
+antialiased = true
+[node name="Artwork" type="Node2D" parent="."]
+[node name="DrivePath" type="Path2D" parent="."]
+curve = SubResource("Curve2D_drive")
+[node name="GroundBody" type="StaticBody2D" parent="."]
+collision_mask = 0
+[node name="GroundCollision" type="CollisionPolygon2D" parent="GroundBody"]
+[node name="EntryMarker" type="Marker2D" parent="."]
+[node name="Label" type="Label" parent="EntryMarker"]
+offset_left = -38.0
+offset_top = -58.0
+offset_right = 38.0
+offset_bottom = -30.0
+theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
+theme_override_font_sizes/font_size = 18
+text = "ENTRY"
+[node name="ExitMarker" type="Marker2D" parent="."]
+[node name="Label" type="Label" parent="ExitMarker"]
+offset_left = -30.0
+offset_top = -58.0
+offset_right = 30.0
+offset_bottom = -30.0
+theme_override_colors/font_color = Color(0.35, 0.84, 1, 1)
+theme_override_font_sizes/font_size = 18
+text = "EXIT"
+[node name="Props" type="Node2D" parent="."]
+[node name="GrapplePoints" type="Node2D" parent="."]
+[node name="MountainSwingAnchor" parent="GrapplePoints" instance=ExtResource("2_grapple")]
+position = Vector2(700, -420)
+[node name="GameplayMarkers" type="Node2D" parent="."]

@@ -1,0 +1,184 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/minigames/gem_jam.gd" id="1_gem"]
+
+[node name="GemJam" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_gem")
+
+[node name="HUD" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 80.0
+offset_top = 42.0
+offset_right = 1200.0
+offset_bottom = 86.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 34
+text = "JEWEL JAM"
+horizontal_alignment = 1
+
+[node name="StationLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 100.0
+offset_top = 105.0
+offset_right = 620.0
+offset_bottom = 140.0
+theme_override_colors/font_color = Color(0.55, 0.95, 0.85, 1)
+theme_override_font_sizes/font_size = 24
+text = "CHISELING STATION"
+
+[node name="ViewLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 100.0
+offset_top = 145.0
+offset_right = 620.0
+offset_bottom = 175.0
+theme_override_colors/font_color = Color(0.78, 0.78, 0.76, 1)
+theme_override_font_sizes/font_size = 18
+text = "VIEW: TOP  (F TO SWITCH)"
+
+[node name="StatusLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 100.0
+offset_top = 615.0
+offset_right = 1180.0
+offset_bottom = 650.0
+theme_override_colors/font_color = Color(0.75, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 18
+text = "Drag the rock between stations. Start by carrying it to the X-ray scanner."
+
+[node name="MetricsLabel" type="Label" parent="HUD"]
+layout_mode = 0
+offset_left = 100.0
+offset_top = 660.0
+offset_right = 1180.0
+offset_bottom = 692.0
+theme_override_colors/font_color = Color(0.95, 0.78, 0.45, 1)
+theme_override_font_sizes/font_size = 17
+text = "ROCK REMOVED  0 / 0    GEM DAMAGE  0    EXPOSURE  0%"
+
+[node name="ChiselHint" type="Label" parent="HUD"]
+visible = false
+layout_mode = 0
+offset_left = 100.0
+offset_top = 575.0
+offset_right = 620.0
+offset_bottom = 605.0
+theme_override_colors/font_color = Color(1, 0.85, 0.5, 1)
+theme_override_font_sizes/font_size = 17
+text = "MOUSE: AIM  A/D: ROTATE  CLICK: STRIKE"
+
+[node name="ResonanceProgress" type="ProgressBar" parent="HUD"]
+layout_mode = 0
+offset_left = 665.0
+offset_top = 465.0
+offset_right = 1185.0
+offset_bottom = 495.0
+show_percentage = true
+
+[node name="StationBar" type="Control" parent="."]
+layout_mode = 0
+offset_left = 665.0
+offset_top = 140.0
+offset_right = 1185.0
+offset_bottom = 200.0
+
+[node name="XRayButton" type="Button" parent="StationBar"]
+layout_mode = 0
+offset_right = 160.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 19
+text = "X-RAY"
+
+[node name="ChiselButton" type="Button" parent="StationBar"]
+layout_mode = 0
+offset_left = 170.0
+offset_right = 330.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 19
+text = "CHISEL"
+
+[node name="ResonanceButton" type="Button" parent="StationBar"]
+layout_mode = 0
+offset_left = 340.0
+offset_right = 500.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 19
+text = "RESONANCE"
+
+[node name="CloseButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 1200.0
+offset_top = 28.0
+offset_right = 1260.0
+offset_bottom = 82.0
+theme_override_font_sizes/font_size = 24
+text = "X"
+
+[node name="ResonancePanel" type="Control" parent="."]
+visible = false
+layout_mode = 0
+
+[node name="FrequencyLabel" type="Label" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 665.0
+offset_top = 505.0
+offset_right = 915.0
+offset_bottom = 540.0
+theme_override_font_sizes/font_size = 18
+text = "FREQUENCY  0.50"
+
+[node name="FrequencyDown" type="Button" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 920.0
+offset_top = 500.0
+offset_right = 975.0
+offset_bottom = 548.0
+text = "-"
+
+[node name="FrequencyUp" type="Button" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 980.0
+offset_top = 500.0
+offset_right = 1035.0
+offset_bottom = 548.0
+text = "+"
+
+[node name="AmplitudeLabel" type="Label" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 665.0
+offset_top = 550.0
+offset_right = 915.0
+offset_bottom = 585.0
+theme_override_font_sizes/font_size = 18
+text = "AMPLITUDE  0.50"
+
+[node name="AmplitudeDown" type="Button" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 920.0
+offset_top = 545.0
+offset_right = 975.0
+offset_bottom = 593.0
+text = "-"
+
+[node name="AmplitudeUp" type="Button" parent="ResonancePanel"]
+layout_mode = 0
+offset_left = 980.0
+offset_top = 545.0
+offset_right = 1035.0
+offset_bottom = 593.0
+text = "+"

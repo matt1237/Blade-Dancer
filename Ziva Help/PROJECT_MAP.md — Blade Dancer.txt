@@ -1,0 +1,173 @@
+PROJECT_MAP.md — Blade Dancer
+
+Purpose: give coding agents a fast index so they do not rediscover the repository every task.
+
+Keep this file SHORT and update it whenever major files move.
+
+Player
+
+Player scene:
+
+Player controller:
+
+Dash:
+
+Health/damage:
+
+Flow:
+
+Animation:
+
+Sword / Combat
+
+Sword controller:
+
+Sword physics / inertia:
+
+Hit detection:
+
+Swept collision:
+
+Damage calculation:
+
+Parry / clash:
+
+Contact-point velocity:
+
+Hitstop / stagger:
+
+Chakram
+
+Chakram scene:
+
+Projectile script:
+
+Deflection:
+
+Bounce:
+
+Chain lightning:
+
+Magnetic/seeking behavior:
+
+Enemies
+
+Base enemy:
+
+Enemy movement/spacing:
+
+Enemy damage:
+
+Projectile enemy:
+
+Elite sword enemy:
+
+Shared enemy config/resources:
+
+Bosses
+
+Zungar
+
+Scene:
+
+Main AI script:
+
+Attack scripts:
+
+Tuning/config resource:
+
+Phase logic:
+
+Arena dependencies:
+
+Known issues:
+
+Waves / Run
+
+Wave manager:
+
+Spawn manager:
+
+Difficulty scaling:
+
+Score:
+
+Upgrade selection:
+
+Items / Gear
+
+Item base:
+
+Gear generation:
+
+Weapon traits:
+
+Equipment:
+
+Drops:
+
+World
+
+Day/night:
+
+Destructible terrain:
+
+Resource drops:
+
+Farmables:
+
+Zones/maps:
+
+UI
+
+HUD:
+
+Menus:
+
+Beat/music visualizer:
+
+Damage/feedback UI:
+
+Audio / Music
+
+Music manager:
+
+Flow/music integration:
+
+SFX manager:
+
+Save / Meta Progression
+
+Save system:
+
+Crafting:
+
+Farming:
+
+Town/meta:
+
+Autoloads / Globals
+
+[name] -> [file + purpose]
+
+Important Shared Resources
+
+[resource] -> [purpose]
+
+Do Not Scan Unless Needed
+
+.godot/
+
+exports/
+
+builds/
+
+screenshots/
+
+recordings/
+
+reference art/
+
+raw generated art/
+
+large audio folders/

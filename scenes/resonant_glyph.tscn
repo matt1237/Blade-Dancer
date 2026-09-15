@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/resonant_glyph.gd" id="1_glyph"]
+
+[sub_resource type="CircleShape2D" id="GlyphShape"]
+radius = 32.0
+
+[node name="ResonantGlyph" type="Area2D" groups=["resonant_glyph"]]
+collision_layer = 16
+collision_mask = 0
+monitoring = false
+monitorable = true
+script = ExtResource("1_glyph")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("GlyphShape")

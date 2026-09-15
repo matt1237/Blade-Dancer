@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dtp1b30pmak6r"
+path="res://.godot/imported/Metal Scraping Along Metal - Like The Sound Of Rubbbing Two Metal Knives Alon....mp3-d536f36576c2960ea77b3a778178762d.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Grindstone/Metal Scraping Along Metal - Like The Sound Of Rubbbing Two Metal Knives Alon....mp3"
+dest_files=["res://.godot/imported/Metal Scraping Along Metal - Like The Sound Of Rubbbing Two Metal Knives Alon....mp3-d536f36576c2960ea77b3a778178762d.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="1024" viewBox="0 0 512 1024">
+<defs>
+ <linearGradient id="blade" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#71879b"/><stop offset=".18" stop-color="#f6ffff"/><stop offset=".5" stop-color="#b8cbd3"/><stop offset=".72" stop-color="#ffffff"/><stop offset="1" stop-color="#506479"/></linearGradient>
+ <linearGradient id="grip" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#39253a"/><stop offset=".5" stop-color="#8b5545"/><stop offset="1" stop-color="#2b2132"/></linearGradient>
+ <linearGradient id="guard" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#fbffff"/><stop offset="1" stop-color="#72899a"/></linearGradient>
+</defs>
+<!-- blade, broad and slightly heroic -->
+<path d="M216 372 L296 372 L312 890 L256 970 L200 890 Z" fill="url(#blade)" stroke="#101a2b" stroke-width="10" stroke-linejoin="round"/>
+<path d="M256 400 L256 925" stroke="#f9ffff" stroke-width="7" opacity=".7"/>
+<path d="M218 414 L238 865" stroke="#5a7186" stroke-width="7" opacity=".7"/>
+<!-- fuller -->
+<path d="M245 411 L256 930 L267 411" fill="none" stroke="#50677d" stroke-width="5" opacity=".8"/>
+<!-- crossguard -->
+<path d="M212 358 Q160 337 83 351 L42 329 L62 383 L102 366 Q164 386 216 382 Z" fill="url(#guard)" stroke="#101a2b" stroke-width="10" stroke-linejoin="round"/>
+<path d="M300 358 Q352 337 429 351 L470 329 L450 383 L410 366 Q348 386 296 382 Z" fill="url(#guard)" stroke="#101a2b" stroke-width="10" stroke-linejoin="round"/>
+<path d="M95 357 Q155 365 207 369 M417 357 Q357 365 305 369" fill="none" stroke="#ffffff" stroke-width="6" opacity=".7"/>
+<!-- wrapped grip -->
+<path d="M218 116 Q256 101 294 116 L296 330 Q256 348 216 330 Z" fill="url(#grip)" stroke="#101a2b" stroke-width="10"/>
+<path d="M221 151 L291 125 M219 190 L293 163 M218 229 L294 202 M217 268 L295 240 M217 307 L296 278" stroke="#d49363" stroke-width="7" opacity=".75"/>
+<!-- hand gripping the hilt -->
+<path d="M198 278 Q213 250 238 253 L274 263 Q309 273 314 302 L300 348 Q281 370 257 354 L219 345 Q193 330 198 278 Z" fill="#d99473" stroke="#101a2b" stroke-width="10" stroke-linejoin="round"/>
+<path d="M212 286 Q243 298 294 314 M215 307 Q252 320 291 331" fill="none" stroke="#a85c59" stroke-width="7" stroke-linecap="round"/>
+<!-- pommel -->
+<path d="M218 111 L224 75 L244 57 L268 57 L288 75 L294 111 Z" fill="url(#guard)" stroke="#101a2b" stroke-width="10"/>
+<circle cx="256" cy="42" r="32" fill="url(#guard)" stroke="#101a2b" stroke-width="10"/>
+<circle cx="256" cy="42" r="17" fill="#9cc2d2" stroke="#506479" stroke-width="5"/>
+<path d="M246 28 L265 35" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+</svg>
