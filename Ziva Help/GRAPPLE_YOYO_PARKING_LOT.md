@@ -28,7 +28,11 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 - Tangential motion is not converted into a canned path.
 - Wrap topology remains attached while RMB is held; only explicit body invalidation or release may remove an anchor in the current prototype.
 
-## Implemented enemy-wrap prototype
+## Restored boundary-wrap experiment for Astra investigation
+
+The complete enemy/terrain boundary-wrap implementation is restored behind the persisted `yoyo_boundary_wrap_enabled` control. It includes enemy circle tangencies, rectangle perimeter tracking, winding accumulation, reeling/unwinding, live collision geometry, and hysteretic release. This is intentionally marked experimental: the last live evaluation found counterclockwise tunneling, and a motion-sign patch introduced persistent rope slack. `yoyo_static_pivot_enabled` remains the simpler fallback when Full Boundary Wrap is off. Astra should treat those failures as the current reproduction case rather than assuming the existing unit tests prove player-facing correctness.
+
+## Historical enemy-wrap prototype
 
 - One living enemy can become the active dynamic wrap owner when the hand-to-Chakram segment crosses its collision circle.
 - Enemy wrapping uses two live tangent contacts plus the directed collision-boundary arc between them. The rendered rope and rope-length constraint consume this same path every physics frame.

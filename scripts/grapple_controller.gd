@@ -21,6 +21,8 @@ const TAUT_CLEARANCE: float = 4.0
 const ENEMY_WRAP_RADIUS: float = 28.0
 const ENEMY_WRAP_CLEARANCE: float = 3.0
 const WRAPPED_LOCAL_SEGMENT_MIN: float = 1.0
+## Enemy winding and collision-boundary perimeter wrapping remain parked.
+## The older single-point static obstruction pivot is independently available.
 ## One canonical list for every persisted and player-facing Grapple tuner.
 ## UI and Global Presets consume this list instead of maintaining shadow copies.
 const TUNING_DEFAULTS: Dictionary = {
@@ -38,7 +40,8 @@ const TUNING_DEFAULTS: Dictionary = {
 	"chakram_yank_strength": 7.0, "yoyo_enabled": true,
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
 	"yoyo_orbit_drag": 1.15, "yoyo_min_orbit_time": 0.35,
-	"yoyo_recall_speed_threshold": 190.0, "yoyo_wrap_enabled": true
+	"yoyo_recall_speed_threshold": 190.0, "yoyo_static_pivot_enabled": true,
+	"yoyo_boundary_wrap_enabled": true
 }
 const TUNING_KEYS: Array[String] = [
 	"max_tether_length", "hook_travel_speed", "reel_speed", "slack_take_up_speed",
@@ -49,7 +52,8 @@ const TUNING_KEYS: Array[String] = [
 	"light_slide_fraction", "medium_reel_multiplier", "medium_yank_strength", "medium_slide_fraction",
 	"medium_player_pull_strength", "heavy_player_pull_strength", "chakram_yank_strength",
 	"yoyo_enabled", "yoyo_soft_tension_zone", "yoyo_radial_damping", "yoyo_orbit_drag",
-	"yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_wrap_enabled"
+	"yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_static_pivot_enabled",
+	"yoyo_boundary_wrap_enabled"
 ]
 
 static func default_tuning_state() -> Dictionary:
@@ -112,7 +116,10 @@ var mastery_range_multiplier: float = 1.0
 @export var yoyo_orbit_drag: float = 1.15
 @export var yoyo_min_orbit_time: float = 0.35
 @export var yoyo_recall_speed_threshold: float = 190.0
-@export var yoyo_wrap_enabled: bool = true
+## Enables the original one-point static obstruction pivot only.
+@export var yoyo_static_pivot_enabled: bool = true
+## Enables the full experimental enemy and collision-boundary wrap solver.
+@export var yoyo_boundary_wrap_enabled: bool = true
 
 var player: Player = null
 var active: bool = false
@@ -353,6 +360,7 @@ static func yoyo_shortest_wrap_sign(center: Vector2, hand: Vector2, chakram_posi
 	var negative_arc: float = yoyo_directed_arc((negative_entry - center).angle(), (negative_exit - center).angle(), -1.0)
 	return 1.0 if positive_arc <= negative_arc else -1.0
 
+
 static func yoyo_accumulated_arc(previous_arc: float, minimum_arc: float, previous_entry_angle: float, entry_angle: float, previous_exit_angle: float, exit_angle: float, winding_sign: float) -> float:
 	var entry_delta: float = wrapf(entry_angle - previous_entry_angle, -PI, PI)
 	var exit_delta: float = wrapf(exit_angle - previous_exit_angle, -PI, PI)
@@ -455,6 +463,27 @@ func _yoyo_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D = null
 		return enemy_hit
 	return {}
 
+func _yoyo_static_obstruction_hit(start: Vector2, end: Vector2) -> Dictionary:
+	if player == null or not player.is_inside_tree():
+		return {}
+	var main_scene: Node = player.get_tree().current_scene
+	if main_scene == null:
+		return {}
+	if main_scene.has_method("get_terrain_obstruction_hit"):
+		var object_hit: Dictionary = main_scene.call("get_terrain_obstruction_hit", start, end, 2.0) as Dictionary
+		if not object_hit.is_empty():
+			var object: ArenaObject = object_hit.get("object") as ArenaObject
+			if object != null:
+				var collision_rect: Rect2 = object.world_collision_rect()
+				if collision_rect.size.x > 0.0 and collision_rect.size.y > 0.0:
+					return {"position": yoyo_wrap_corner(collision_rect, object_hit["position"] as Vector2), "object": object}
+	if main_scene.has_method("get_terrain_wall_collision"):
+		var wall_hit: Dictionary = main_scene.call("get_terrain_wall_collision", start, end, 2.0) as Dictionary
+		if not wall_hit.is_empty():
+			var normal: Vector2 = wall_hit.get("normal", Vector2.ZERO) as Vector2
+			return {"position": (wall_hit["position"] as Vector2) + normal * 4.0, "object": null}
+	return {}
+
 func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_reacquire_blocked_object = reacquire_blocked_object
 	yoyo_wrap_active = false
@@ -527,9 +556,40 @@ func _reset_yoyo_state() -> void:
 	yoyo_orbit_time = 0.0
 	_clear_yoyo_wrap()
 
-func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta: float) -> void:
-	if not yoyo_wrap_enabled:
+func _update_static_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta: float) -> void:
+	if not yoyo_static_pivot_enabled:
 		_clear_yoyo_wrap()
+		return
+	if yoyo_wrap_active:
+		if yoyo_wrap_object != null and not is_instance_valid(yoyo_wrap_object):
+			_clear_yoyo_wrap()
+			return
+		if yoyo_wrap_object is ArenaObject and (yoyo_wrap_object as ArenaObject).broken:
+			_clear_yoyo_wrap()
+			return
+		if _yoyo_static_obstruction_hit(hand_position, chakram_position).is_empty():
+			yoyo_wrap_clear_ticks += 1
+			if yoyo_wrap_clear_ticks >= 3:
+				_clear_yoyo_wrap(yoyo_wrap_object)
+		else:
+			yoyo_wrap_clear_ticks = 0
+		return
+	var hit: Dictionary = _yoyo_static_obstruction_hit(hand_position, chakram_position)
+	if hit.is_empty():
+		return
+	var candidate: Vector2 = hit["position"] as Vector2
+	if hand_position.distance_to(candidate) < 18.0 or chakram_position.distance_to(candidate) < 18.0:
+		return
+	yoyo_wrap_active = true
+	yoyo_wrap_phase = YoyoWrapPhase.WRAP_ACQUIRED
+	yoyo_wrap_position = candidate
+	yoyo_wrap_object = hit.get("object") as Node2D
+	yoyo_wrap_bounds = Rect2()
+	yoyo_wrap_clear_ticks = 0
+
+func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta: float) -> void:
+	if not yoyo_boundary_wrap_enabled:
+		_update_static_yoyo_wrap(hand_position, chakram_position, _delta)
 		return
 	if yoyo_wrap_active:
 		if yoyo_wrap_phase == YoyoWrapPhase.WRAP_ACQUIRED:

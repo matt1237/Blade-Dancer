@@ -27,6 +27,8 @@ func test_wrap_acquisition_selects_short_contact_arc() -> void:
 func test_signed_winding_accumulates_and_reverse_travel_unwinds() -> void:
 	var wound: float = GrappleController.yoyo_accumulated_arc(0.5, 0.5, 0.0, 0.0, 0.0, 0.4, 1.0)
 	assert(is_equal_approx(wound, 0.9), "Forward tangential travel must accumulate collision-boundary rope.")
+	var counter_wound: float = GrappleController.yoyo_accumulated_arc(0.5, 0.5, 0.0, 0.0, 1.0, 0.8, -1.0)
+	assert(is_equal_approx(counter_wound, 0.7), "Counterclockwise tangential travel must accumulate collision-boundary rope with the same authority.")
 	var unwound: float = GrappleController.yoyo_accumulated_arc(wound, 0.5, 0.0, 0.0, 0.4, 0.1, 1.0)
 	assert(is_equal_approx(unwound, 0.6), "Reverse tangential travel must unwind the accumulated coil.")
 	var clamped: float = GrappleController.yoyo_accumulated_arc(unwound, 0.5, 0.0, 0.0, 0.1, -1.0, 1.0)

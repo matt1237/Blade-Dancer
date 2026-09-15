@@ -532,7 +532,8 @@ static func _grapple_feel_tip(key: String) -> String:
 		"yoyo_orbit_drag": ["Tangential energy lost per second while orbiting at full extension.", "Long, lively orbit and more trick time.", "Orbit fades quickly toward recall eligibility.", "Tune only after the catch feels right."],
 		"yoyo_min_orbit_time": ["Minimum guaranteed orbit time before automatic recall may begin.", "Recall may follow the catch immediately.", "A longer mandatory showcase hang.", "This is a time gate; Auto-Recall Energy Gate is the speed gate."],
 		"yoyo_recall_speed_threshold": ["Maximum Chakram speed eligible for auto-recall after the guaranteed hang.", "Only nearly exhausted orbits recall.", "More energetic orbits hand off to recall.", "Move right if orbit never ends; left if useful momentum is recalled."],
-		"yoyo_wrap_enabled": ["Allows one static corner to become the Yo-yo's local rope pivot.", "Rope always uses the direct hand-to-Chakram path.", "Clear static corners may redirect the tether.", "Tune the basic catch with this off, then validate wrapping separately."],
+		"yoyo_static_pivot_enabled": ["Allows one static obstruction point to redirect the Yo-yo rope when full boundary wrapping is off.", "Rope always uses the direct hand-to-Chakram path.", "Rocks, trees, and walls may become one local pivot.", "This is the stable fallback; Full Boundary Wrap overrides it."],
+		"yoyo_boundary_wrap_enabled": ["Enables the complete experimental enemy and terrain boundary-wrap solver.", "Uses the simpler Static Tether Point fallback.", "Uses live circle/rectangle boundaries, winding, reeling, and unwind state.", "Known experimental behavior is preserved for Astra investigation."],
 	}
 	var values: Array = guide.get(key, ["Grapple tuning value.", "Less of this effect.", "More of this effect.", "Tune one authority at a time."]) as Array
 	return _form_three_feel_tip(str(values[0]), str(values[1]), str(values[2]), str(values[3]))
@@ -721,7 +722,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "chakram_yank_strength", "Chakram Hand-Steering Gain", 0.0, 16.0, 0.25, "×", _grapple_feel_tip("chakram_yank_strength"))
 	var yoyo_section: VBoxContainer = _create_section_header(grapple_section, "GRAPPLE YO-YO (Global)", true)
 	var yoyo_note: Label = Label.new()
-	yoyo_note.text = "Chakram + Grapple: outward radial speed burns off at full line while tangential motion becomes orbit. One static obstruction may become the local pivot."
+	yoyo_note.text = "Chakram + Grapple: Full Boundary Wrap restores the complete enemy/terrain experiment. Turn it off to use the simpler Static Tether Point fallback."
 	yoyo_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	yoyo_section.add_child(yoyo_note)
 	_create_grapple_slider(yoyo_section, "yoyo_enabled", "Yo-yo Sequence Enabled", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_enabled"))
@@ -730,7 +731,8 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(yoyo_section, "yoyo_orbit_drag", "Yo-yo Orbit Energy Burn", 0.0, 4.0, 0.05, " /s", _grapple_feel_tip("yoyo_orbit_drag"))
 	_create_grapple_slider(yoyo_section, "yoyo_min_orbit_time", "Yo-yo Guaranteed Hang", 0.0, 2.0, 0.05, " s", _grapple_feel_tip("yoyo_min_orbit_time"))
 	_create_grapple_slider(yoyo_section, "yoyo_recall_speed_threshold", "Yo-yo Auto-Recall Energy Gate", 0.0, 500.0, 10.0, " px/s", _grapple_feel_tip("yoyo_recall_speed_threshold"))
-	_create_grapple_slider(yoyo_section, "yoyo_wrap_enabled", "Yo-yo Static Pivot Enabled", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_wrap_enabled"))
+	_create_grapple_slider(yoyo_section, "yoyo_static_pivot_enabled", "Yo-yo Static Tether Point", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_static_pivot_enabled"))
+	_create_grapple_slider(yoyo_section, "yoyo_boundary_wrap_enabled", "Yo-yo Full Boundary Wrap (Experimental)", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_boundary_wrap_enabled"))
 	_create_grapple_slider(grapple_section, "directional_transfer_ratio", "Dynamic Target Direction Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("directional_transfer_ratio"))
 	_create_grapple_slider(grapple_section, "radial_yank_ratio", "Dynamic Target Outward Bias", 0.0, 2.0, 0.05, "×", _grapple_feel_tip("radial_yank_ratio"))
 	_create_grapple_slider(grapple_section, "player_hand_orbit_strength", "Player Tangential Steering Gain", 0.0, 12.0, 0.25, "×", _grapple_feel_tip("player_hand_orbit_strength"))
