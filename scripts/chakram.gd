@@ -265,6 +265,22 @@ static func swept_circle_contact(start: Vector2, end: Vector2, center: Vector2, 
 		closest = start + segment * along
 	return closest.distance_squared_to(center) <= combined_radius * combined_radius
 
+static func swept_circle_entry(start: Vector2, end: Vector2, center: Vector2, radius: float) -> Vector2:
+	var offset: Vector2 = start - center
+	var direction: Vector2 = end - start
+	var a: float = direction.length_squared()
+	var c: float = offset.length_squared() - radius * radius
+	if c <= 0.0 or a < 0.00001:
+		var normal: Vector2 = offset.normalized() if offset.length_squared() > 0.00001 else -direction.normalized()
+		if normal == Vector2.ZERO:
+			normal = Vector2.RIGHT
+		return center + normal * radius
+	var b: float = offset.dot(direction)
+	var discriminant: float = b * b - a * c
+	if discriminant < 0.0:
+		return end
+	return start + direction * clampf((-b - sqrt(discriminant)) / a, 0.0, 1.0)
+
 func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 	var grapple_controller: GrappleController = owner_player.get_node_or_null("GrappleController") as GrappleController if owner_player != null else null
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
@@ -276,6 +292,14 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 		if not swept_circle_contact(travel_start, travel_end, enemy_center, enemy_radius + _chakram_collision_radius()): continue
 		var enemy_id: int = enemy.get_instance_id()
 		var is_active_coil: bool = grapple_controller != null and grapple_controller.is_yoyo_coiling_enemy(enemy)
+		# Damage suppression is not permission for the wrapped body to become
+		# intangible. Resolve its swept boundary even before/after the earned hit.
+		if is_active_coil:
+			var contact: Vector2 = swept_circle_entry(travel_start, travel_end, enemy_center, enemy_radius + _chakram_collision_radius())
+			var normal: Vector2 = enemy_center.direction_to(contact)
+			global_position = enemy_center + normal * (enemy_radius + _chakram_collision_radius() + 0.01)
+			if velocity.dot(normal) < 0.0:
+				velocity = velocity.bounce(normal)
 		if is_active_coil and (not yoyo_coil_contact_armed or yoyo_coil_contact_enemy_id != enemy_id):
 			continue
 		if hit_enemy_ids.has(enemy_id) and not is_active_coil:
@@ -293,7 +317,7 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 			enemy.chakram_hit_from_behind(velocity.normalized())
 		if pierces_remaining > 0:
 			pierces_remaining -= 1
-		else:
+		elif not is_active_coil:
 			velocity = velocity.bounce(away).normalized() * velocity.length()
 		yoyo_last_enemy_hit_frame = Engine.get_physics_frames()
 		yoyo_last_enemy_hit_incoming = incoming_velocity

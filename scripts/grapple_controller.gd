@@ -21,8 +21,7 @@ const TAUT_CLEARANCE: float = 4.0
 const ENEMY_WRAP_RADIUS: float = 28.0
 const ENEMY_WRAP_CLEARANCE: float = 3.0
 const WRAPPED_LOCAL_SEGMENT_MIN: float = 1.0
-## Enemy winding and collision-boundary perimeter wrapping remain parked.
-## The older single-point static obstruction pivot is independently available.
+## Full boundary wrapping is the primary path; the static pivot is an opt-out fallback.
 ## One canonical list for every persisted and player-facing Grapple tuner.
 ## UI and Global Presets consume this list instead of maintaining shadow copies.
 const TUNING_DEFAULTS: Dictionary = {
@@ -173,6 +172,7 @@ var yoyo_debug_sample_left: float = 0.0
 var yoyo_reel_shortfall: float = 0.0
 var yoyo_reacquire_blocked_object: Node2D = null
 var yoyo_wrap_clear_ticks: int = 0
+var yoyo_wrap_uses_boundary: bool = true
 
 func setup(owner_player: Player) -> void:
 	player = owner_player
@@ -333,9 +333,14 @@ static func yoyo_rect_shortest_wrap_sign(rect: Rect2, entry_point: Vector2, exit
 	return 1.0 if positive <= negative else -1.0
 
 static func yoyo_wrap_corner(rect: Rect2, segment_hit: Vector2) -> Vector2:
-	# Compatibility name retained for callers; the boundary adapter now chooses
-	# the nearest point on the active rectangle, not an arbitrary corner.
-	return yoyo_rect_surface_point(rect, segment_hit)
+	# Legacy single-pivot mode must at least use a corner, not an interior
+	# point of a face. Full boundary mode uses both supporting corners instead.
+	var corners: Array[Vector2] = [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	var selected: Vector2 = corners[0]
+	for corner: Vector2 in corners:
+		if corner.distance_squared_to(segment_hit) < selected.distance_squared_to(segment_hit):
+			selected = corner
+	return selected
 
 static func yoyo_circle_tangent(center: Vector2, endpoint: Vector2, radius: float, side: float) -> Vector2:
 	var offset: Vector2 = endpoint - center
@@ -361,29 +366,17 @@ static func yoyo_shortest_wrap_sign(center: Vector2, hand: Vector2, chakram_posi
 	return 1.0 if positive_arc <= negative_arc else -1.0
 
 
-static func yoyo_accumulated_arc(previous_arc: float, minimum_arc: float, previous_entry_angle: float, entry_angle: float, previous_exit_angle: float, exit_angle: float, winding_sign: float) -> float:
+static func yoyo_accumulated_arc(previous_arc: float, _minimum_arc: float, previous_entry_angle: float, entry_angle: float, previous_exit_angle: float, exit_angle: float, winding_sign: float) -> float:
 	var entry_delta: float = wrapf(entry_angle - previous_entry_angle, -PI, PI)
 	var exit_delta: float = wrapf(exit_angle - previous_exit_angle, -PI, PI)
 	var directed_delta: float = (exit_delta - entry_delta) * signf(winding_sign)
-	var accumulated: float = maxf(0.0, previous_arc + directed_delta)
-	# Before a complete turn, the live tangent arc is the minimum physically
-	# occupied path. Once a full coil exists, that minimum must not prevent the
-	# Chakram from unwinding back through the seam.
-	if previous_arc < TAU:
-		accumulated = maxf(accumulated, maxf(0.0, minimum_arc))
-	return accumulated
+	# Contact history is continuous across zero; a modulo minimum here would
+	# invent a complete turn when the last contact unwinds across the seam.
+	return maxf(0.0, previous_arc + directed_delta)
 
 static func yoyo_enemy_wrap_acceleration(hand_direction: Vector2, chakram_direction: Vector2, path_stretch: float, ramp_distance: float, enemy_strength: float, weight_scale: float) -> Vector2:
 	var engagement: float = clampf(maxf(0.0, path_stretch) / maxf(0.001, ramp_distance), 0.0, 1.0)
 	return (hand_direction.normalized() + chakram_direction.normalized()) * 0.5 * maxf(0.0, enemy_strength) * maxf(0.0, weight_scale) * engagement
-
-## During a completed enemy coil, reel distance is consumed from the traced
-## collision-boundary path itself. This is a path-length operation, not a
-## position/orbit command: the Chakram keeps its rebound velocity while the
-## moving constraint is allowed to unwind and leave the enemy.
-static func yoyo_reeling_arc(previous_arc: float, reel_speed_value: float, delta: float, radius: float) -> float:
-	var safe_radius: float = maxf(1.0, radius)
-	return maxf(0.0, previous_arc - maxf(0.0, reel_speed_value) * maxf(0.0, delta) / safe_radius)
 
 static func yoyo_enemy_segment_hit(start: Vector2, end: Vector2, center: Vector2, radius: float) -> Vector2:
 	var segment: Vector2 = end - start
@@ -429,7 +422,7 @@ func _yoyo_enemy_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D 
 		if enemy == null or enemy == excluded or not is_instance_valid(enemy) or enemy.health <= 0.0 or not _enemy_wrap_supported(enemy):
 			continue
 		var center: Vector2 = _enemy_wrap_center(enemy)
-		var hit: Vector2 = yoyo_enemy_segment_hit(start, end, center, _enemy_wrap_radius(enemy) + ENEMY_WRAP_CLEARANCE)
+		var hit: Vector2 = yoyo_enemy_segment_hit(start, end, center, _enemy_wrap_radius(enemy))
 		if hit == Vector2.INF:
 			continue
 		var outward: Vector2 = center.direction_to(hit)
@@ -514,7 +507,7 @@ func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_reel_shortfall = 0.0
 	yoyo_wrap_clear_ticks = 0
 
-func _update_rect_wrap(hand_position: Vector2, chakram_position: Vector2, delta: float) -> void:
+func _update_rect_wrap(hand_position: Vector2, chakram_position: Vector2, _delta: float) -> void:
 	var bounds: Rect2 = yoyo_wrap_bounds
 	if is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is ArenaObject:
 		bounds = (yoyo_wrap_object as ArenaObject).world_collision_rect()
@@ -523,32 +516,69 @@ func _update_rect_wrap(hand_position: Vector2, chakram_position: Vector2, delta:
 		_clear_yoyo_wrap()
 		return
 	var perimeter: float = yoyo_rect_perimeter_length(bounds)
-	yoyo_rect_entry_point = yoyo_rect_perimeter_point(bounds, yoyo_rect_entry_parameter)
-	var live_exit: Vector2 = yoyo_rect_surface_point(bounds, chakram_position)
-	var live_exit_parameter: float = yoyo_rect_perimeter_parameter(bounds, live_exit)
-	var forward_motion: float = yoyo_rect_directed_distance(yoyo_rect_previous_exit_parameter, live_exit_parameter, yoyo_rect_wrap_sign, perimeter)
-	var reverse_sign: float = -yoyo_rect_wrap_sign
-	var reverse_motion: float = yoyo_rect_directed_distance(yoyo_rect_previous_exit_parameter, live_exit_parameter, reverse_sign, perimeter)
-	if yoyo_state == YoyoState.REELING:
-		yoyo_rect_arc_length = maxf(0.0, yoyo_rect_arc_length - maxf(0.0, reel_speed) * maxf(0.0, delta))
-	elif reverse_motion < forward_motion and reverse_motion < perimeter * 0.5:
-		yoyo_rect_arc_length = maxf(0.0, yoyo_rect_arc_length - reverse_motion)
+	yoyo_rect_entry_point = yoyo_rect_tangent(bounds, hand_position, yoyo_rect_wrap_sign)
+	yoyo_rect_exit_point = yoyo_rect_tangent(bounds, chakram_position, -yoyo_rect_wrap_sign)
+	var entry: float = yoyo_rect_perimeter_parameter(bounds, yoyo_rect_entry_point)
+	var exit: float = yoyo_rect_perimeter_parameter(bounds, yoyo_rect_exit_point)
+	var entry_delta: float = wrapf(entry - yoyo_rect_entry_parameter, -perimeter * 0.5, perimeter * 0.5)
+	var exit_delta: float = wrapf(exit - yoyo_rect_previous_exit_parameter, -perimeter * 0.5, perimeter * 0.5)
+	yoyo_rect_arc_length = maxf(0.0, yoyo_rect_arc_length + (exit_delta - entry_delta) * yoyo_rect_wrap_sign)
+	yoyo_rect_entry_parameter = entry
+	yoyo_rect_previous_exit_parameter = exit
+	yoyo_wrap_position = yoyo_rect_exit_point
+	if yoyo_rect_arc_length <= 0.03 and not yoyo_segment_crosses_rect(hand_position, chakram_position, bounds.grow(2.0)):
+		_clear_yoyo_wrap(yoyo_wrap_object)
+
+func _update_circle_contacts(hand: Vector2, endpoint: Vector2, center: Vector2, radius: float, enemy: Enemy) -> void:
+	yoyo_enemy_entry_point = yoyo_circle_tangent(center, hand, radius, yoyo_enemy_wrap_sign)
+	yoyo_enemy_exit_point = yoyo_circle_tangent(center, endpoint, radius, -yoyo_enemy_wrap_sign)
+	var entry: float = (yoyo_enemy_entry_point - center).angle()
+	var exit: float = (yoyo_enemy_exit_point - center).angle()
+	var previous: float = yoyo_enemy_arc_angle
+	yoyo_enemy_minimum_arc = yoyo_directed_arc(entry, exit, yoyo_enemy_wrap_sign)
+	if not yoyo_enemy_arc_initialized:
+		yoyo_enemy_arc_angle = yoyo_enemy_minimum_arc
+		yoyo_enemy_arc_initialized = true
 	else:
-		yoyo_rect_arc_length += forward_motion
-	yoyo_rect_previous_exit_parameter = live_exit_parameter
-	yoyo_rect_exit_point = live_exit
-	yoyo_wrap_position = live_exit
-	if yoyo_rect_arc_length <= 0.03:
-		var direct_path: Rect2 = Rect2(hand_position, chakram_position - hand_position).abs()
-		if not bounds.grow(2.0).intersects(direct_path):
-			yoyo_wrap_clear_ticks += 1
-			if yoyo_wrap_clear_ticks >= 3:
-				_clear_yoyo_wrap(yoyo_wrap_object)
-				return
+		yoyo_enemy_arc_angle = yoyo_accumulated_arc(previous, 0.0, yoyo_enemy_previous_entry_angle, entry, yoyo_enemy_previous_exit_angle, exit, yoyo_enemy_wrap_sign)
+	yoyo_enemy_entry_angle = entry
+	yoyo_enemy_previous_entry_angle = entry
+	yoyo_enemy_previous_exit_angle = exit
+	yoyo_enemy_winding_delta = yoyo_enemy_arc_angle - previous
+	yoyo_wrap_position = yoyo_enemy_exit_point
+	if yoyo_enemy_arc_angle <= 0.03 and yoyo_enemy_segment_hit(hand, endpoint, center, radius + ENEMY_WRAP_CLEARANCE) == Vector2.INF:
+		_clear_yoyo_wrap(enemy)
+
+static func yoyo_rect_tangent(rect: Rect2, endpoint: Vector2, side: float) -> Vector2:
+	var corners: Array[Vector2] = [rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)]
+	var selected: Vector2 = yoyo_rect_surface_point(rect, endpoint)
+	var best: float = INF
+	for corner: Vector2 in corners:
+		var supported: bool = true
+		for other: Vector2 in corners:
+			if (corner - endpoint).cross(other - endpoint) * side < -0.001:
+				supported = false
+		if supported and endpoint.distance_squared_to(corner) < best:
+			selected = corner
+			best = endpoint.distance_squared_to(corner)
+	return selected
+
+static func yoyo_segment_crosses_rect(start: Vector2, end: Vector2, rect: Rect2) -> bool:
+	var low: float = 0.0
+	var high: float = 1.0
+	var direction: Vector2 = end - start
+	for axis: int in range(2):
+		if absf(direction[axis]) < 0.00001:
+			if start[axis] < rect.position[axis] or start[axis] > rect.end[axis]:
+				return false
 		else:
-			yoyo_wrap_clear_ticks = 0
-	else:
-		yoyo_wrap_clear_ticks = 0
+			var first: float = (rect.position[axis] - start[axis]) / direction[axis]
+			var last: float = (rect.end[axis] - start[axis]) / direction[axis]
+			low = maxf(low, minf(first, last))
+			high = minf(high, maxf(first, last))
+			if low > high:
+				return false
+	return true
 
 func _reset_yoyo_state() -> void:
 	yoyo_state = YoyoState.NONE
@@ -588,6 +618,9 @@ func _update_static_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2,
 	yoyo_wrap_clear_ticks = 0
 
 func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta: float) -> void:
+	if yoyo_wrap_uses_boundary != yoyo_boundary_wrap_enabled:
+		_clear_yoyo_wrap()
+		yoyo_wrap_uses_boundary = yoyo_boundary_wrap_enabled
 	if not yoyo_boundary_wrap_enabled:
 		_update_static_yoyo_wrap(hand_position, chakram_position, _delta)
 		return
@@ -618,61 +651,13 @@ func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 			return
 		if yoyo_wrap_object is Enemy:
 			var wrapped_enemy: Enemy = yoyo_wrap_object as Enemy
-			if not _enemy_wrap_supported(wrapped_enemy):
+			if wrapped_enemy.health <= 0.0 or not _enemy_wrap_supported(wrapped_enemy):
 				_clear_yoyo_wrap()
 				return
 			var center: Vector2 = _enemy_wrap_center(wrapped_enemy)
 			var radius: float = _enemy_wrap_radius(wrapped_enemy)
 			yoyo_enemy_wrap_radius = radius
-			var entry_angle: float = yoyo_enemy_entry_angle
-			if not yoyo_enemy_arc_initialized:
-				yoyo_enemy_entry_point = yoyo_circle_tangent(center, hand_position, radius, yoyo_enemy_wrap_sign)
-				entry_angle = (yoyo_enemy_entry_point - center).angle()
-				yoyo_enemy_entry_angle = entry_angle
-			else:
-				# The acquired entry is topology. Keep it attached to the live enemy
-				# center instead of selecting a fresh shortest tangent every tick.
-				yoyo_enemy_entry_point = center + Vector2.RIGHT.rotated(yoyo_enemy_entry_angle) * radius
-				entry_angle = yoyo_enemy_entry_angle
-			yoyo_enemy_exit_point = yoyo_circle_tangent(center, chakram_position, radius, -yoyo_enemy_wrap_sign)
-			var exit_angle: float = (yoyo_enemy_exit_point - center).angle()
-			var minimum_arc: float = yoyo_directed_arc(entry_angle, exit_angle, yoyo_enemy_wrap_sign)
-			var previous_arc: float = yoyo_enemy_arc_angle
-			if yoyo_state == YoyoState.REELING and yoyo_coil_hit_consumed and yoyo_enemy_arc_initialized:
-				# A completed coil used to be clamped to its occupied prefix, so the
-				# Chakram could never create the inward motion needed to leave the
-				# enemy. Consume the recovered rope directly from the *traced* boundary
-				# path. The Chakram remains the velocity authority; this only advances
-				# the collision boundary toward its exit.
-				yoyo_enemy_minimum_arc = 0.0
-				yoyo_enemy_arc_angle = yoyo_reeling_arc(previous_arc, reel_speed, _delta, radius)
-				yoyo_enemy_winding_delta = yoyo_enemy_arc_angle - previous_arc
-				# Move the exit contact by the same recovered boundary distance.
-				# This is the physical rope corner advancing along the enemy surface,
-				# rather than a commanded Chakram orbit or reversal.
-				yoyo_enemy_exit_point = center + Vector2.RIGHT.rotated(entry_angle + yoyo_enemy_wrap_sign * yoyo_enemy_arc_angle) * radius
-				if yoyo_enemy_arc_angle <= 0.03:
-					_clear_yoyo_wrap(wrapped_enemy)
-					return
-			else:
-				# The acquisition side is contact history. Keep it stable while
-				# wrapped; reselecting the shortest tangent each frame erases partial
-				# coils and can teleport the rope across the angle seam.
-				yoyo_enemy_minimum_arc = minimum_arc
-				if not yoyo_enemy_arc_initialized:
-					yoyo_enemy_arc_angle = minimum_arc
-					yoyo_enemy_arc_initialized = true
-				else:
-					# Winding is geometric contact history, not a tension setting. Slack
-					# may remove force, but it must not reset traced boundary path.
-					yoyo_enemy_arc_angle = yoyo_accumulated_arc(yoyo_enemy_arc_angle, minimum_arc, yoyo_enemy_previous_entry_angle, entry_angle, yoyo_enemy_previous_exit_angle, exit_angle, yoyo_enemy_wrap_sign)
-				yoyo_enemy_winding_delta = yoyo_enemy_arc_angle - previous_arc
-				if yoyo_enemy_arc_initialized and previous_arc > 0.03 and yoyo_enemy_arc_angle <= 0.03 and _yoyo_enemy_obstruction_hit(hand_position, chakram_position, wrapped_enemy).is_empty():
-					_clear_yoyo_wrap(wrapped_enemy)
-					return
-			yoyo_enemy_previous_entry_angle = entry_angle
-			yoyo_enemy_previous_exit_angle = exit_angle
-			yoyo_wrap_position = yoyo_enemy_exit_point
+			_update_circle_contacts(hand_position, chakram_position, center, radius, wrapped_enemy)
 			return
 		# Rectangle adapters use the active collision boundary itself. The entry
 		# parameter stays fixed while the exit parameter advances along the live
@@ -711,11 +696,19 @@ func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 	yoyo_wrap_object = hit.get("object") as Node2D
 	yoyo_wrap_bounds = hit.get("bounds", Rect2()) as Rect2
 	if not yoyo_wrap_bounds.size.is_zero_approx():
-		var entry_surface: Vector2 = yoyo_rect_surface_point(yoyo_wrap_bounds, candidate)
-		var exit_surface: Vector2 = yoyo_rect_surface_point(yoyo_wrap_bounds, chakram_position)
+		var best_length: float = INF
+		for side: float in [1.0, -1.0]:
+			var entry: Vector2 = yoyo_rect_tangent(yoyo_wrap_bounds, hand_position, side)
+			var exit: Vector2 = yoyo_rect_tangent(yoyo_wrap_bounds, chakram_position, -side)
+			var arc: float = yoyo_rect_directed_distance(yoyo_rect_perimeter_parameter(yoyo_wrap_bounds, entry), yoyo_rect_perimeter_parameter(yoyo_wrap_bounds, exit), side, yoyo_rect_perimeter_length(yoyo_wrap_bounds))
+			var length: float = hand_position.distance_to(entry) + arc + exit.distance_to(chakram_position)
+			if length < best_length:
+				best_length = length
+				yoyo_rect_wrap_sign = side
+		var entry_surface: Vector2 = yoyo_rect_tangent(yoyo_wrap_bounds, hand_position, yoyo_rect_wrap_sign)
+		var exit_surface: Vector2 = yoyo_rect_tangent(yoyo_wrap_bounds, chakram_position, -yoyo_rect_wrap_sign)
 		yoyo_rect_entry_parameter = yoyo_rect_perimeter_parameter(yoyo_wrap_bounds, entry_surface)
 		yoyo_rect_previous_exit_parameter = yoyo_rect_perimeter_parameter(yoyo_wrap_bounds, exit_surface)
-		yoyo_rect_wrap_sign = yoyo_rect_shortest_wrap_sign(yoyo_wrap_bounds, entry_surface, exit_surface)
 		yoyo_rect_arc_length = yoyo_rect_directed_distance(yoyo_rect_entry_parameter, yoyo_rect_previous_exit_parameter, yoyo_rect_wrap_sign, yoyo_rect_perimeter_length(yoyo_wrap_bounds))
 		yoyo_rect_entry_point = entry_surface
 		yoyo_rect_exit_point = exit_surface
@@ -761,13 +754,15 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 		var pivot: Vector2 = yoyo_wrap_position if yoyo_wrap_active else current_hand_position
 		var local_rope_length: float = _yoyo_live_local_length(rope_length, current_hand_position)
 		var pivot_distance: float = pivot.distance_to(yoyo_chakram.global_position)
-		if not rope_taut:
-			# Yo-yo attachment uses the same initial-slack authority as every other
-			# grapple target. Do not silently replace it with a full-range rope.
+		var path_length: float = _yoyo_live_path_length(current_hand_position, yoyo_chakram.global_position)
+		# Tautness is measured, not latched by the orbit state. Inward travel is
+		# free, but its new slack still belongs to the existing take-up tuner.
+		if rope_length > path_length + 0.5:
+			rope_length = maxf(maxf(MIN_ROPE_LENGTH, path_length), rope_length - maxf(0.0, slack_take_up_speed) * maxf(0.0, delta))
+		elif not rope_taut:
 			rope_length = reeled_length(rope_length, slack_take_up_speed, delta)
-			if rope_length <= pivot_distance + 0.5:
-				rope_taut = true
-			local_rope_length = _yoyo_live_local_length(rope_length, current_hand_position)
+		rope_taut = rope_length <= path_length + TAUT_CLEARANCE
+		local_rope_length = _yoyo_live_local_length(rope_length, current_hand_position)
 		if yoyo_state == YoyoState.NONE:
 			yoyo_state = YoyoState.EXTENDING
 		if yoyo_state == YoyoState.EXTENDING:
@@ -778,14 +773,13 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				yoyo_state = YoyoState.ORBITING
 				yoyo_orbit_time = 0.0
 				rope_taut = true
-			elif yoyo_extend_time >= 0.30 and outward_speed <= 20.0:
-				# Hooks that catch an already-returning or stalled Chakram should not
-				# hang forever waiting for a maximum-range event that cannot occur.
-				yoyo_state = YoyoState.REELING
-				rope_taut = true
+			elif outward_speed <= 20.0 and rope_taut:
+				# A damped/stalled catch still receives the authored hang; the old
+				# 0.30-second shortcut bypassed it and directly commanded recall.
+				yoyo_state = YoyoState.ORBITING
+				yoyo_orbit_time = 0.0
 		elif yoyo_state == YoyoState.ORBITING:
 			yoyo_orbit_time += maxf(0.0, delta)
-			rope_taut = true
 			if yoyo_should_recall(yoyo_orbit_time, yoyo_min_orbit_time, yoyo_chakram.velocity.length(), yoyo_recall_speed_threshold):
 				yoyo_state = YoyoState.REELING
 		elif yoyo_state == YoyoState.REELING:
@@ -1180,7 +1174,7 @@ func _enemy_wrap_rope_points(hand_local: Vector2, end_local: Vector2, amplitude:
 	var enemy: Enemy = yoyo_wrap_object as Enemy
 	if enemy == null:
 		return points
-	var center: Vector2 = enemy.global_position
+	var center: Vector2 = _enemy_wrap_center(enemy)
 	var entry_angle: float = (yoyo_enemy_entry_point - center).angle()
 	var arc_segments: int = maxi(4, ceili(yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius / 6.0))
 	for index: int in range(1, arc_segments + 1):
@@ -1300,6 +1294,23 @@ func _draw() -> void:
 	if not firing and yoyo_wrap_active and target_type == TargetType.CHAKRAM:
 		if is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
 			rope_points = _enemy_wrap_rope_points(hand_local, end_local, amplitude)
+		elif not yoyo_wrap_bounds.size.is_zero_approx():
+			rope_points = _rope_points(hand_local, to_local(yoyo_rect_entry_point), amplitude * 0.35)
+			var perimeter: float = yoyo_rect_perimeter_length(yoyo_wrap_bounds)
+			var corners: Array[float] = [0.0, yoyo_wrap_bounds.size.x, yoyo_wrap_bounds.size.x + yoyo_wrap_bounds.size.y, 2.0 * yoyo_wrap_bounds.size.x + yoyo_wrap_bounds.size.y]
+			var distances: Array[float] = []
+			for turn: int in range(ceili(yoyo_rect_arc_length / perimeter) + 1):
+				for corner: float in corners:
+					var distance: float = yoyo_rect_directed_distance(yoyo_rect_entry_parameter, corner, yoyo_rect_wrap_sign, perimeter) + float(turn) * perimeter
+					if distance > 0.001 and distance < yoyo_rect_arc_length:
+						distances.append(distance)
+			distances.sort()
+			for distance: float in distances:
+				rope_points.append(to_local(yoyo_rect_perimeter_point(yoyo_wrap_bounds, yoyo_rect_entry_parameter + yoyo_rect_wrap_sign * distance)))
+			rope_points.append(to_local(yoyo_rect_exit_point))
+			var outer_points: PackedVector2Array = _rope_points(to_local(yoyo_rect_exit_point), end_local, amplitude)
+			for index: int in range(1, outer_points.size()):
+				rope_points.append(outer_points[index])
 		else:
 			var wrap_local: Vector2 = to_local(yoyo_wrap_position)
 			rope_points = _rope_points(hand_local, wrap_local, amplitude * 0.45)

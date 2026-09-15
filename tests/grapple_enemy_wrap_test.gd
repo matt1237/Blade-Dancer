@@ -32,7 +32,7 @@ func test_signed_winding_accumulates_and_reverse_travel_unwinds() -> void:
 	var unwound: float = GrappleController.yoyo_accumulated_arc(wound, 0.5, 0.0, 0.0, 0.4, 0.1, 1.0)
 	assert(is_equal_approx(unwound, 0.6), "Reverse tangential travel must unwind the accumulated coil.")
 	var clamped: float = GrappleController.yoyo_accumulated_arc(unwound, 0.5, 0.0, 0.0, 0.1, -1.0, 1.0)
-	assert(is_equal_approx(clamped, 0.5), "Unwinding cannot consume less than the live tangent-to-tangent contact arc.")
+	assert(is_zero_approx(clamped), "Reverse travel through zero must release, not clamp to a modulo arc.")
 
 func test_enemy_collision_circle_uses_live_shape_offset_and_scale() -> void:
 	var enemy_scene: PackedScene = load("res://scenes/enemy.tscn") as PackedScene
@@ -90,14 +90,12 @@ func test_chakram_sweep_uses_combined_shape_boundaries() -> void:
 	assert(Chakram.swept_circle_contact(Vector2(-100.0, 30.0), Vector2(100.0, 30.0), Vector2.ZERO, 34.0), "A Chakram sweep must include both projectile and enemy collision radii.")
 	assert(not Chakram.swept_circle_contact(Vector2(-100.0, 35.0), Vector2(100.0, 35.0), Vector2.ZERO, 34.0), "A sweep outside the combined live boundary must miss.")
 
-func test_completed_coil_reeling_consumes_boundary_arc_and_can_exit() -> void:
+func test_completed_coil_only_unwinds_with_contact_motion() -> void:
 	var completed_arc: float = TAU + 0.4
-	var one_frame: float = GrappleController.yoyo_reeling_arc(completed_arc, 120.0, 0.1, 20.0)
-	assert(is_equal_approx(one_frame, completed_arc - 0.6), "Reeling must consume recovered rope from the traced enemy boundary arc.")
-	var exited: float = GrappleController.yoyo_reeling_arc(0.2, 145.0, 1.0, 20.0)
-	assert(is_zero_approx(exited), "A completed coil must be able to unwind fully instead of remaining at its tangent minimum.")
-	var stable: float = GrappleController.yoyo_reeling_arc(0.2, 145.0, 0.0, 20.0)
-	assert(is_equal_approx(stable, 0.2), "A zero-length reel step must not alter the physical wrap history.")
+	var stable: float = GrappleController.yoyo_accumulated_arc(completed_arc, 0.4, 0.0, 0.0, 0.4, 0.4, 1.0)
+	assert(is_equal_approx(stable, completed_arc), "Stationary contacts cannot lose geometric arc to an independent reel clock.")
+	var unwound: float = GrappleController.yoyo_accumulated_arc(completed_arc, 0.2, 0.0, 0.0, 0.4, 0.2, 1.0)
+	assert(is_equal_approx(unwound, TAU + 0.2), "Reverse contact travel must unwind a completed coil continuously.")
 
 func test_enemy_wrap_arc_consumes_rope_and_tension_never_doubles_authority() -> void:
 	var quarter_arc: float = GrappleController.yoyo_directed_arc(0.0, PI * 0.5, 1.0)
