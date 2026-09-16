@@ -80,6 +80,11 @@ func test_reeling_is_gradual_and_has_a_safe_minimum() -> void:
 	assert(is_equal_approx(GrappleController.reeled_length(300.0, 100.0, 0.25), 275.0))
 	assert(is_equal_approx(GrappleController.reeled_length(45.0, 100.0, 1.0), GrappleController.MIN_ROPE_LENGTH))
 
+func test_yoyo_hang_requires_time_and_low_tangential_energy_before_reeling() -> void:
+	assert(not GrappleController.yoyo_should_recall(0.5, 1.25, 0.0, 190.0), "Hang Time must prevent premature recall even when the orbit has stalled.")
+	assert(not GrappleController.yoyo_should_recall(1.5, 1.25, 260.0, 190.0), "Strong tangential motion must sustain orbit after Hang Time.")
+	assert(GrappleController.yoyo_should_recall(1.5, 1.25, 120.0, 190.0), "A spent orbit must enter recall after Hang Time.")
+
 func test_grapple_cannot_accelerate_chakram_beyond_sword_hit_maximum() -> void:
 	var chakram: Chakram = Chakram.new()
 	chakram.sword_hit_speed_ceiling = 700.0

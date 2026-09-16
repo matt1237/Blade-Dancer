@@ -34,7 +34,7 @@ func test_every_form_three_slider_has_left_and_right_feel_guidance() -> void:
 		if line.contains("_create_hand_slider(experimental_bind_section"):
 			guided_slider_count += 1
 			assert(line.contains("_form_three_feel_tip("), "Every Form III slider tooltip needs explicit left/right feel guidance: %s" % line)
-	assert(guided_slider_count == 31, "Expected feel guidance for all 31 current Form III controls.")
+	assert(guided_slider_count == Player.EXPERIMENTAL_BIND_SETTING_KEYS.size() - 1, "Every player-facing Bind control except retired bind_debug must have feel guidance.")
 
 func test_slide_clash_and_parry_controls_have_feel_guidance() -> void:
 	var keys: Array[String] = [
@@ -145,8 +145,8 @@ func test_bind_form_has_one_shared_slide_authority_for_every_weapon() -> void:
 	assert((row.get("label") as Label).text == "0.42 s", "The shared slider label must show the authoritative value.")
 	var source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	assert(not source.contains("FORM-LOCAL SLIDE ENTRY"), "The duplicate form-local Slide section must remain retired.")
-	assert(not source.contains("\"Rope Shortening Speed\""), "The ineffective rope-length implementation detail must not remain a visible feel tuner.")
-	assert(not source.contains("\"Yo-yo Hang Time\""), "Held Yo-yo orbit must not expose a retired automatic-recall timer.")
+	assert(source.contains("\"Rope Shortening Speed\""), "The live reeling authority must remain visible and tunable.")
+	assert(source.contains("\"Yo-yo Hang Time\""), "The authored orbit window must remain visible and tunable.")
 	main.free()
 
 func test_bind_b_slider_drag_updates_without_full_panel_resync() -> void:

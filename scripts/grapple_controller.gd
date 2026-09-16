@@ -40,6 +40,7 @@ const TUNING_DEFAULTS: Dictionary = {
 	"chakram_yank_strength": 7.0, "yoyo_enabled": true,
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
 	"yoyo_orbit_drag": 0.35, "yoyo_min_orbit_time": 1.25,
+	"yoyo_recall_speed_threshold": 190.0,
 	"yoyo_static_pivot_enabled": false,
 	"yoyo_boundary_wrap_enabled": false
 }
@@ -52,7 +53,7 @@ const TUNING_KEYS: Array[String] = [
 	"light_slide_fraction", "medium_reel_multiplier", "medium_yank_strength", "medium_slide_fraction",
 	"medium_player_pull_strength", "heavy_player_pull_strength", "chakram_yank_strength",
 	"yoyo_enabled", "yoyo_soft_tension_zone", "yoyo_radial_damping", "yoyo_orbit_drag",
-	"yoyo_min_orbit_time", "yoyo_static_pivot_enabled",
+	"yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_static_pivot_enabled",
 	"yoyo_boundary_wrap_enabled"
 ]
 
@@ -110,9 +111,10 @@ var mastery_range_multiplier: float = 1.0
 @export var yoyo_radial_damping: float = 18.0
 ## Slow energy burn only while at full extension; tangent is otherwise preserved.
 @export var yoyo_orbit_drag: float = 0.35
-## Retained for old preset compatibility. Held Yo-yo orbit no longer uses an
-## automatic recall clock; inward radius change is authored by hand motion.
+## Minimum authored hang window before a low-energy orbit may begin reeling.
 @export var yoyo_min_orbit_time: float = 1.25
+## Tangential speed above this value sustains the orbit after the hang window.
+@export var yoyo_recall_speed_threshold: float = 190.0
 ## Enables the retained one-point static obstruction pivot.
 ## Disabled by default while the direct Chakram yo-yo is the active mechanic.
 @export var yoyo_static_pivot_enabled: bool = false
@@ -228,6 +230,9 @@ static func player_hand_acceleration(hand_position: Vector2, anchor: Vector2, ar
 
 static func reeled_length(current_length: float, speed: float, delta: float) -> float:
 	return maxf(MIN_ROPE_LENGTH, current_length - maxf(0.0, speed) * maxf(0.0, delta))
+
+static func yoyo_should_recall(orbit_time: float, minimum_orbit_time: float, tangential_speed: float, recall_speed_threshold: float) -> bool:
+	return orbit_time >= maxf(0.0, minimum_orbit_time) and tangential_speed <= maxf(0.0, recall_speed_threshold)
 
 static func aimed_endpoint(origin: Vector2, aim_point: Vector2, maximum_length: float) -> Vector2:
 	## Aim position supplies direction only. Every valid shot travels the full
@@ -777,14 +782,17 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				yoyo_state = YoyoState.ORBITING
 				yoyo_orbit_time = 0.0
 		elif yoyo_state == YoyoState.ORBITING:
-			# Yo-yo is a held physical relationship, not a timed recall. Tangential
-			# hand motion steers it; deliberate radial motion may pull it temporarily
-			# inward without silently deleting available rope.
 			yoyo_orbit_time += maxf(0.0, delta)
+			rope_taut = true
+			var radial_direction: Vector2 = pivot.direction_to(yoyo_chakram.global_position)
+			var radial_velocity: Vector2 = radial_direction * yoyo_chakram.velocity.dot(radial_direction)
+			var tangential_speed: float = (yoyo_chakram.velocity - radial_velocity).length()
+			if yoyo_should_recall(yoyo_orbit_time, yoyo_min_orbit_time, tangential_speed, yoyo_recall_speed_threshold):
+				yoyo_state = YoyoState.REELING
 		elif yoyo_state == YoyoState.REELING:
-			# Legacy/runtime-safe fallback: old state snapshots return to the held
-			# orbit instead of restoring the retired automatic reel clock.
-			yoyo_state = YoyoState.ORBITING
+			rope_taut = true
+			rope_length = reeled_length(rope_length, reel_speed, delta)
+			local_rope_length = _yoyo_live_local_length(rope_length, current_hand_position)
 		var active_drag: float = yoyo_orbit_drag if yoyo_state == YoyoState.ORBITING else 0.0
 		var coil_enemy_id: int = -1
 		var coil_contact_armed: bool = false
@@ -844,7 +852,7 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				var chakram_hand: Vector2 = live_hand_position
 				var chakram_pivot: Vector2 = (yoyo_wrap_position if yoyo_wrap_active else live_hand_position) if is_chakram_yoyo else player.global_position
 				var chakram_local_length: float = _yoyo_live_local_length(rope_length, live_hand_position) if is_chakram_yoyo else rope_length
-				var reel_is_active: bool = not is_chakram_yoyo
+				var reel_is_active: bool = not is_chakram_yoyo or yoyo_state == YoyoState.REELING
 				var chakram_tension: Vector2 = tension_acceleration(tethered_chakram.global_position, chakram_pivot, chakram_local_length, chakram_tether_strength, ramp) if reel_is_active else Vector2.ZERO
 				var chakram_yank: Vector2 = target_hand_acceleration(tethered_chakram.global_position, chakram_hand, articulated_hand_velocity, chakram_yank_strength, chakram_yank_strength * radial_yank_ratio, directional_transfer_ratio, rope_taut)
 				# Yo-yo motion is hand-authored: tangent dominates and only deliberate

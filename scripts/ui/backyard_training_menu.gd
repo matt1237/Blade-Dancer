@@ -545,8 +545,10 @@ static func _grapple_feel_tip(key: String) -> String:
 		"yoyo_soft_tension_zone": ["Distance before full extension where outward-speed easing begins.", "Late, abrupt catch near the line limit.", "Early, broad approach into tension.", "Move right if the catch snaps; left if energy dies too early."],
 		"yoyo_radial_damping": ["Brake applied only to outward radial speed during the catch approach.", "Springy catch with more overshoot.", "Firm catch that settles onto the radius quickly.", "This preserves tangent; Orbit Energy Burn is the separate tangent control."],
 		"yoyo_orbit_drag": ["Tangential energy lost per second while orbiting at full extension.", "Long, lively orbit and more trick time.", "Orbit settles quickly while remaining at its held radius.", "Tune only after the catch feels right."],
+		"yoyo_min_orbit_time": ["Minimum time the caught Chakram hangs in orbit before low energy may start recall.", "A quick catch-and-return cycle.", "A longer trick window before recall is allowed.", "This is a minimum window: sufficient tangential speed continues sustaining the orbit."],
+		"yoyo_recall_speed_threshold": ["Tangential speed at or below which recall begins after Hang Time.", "Only a nearly spent orbit begins reeling.", "Recall begins while the Chakram still carries more orbital speed.", "Move left for player-sustained tricks; move right for a more automatic return."],
 		"yoyo_static_pivot_enabled": ["Allows one static obstruction point to redirect the Yo-yo rope when full boundary wrapping is off.", "Rope always uses the direct hand-to-Chakram path.", "Rocks, trees, and walls may become one local pivot.", "This is the stable fallback; Full Boundary Wrap overrides it."],
-		"yoyo_boundary_wrap_enabled": ["Enables the complete experimental enemy and terrain boundary-wrap solver.", "Uses the simpler Static Tether Point fallback.", "Uses live circle/rectangle boundaries, winding, reeling, and unwind state.", "Known experimental behavior is preserved for Astra investigation."],
+		"yoyo_boundary_wrap_enabled": ["Enables the complete experimental enemy and terrain boundary-wrap solver.", "Uses direct tethering, or the separate Static Tether Point option when enabled.", "Uses live circle/rectangle boundaries, winding, reeling, and unwind state.", "This overrides Static Tether Point and remains a parked experiment."],
 	}
 	var values: Array = guide.get(key, ["Grapple tuning value.", "Less of this effect.", "More of this effect.", "Tune one authority at a time."]) as Array
 	return _form_three_feel_tip(str(values[0]), str(values[1]), str(values[2]), str(values[3]))
@@ -719,6 +721,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	grapple_section.add_child(grapple_status_label)
 	_create_grapple_slider(grapple_section, "max_tether_length", "Hook Reach Limit", 200.0, 1000.0, 10.0, " px", _grapple_feel_tip("max_tether_length"))
 	_create_grapple_slider(grapple_section, "hook_travel_speed", "Hook Flight Speed", 300.0, 3000.0, 50.0, " px/s", _grapple_feel_tip("hook_travel_speed"))
+	_create_grapple_slider(grapple_section, "reel_speed", "Rope Shortening Speed", 0.0, 600.0, 5.0, " px/s", _grapple_feel_tip("reel_speed"))
 	_create_grapple_slider(grapple_section, "tension_ramp_distance", "Tension Stiffness Distance", 1.0, 40.0, 1.0, " px", _grapple_feel_tip("tension_ramp_distance"))
 	_create_grapple_slider(grapple_section, "enemy_pull_strength", "Light Target Reel Force", 100.0, 3000.0, 50.0, " px/s²", _grapple_feel_tip("enemy_pull_strength"))
 	_create_grapple_slider(grapple_section, "light_yank_strength", "Light Target Hand Gain", 0.0, 12.0, 0.25, "×", _grapple_feel_tip("light_yank_strength"))
@@ -733,13 +736,15 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "body_movement_transfer", "Body Movement Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("body_movement_transfer"))
 	var yoyo_section: VBoxContainer = _create_section_header(grapple_section, "GRAPPLE YO-YO (Global)", true)
 	var yoyo_note: Label = Label.new()
-	yoyo_note.text = "Chakram + Grapple: Full Boundary Wrap restores the complete enemy/terrain experiment. Turn it off to use the simpler Static Tether Point fallback."
+	yoyo_note.text = "Direct tether is the default. Static Tether Point adds one obstruction pivot. Full Boundary Wrap enables the parked experimental enemy/terrain solver and overrides Static Tether Point."
 	yoyo_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	yoyo_section.add_child(yoyo_note)
 	_create_grapple_slider(yoyo_section, "yoyo_enabled", "Yo-yo Sequence Enabled", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_enabled"))
 	_create_grapple_slider(yoyo_section, "yoyo_soft_tension_zone", "Yo-yo Catch Approach", 0.0, 180.0, 5.0, " px", _grapple_feel_tip("yoyo_soft_tension_zone"))
 	_create_grapple_slider(yoyo_section, "yoyo_radial_damping", "Yo-yo Outward Catch Brake", 0.0, 40.0, 0.5, "×", _grapple_feel_tip("yoyo_radial_damping"))
 	_create_grapple_slider(yoyo_section, "yoyo_orbit_drag", "Yo-yo Orbit Energy Burn", 0.0, 4.0, 0.05, " /s", _grapple_feel_tip("yoyo_orbit_drag"))
+	_create_grapple_slider(yoyo_section, "yoyo_min_orbit_time", "Yo-yo Hang Time", 0.0, 4.0, 0.05, " s", _grapple_feel_tip("yoyo_min_orbit_time"))
+	_create_grapple_slider(yoyo_section, "yoyo_recall_speed_threshold", "Yo-yo Reel Energy Threshold", 0.0, 500.0, 10.0, " px/s", _grapple_feel_tip("yoyo_recall_speed_threshold"))
 	_create_grapple_slider(yoyo_section, "yoyo_static_pivot_enabled", "Yo-yo Static Tether Point", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_static_pivot_enabled"))
 	_create_grapple_slider(yoyo_section, "yoyo_boundary_wrap_enabled", "Yo-yo Full Boundary Wrap (Experimental)", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_boundary_wrap_enabled"))
 	_create_grapple_slider(grapple_section, "directional_transfer_ratio", "Dynamic Target Direction Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("directional_transfer_ratio"))

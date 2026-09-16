@@ -25,9 +25,39 @@ func test_held_orbit_captures_once_and_inward_motion_creates_temporary_slack() -
 	chakram.global_position = hand + Vector2(60.0, 0.0)
 	controller.reel_speed = 5000.0
 	controller.yoyo_min_orbit_time = 0.0
+	chakram.velocity = Vector2(0.0, controller.yoyo_recall_speed_threshold + 100.0)
 	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 2.0)
-	assert(controller.yoyo_state == GrappleController.YoyoState.ORBITING, "Elapsed time must never turn a held Yo-yo into automatic recall.")
+	assert(controller.yoyo_state == GrappleController.YoyoState.ORBITING, "Sufficient tangential speed must sustain the held orbit after Hang Time.")
 	assert(is_equal_approx(controller.rope_length, 100.0), "Inward motion must create temporary slack instead of permanently ratcheting the orbit smaller.")
+	controller.release_tether()
+	chakram.free()
+	player.free()
+
+func test_low_energy_orbit_reels_after_hang_time() -> void:
+	var player: Player = preload("res://scenes/player.tscn").instantiate() as Player
+	add_child(player)
+	player.set_physics_process(false)
+	var controller: GrappleController = player.grapple_controller
+	var chakram: Chakram = Chakram.new()
+	add_child(chakram)
+	chakram.set_physics_process(false)
+	var hand: Vector2 = player.get_grapple_hand_position()
+	chakram.global_position = hand + Vector2(100.0, 0.0)
+	chakram.velocity = Vector2.ZERO
+	controller.active = true
+	controller.input_was_down = true
+	controller.target_type = GrappleController.TargetType.CHAKRAM
+	controller.target_node = chakram
+	controller.rope_length = 100.0
+	controller.rope_taut = true
+	controller.yoyo_state = GrappleController.YoyoState.ORBITING
+	controller.yoyo_min_orbit_time = 0.5
+	controller.reel_speed = 20.0
+	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 0.6)
+	assert(controller.yoyo_state == GrappleController.YoyoState.REELING, "A low-energy orbit must enter reeling after Hang Time.")
+	var caught_length: float = controller.rope_length
+	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 0.5)
+	assert(controller.rope_length < caught_length, "Reeling must shorten the authoritative rope using reel_speed.")
 	controller.release_tether()
 	chakram.free()
 	player.free()
