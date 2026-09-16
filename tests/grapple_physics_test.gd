@@ -76,6 +76,11 @@ func test_committed_reel_tuning_is_restored_and_independent_from_hand_response()
 	assert(controller.yoyo_enabled, "The held Chakram Yo-yo must remain enabled by default.")
 	controller.free()
 
+func test_orbit_slack_recovery_removes_only_unused_line() -> void:
+	assert(is_equal_approx(GrappleController.recovered_orbit_length(180.0, 100.0, 200.0, 0.25), 130.0), "Orbit slack should recover at its configured rate.")
+	assert(is_equal_approx(GrappleController.recovered_orbit_length(110.0, 100.0, 200.0, 0.25), 100.0), "Slack recovery must stop at the live path and never pull the Chakram inward.")
+	assert(is_equal_approx(GrappleController.recovered_orbit_length(90.0, 100.0, 200.0, 0.25), 90.0), "Slack recovery must never pay rope outward when the live path exceeds stored length.")
+
 func test_reeling_is_gradual_and_has_a_safe_minimum() -> void:
 	assert(is_equal_approx(GrappleController.reeled_length(300.0, 100.0, 0.25), 275.0))
 	assert(is_equal_approx(GrappleController.reeled_length(45.0, 100.0, 1.0), GrappleController.MIN_ROPE_LENGTH))

@@ -40,8 +40,8 @@ const TUNING_DEFAULTS: Dictionary = {
 	"medium_player_pull_strength": 1500.0, "heavy_player_pull_strength": 2200.0,
 	"chakram_yank_strength": 7.0, "yoyo_enabled": true,
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
-	"yoyo_orbit_drag": 0.35, "yoyo_min_orbit_time": 1.25,
-	"yoyo_recall_speed_threshold": 120.0,
+	"yoyo_orbit_drag": 0.35, "yoyo_orbit_slack_recovery_speed": 180.0,
+	"yoyo_min_orbit_time": 1.25, "yoyo_recall_speed_threshold": 120.0,
 	"yoyo_static_pivot_enabled": false,
 	"yoyo_boundary_wrap_enabled": false
 }
@@ -54,7 +54,7 @@ const TUNING_KEYS: Array[String] = [
 	"light_slide_fraction", "medium_reel_multiplier", "medium_yank_strength", "medium_slide_fraction",
 	"medium_player_pull_strength", "heavy_player_pull_strength", "chakram_yank_strength",
 	"yoyo_enabled", "yoyo_soft_tension_zone", "yoyo_radial_damping", "yoyo_orbit_drag",
-	"yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_static_pivot_enabled",
+	"yoyo_orbit_slack_recovery_speed", "yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_static_pivot_enabled",
 	"yoyo_boundary_wrap_enabled"
 ]
 
@@ -121,6 +121,9 @@ var mastery_range_multiplier: float = 1.0
 @export var yoyo_radial_damping: float = 18.0
 ## Slow energy burn only while at full extension; tangent is otherwise preserved.
 @export var yoyo_orbit_drag: float = 0.35
+## Removes only unused line while orbiting. It stops at the current live path,
+## so recovery cannot pull the Chakram inward or behave like automatic recall.
+@export var yoyo_orbit_slack_recovery_speed: float = 180.0
 ## Minimum authored hang window before a low-energy orbit may begin reeling.
 @export var yoyo_min_orbit_time: float = 1.25
 ## Tangential speed above this value sustains the orbit after the hang window.
@@ -241,6 +244,15 @@ static func player_hand_acceleration(hand_position: Vector2, anchor: Vector2, ar
 
 static func reeled_length(current_length: float, speed: float, delta: float) -> float:
 	return maxf(MIN_ROPE_LENGTH, current_length - maxf(0.0, speed) * maxf(0.0, delta))
+
+static func recovered_orbit_length(current_length: float, live_path_length: float, speed: float, delta: float) -> float:
+	var clean_current: float = maxf(MIN_ROPE_LENGTH, current_length)
+	var clean_path: float = maxf(MIN_ROPE_LENGTH, live_path_length)
+	if clean_current <= clean_path:
+		# Recovery is unilateral: a stretched line is handled by tension/constraint,
+		# never by silently paying rope outward to meet the moving endpoint.
+		return clean_current
+	return maxf(clean_path, clean_current - maxf(0.0, speed) * maxf(0.0, delta))
 
 static func yoyo_should_recall(orbit_time: float, minimum_orbit_time: float, tangential_speed: float, recall_speed_threshold: float) -> bool:
 	return orbit_time >= maxf(0.0, minimum_orbit_time) and tangential_speed <= maxf(0.0, recall_speed_threshold)
@@ -795,6 +807,10 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				rope_taut = true
 		elif yoyo_state == YoyoState.ORBITING:
 			yoyo_orbit_time += maxf(0.0, delta)
+			# Recover only geometric slack. The live path is a hard floor, so this
+			# cannot pull inward or become a second recall authority.
+			rope_length = recovered_orbit_length(rope_length, path_length, yoyo_orbit_slack_recovery_speed, delta)
+			local_rope_length = _yoyo_live_local_length(rope_length, current_hand_position)
 			rope_taut = true
 			var radial_direction: Vector2 = pivot.direction_to(yoyo_chakram.global_position)
 			var radial_velocity: Vector2 = radial_direction * yoyo_chakram.velocity.dot(radial_direction)

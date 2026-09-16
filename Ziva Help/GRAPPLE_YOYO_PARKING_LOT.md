@@ -26,11 +26,12 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 2. The final approach to maximum extension progressively damps outward radial velocity.
 3. When extension becomes orbit, `Yo-yo Catch Radial Retention` controls the one-time radial settle. GP2 uses `0×`, removing inward/outward drift while preserving the full tangent so the catch cannot manufacture a large loose loop.
 4. At the limit, outward radial velocity is removed while tangential velocity is preserved.
-5. `Yo-yo Hang Time` blocks automatic recall. Afterward, `Yo-yo Reel Energy Threshold` recalls only an orbit whose tangential speed has fallen below the configured threshold; energetic player-controlled motion remains in orbit.
-6. `Taut-Catch Hand Burst` changes velocity once at first tension and never changes rope length.
-7. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
-8. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
-9. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
+5. `Yo-yo Orbit Slack Recovery` shortens only unused line while Orbiting and stops at the current live rope path. It cannot pull the Chakram inward, pay line outward, restart Hang Time, or trigger recall.
+6. `Yo-yo Hang Time` blocks automatic recall. Afterward, `Yo-yo Reel Energy Threshold` recalls only an orbit whose tangential speed has fallen below the configured threshold; energetic player-controlled motion remains in orbit.
+7. `Taut-Catch Hand Burst` changes velocity once at first tension and never changes rope length.
+8. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
+9. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
+10. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
 
 ## Implementation authority contract
 
