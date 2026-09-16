@@ -581,9 +581,18 @@ func _collision_rects(node: Node2D) -> Array[Rect2]:
 		assert(body.collision_layer == 4 and body.collision_mask == 0, "Visual changes must preserve terrain collision filtering.")
 		for shape_node: Node in body.get_children():
 			var collision: CollisionShape2D = shape_node as CollisionShape2D
-			assert(collision != null and collision.shape is RectangleShape2D)
-			var shape: RectangleShape2D = collision.shape as RectangleShape2D
-			result.append(Rect2(body.position + collision.position - shape.size * 0.5, shape.size))
+			assert(collision != null)
+			var size: Vector2 = Vector2.ZERO
+			if collision.shape is RectangleShape2D:
+				size = (collision.shape as RectangleShape2D).size
+			elif collision.shape is CapsuleShape2D:
+				var capsule: CapsuleShape2D = collision.shape as CapsuleShape2D
+				size = Vector2(capsule.radius * 2.0, capsule.height)
+				if posmod(roundi(collision.rotation / (PI * 0.5)), 2) == 1:
+					size = Vector2(size.y, size.x)
+			else:
+				assert(false, "Gameplay collision must be a rectangle boundary, circle, or capsule.")
+			result.append(Rect2(body.position + collision.position - size * 0.5, size))
 	return result
 
 func test_wall_hd_assets_and_blocking_rectangles_preserve_authored_geometry() -> void:

@@ -22,13 +22,15 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 
 ## Active direct yo-yo foundation
 
-1. A grapple attached to a flying Chakram adopts the measured live hand-to-Chakram path immediately. Attach Slack, Initial Slack Recovery, and Taut-Catch Burst were removed on 2026-09-16 because they were short-lived overlapping authorities that made the catch feel loose while providing little useful control.
+1. A grapple attached to a flying Chakram adopts the measured live hand-to-Chakram path plus the visible `Initial Attachment Slack` setting. GP2 uses `0 px` for an immediate catch. `Initial Slack Recovery` closes only configured attachment slack; no full-range or hidden slack is granted.
 2. The final approach to maximum extension progressively damps outward radial velocity.
-3. At the limit, outward radial velocity is removed while tangential velocity is preserved.
-4. `Yo-yo Hang Time` is the one authoritative automatic orbit window. When it expires, the existing `reel_speed` and `chakram_tether_strength` take over directly; the former Auto-Recall Energy Gate was removed so it cannot shadow the visible hang control.
-5. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
-6. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
-7. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
+3. When extension becomes orbit, `Yo-yo Catch Radial Retention` controls the one-time radial settle. GP2 uses `0×`, removing inward/outward drift while preserving the full tangent so the catch cannot manufacture a large loose loop.
+4. At the limit, outward radial velocity is removed while tangential velocity is preserved.
+5. `Yo-yo Hang Time` blocks automatic recall. Afterward, `Yo-yo Reel Energy Threshold` recalls only an orbit whose tangential speed has fallen below the configured threshold; energetic player-controlled motion remains in orbit.
+6. `Taut-Catch Hand Burst` changes velocity once at first tension and never changes rope length.
+7. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
+8. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
+9. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
 
 ## Implementation authority contract
 
@@ -44,6 +46,13 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 - The constraint is unilateral: inward velocity is never blocked.
 - Tangential motion is not converted into a canned path.
 - No wrap topology is active in the direct yo-yo path; disabling the two wrap switches clears any retained wrap state.
+
+## Collision-shape contract and warning
+
+- In-arena wrap candidates and physical targets use only `CircleShape2D` or `CapsuleShape2D`. Forest wall modules and generated arena obstructions were migrated from rectangles to capsules.
+- Arena perimeter geometry may remain rectangular or polygonal because it is a world boundary, not a wrap target. This includes standard arena bounds, Chasm perimeter segments, boss borders, and Resonance Rush ground courses.
+- Static terrain acquisition now raycasts collision layer 4 and uses the real Godot circle/capsule surface contact and normal. It never converts those colliders back into rectangular wrap geometry.
+- **Warning:** full perimeter winding is currently implemented only for circular enemy bodies. Static capsules intentionally remain a stable one-contact pivot even when Full Boundary Wrap is enabled; author a true stadium-perimeter solver before expecting multi-turn winding around long capsule walls.
 
 ## Retained boundary-wrap experiment
 

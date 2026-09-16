@@ -2,8 +2,9 @@
 
 [ext_resource type="Script" uid="uid://82ehia1dfy21" path="res://scripts/terrain/terrain_module.gd" id="1_module"]
 
-[sub_resource type="RectangleShape2D" id="LogShape"]
-size = Vector2(180, 28)
+[sub_resource type="CapsuleShape2D" id="LogShape"]
+radius = 14.0
+height = 180.0
 
 [node name="ForestWallI" type="Node2D" unique_id=1745008153]
 script = ExtResource("1_module")
@@ -15,4 +16,5 @@ collision_layer = 4
 collision_mask = 0
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Log" unique_id=552069986]
+rotation = 1.5707963
 shape = SubResource("LogShape")

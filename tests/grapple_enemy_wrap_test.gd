@@ -65,12 +65,25 @@ func test_terrain_segment_acquires_first_boundary_contact() -> void:
 	assert(contact.is_equal_approx(Vector2(-40.0, 0.0)), "Terrain acquisition must retain the incoming boundary contact, not the rectangle center.")
 	population.free()
 
+func test_static_wrap_runtime_uses_physics_surface_not_rect_adapter() -> void:
+	var source: String = FileAccess.get_file_as_string("res://scripts/grapple_controller.gd")
+	var start: int = source.find("func _terrain_capsule_hit")
+	var finish: int = source.find("func _clear_yoyo_wrap", start)
+	assert(start >= 0 and finish > start)
+	var runtime_source: String = source.substr(start, finish - start)
+	assert(runtime_source.contains("direct_space_state.intersect_ray"), "Static wrap must query the real physics collider surface.")
+	assert(not runtime_source.contains("world_collision_rect"), "Static wrap must never convert capsule collision back into rectangular geometry.")
+	assert(not runtime_source.contains("yoyo_rect_surface_point"), "Static wrap must not synthesize square contact points.")
+
 func test_terrain_wrap_source_uses_active_collision_shape() -> void:
 	var object: ArenaObject = ArenaObject.new()
 	object.blocks_navigation = true
 	object.footprint_size = Vector2(90.0, 54.0)
 	object.position = Vector2(120.0, 80.0)
 	add_child(object)
+	var obstruction_body: StaticBody2D = object.get_node("ObstructionBody") as StaticBody2D
+	var collision_shape: CollisionShape2D = obstruction_body.get_child(0) as CollisionShape2D
+	assert(collision_shape.shape is CapsuleShape2D, "In-arena terrain targets must use capsule collision, never rectangles.")
 	var collision_rect: Rect2 = object.world_collision_rect()
 	assert(collision_rect.size.is_equal_approx(Vector2(90.0, 54.0)), "Terrain wrap geometry must come from the active collision shape.")
 	assert(collision_rect.get_center().is_equal_approx(Vector2(120.0, 80.0)), "Terrain wrap geometry must remain attached to the live body.")

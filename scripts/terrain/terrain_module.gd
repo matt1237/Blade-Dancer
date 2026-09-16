@@ -24,6 +24,14 @@ func world_footprint() -> Rect2:
 	var rotated_size: Vector2 = Vector2(footprint_size.y, footprint_size.x) if quarter_turn == 1 else footprint_size
 	return Rect2(global_position - rotated_size * 0.5, rotated_size)
 
+func _capsule_local_size(collision: CollisionShape2D) -> Vector2:
+	if collision == null or not collision.shape is CapsuleShape2D:
+		return Vector2.ZERO
+	var capsule: CapsuleShape2D = collision.shape as CapsuleShape2D
+	var size: Vector2 = Vector2(capsule.radius * 2.0, capsule.height)
+	var quarter_turn: int = posmod(roundi(collision.rotation / (PI * 0.5)), 2)
+	return Vector2(size.y, size.x) if quarter_turn == 1 else size
+
 func world_blocking_rects() -> Array[Rect2]:
 	var rectangles: Array[Rect2] = []
 	var quarter_turn: int = posmod(roundi(rotation / (PI * 0.5)), 2)
@@ -32,10 +40,10 @@ func world_blocking_rects() -> Array[Rect2]:
 		if body == null: continue
 		for shape_node: Node in body.get_children():
 			var collision: CollisionShape2D = shape_node as CollisionShape2D
-			if collision == null or not collision.shape is RectangleShape2D: continue
-			var rectangle: RectangleShape2D = collision.shape as RectangleShape2D
+			var local_size: Vector2 = _capsule_local_size(collision)
+			if local_size == Vector2.ZERO: continue
 			var world_center: Vector2 = global_transform * (body.position + collision.position)
-			var world_size: Vector2 = Vector2(rectangle.size.y, rectangle.size.x) if quarter_turn == 1 else rectangle.size
+			var world_size: Vector2 = Vector2(local_size.y, local_size.x) if quarter_turn == 1 else local_size
 			rectangles.append(Rect2(world_center - world_size * 0.5, world_size))
 	return rectangles
 
@@ -81,10 +89,9 @@ func _draw() -> void:
 		if body == null: continue
 		for shape_node: Node in body.get_children():
 			var collision: CollisionShape2D = shape_node as CollisionShape2D
-			if collision == null or not collision.shape is RectangleShape2D: continue
-			var rectangle: RectangleShape2D = collision.shape as RectangleShape2D
+			var size: Vector2 = _capsule_local_size(collision)
+			if size == Vector2.ZERO: continue
 			var center: Vector2 = body.position + collision.position
-			var size: Vector2 = rectangle.size
 			var rect: Rect2 = Rect2(center - size * 0.5, size)
 			if _is_hd_visual():
 				_draw_hd_wall(rect)

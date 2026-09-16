@@ -27,10 +27,11 @@ const WRAPPED_LOCAL_SEGMENT_MIN: float = 1.0
 ## intentionally exposes only the subset with clear, distinct perceptual effects.
 const TUNING_DEFAULTS: Dictionary = {
 	"max_tether_length": 640.0, "hook_travel_speed": 1250.0, "reel_speed": 145.0,
-	"tension_ramp_distance": 8.0,
+	"slack_take_up_speed": 145.0, "initial_slack": 0.0, "tension_ramp_distance": 8.0,
 	"hand_velocity_smoothing": 16.0, "hand_velocity_cap": 1800.0,
 	"body_movement_transfer": 0.15, "directional_transfer_ratio": 0.9, "radial_yank_ratio": 1.0,
 	"player_hand_orbit_strength": 4.0, "player_radial_yank_strength": 2.5,
+	"taut_catch_impulse_seconds": 0.12, "yoyo_catch_radial_retention": 0.0,
 	"enemy_pull_strength": 1150.0,
 	"chakram_tether_strength": 800.0, "wall_pull_strength": 2800.0,
 	"grapple_dash_traction": 0.20, "light_yank_strength": 3.5,
@@ -40,15 +41,15 @@ const TUNING_DEFAULTS: Dictionary = {
 	"chakram_yank_strength": 7.0, "yoyo_enabled": true,
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
 	"yoyo_orbit_drag": 0.35, "yoyo_min_orbit_time": 1.25,
-	"yoyo_recall_speed_threshold": 190.0,
+	"yoyo_recall_speed_threshold": 120.0,
 	"yoyo_static_pivot_enabled": false,
 	"yoyo_boundary_wrap_enabled": false
 }
 const TUNING_KEYS: Array[String] = [
-	"max_tether_length", "hook_travel_speed", "reel_speed", "tension_ramp_distance",
-	"hand_velocity_smoothing", "hand_velocity_cap",
+	"max_tether_length", "hook_travel_speed", "reel_speed", "slack_take_up_speed",
+	"initial_slack", "tension_ramp_distance", "hand_velocity_smoothing", "hand_velocity_cap",
 	"body_movement_transfer", "directional_transfer_ratio", "radial_yank_ratio", "player_hand_orbit_strength",
-	"player_radial_yank_strength", "enemy_pull_strength",
+	"player_radial_yank_strength", "taut_catch_impulse_seconds", "yoyo_catch_radial_retention", "enemy_pull_strength",
 	"chakram_tether_strength", "wall_pull_strength", "grapple_dash_traction", "light_yank_strength",
 	"light_slide_fraction", "medium_reel_multiplier", "medium_yank_strength", "medium_slide_fraction",
 	"medium_player_pull_strength", "heavy_player_pull_strength", "chakram_yank_strength",
@@ -65,6 +66,10 @@ static func default_tuning_state() -> Dictionary:
 var mastery_range_multiplier: float = 1.0
 @export var hook_travel_speed: float = 1250.0
 @export var reel_speed: float = 145.0
+## Speed used only to close the configured attachment slack before first tension.
+@export var slack_take_up_speed: float = 145.0
+## Extra line granted at attachment. Zero produces an immediate, measured catch.
+@export var initial_slack: float = 0.0
 @export var tension_ramp_distance: float = 8.0
 @export_category("Lasso Hand Physics")
 ## Smoothing removes one-frame animation jitter without erasing deliberate hand sweeps.
@@ -81,6 +86,11 @@ var mastery_range_multiplier: float = 1.0
 @export var player_hand_orbit_strength: float = 4.0
 ## Outward hand motion briefly accelerates the player toward their anchor.
 @export var player_radial_yank_strength: float = 2.5
+## Duration of the one-shot hand impulse when the Chakram line first becomes taut.
+@export var taut_catch_impulse_seconds: float = 0.12
+## Fraction of radial velocity retained when Extending becomes Orbiting. Zero
+## settles immediately into tangent; one preserves all inward/outward drift.
+@export_range(0.0, 1.0, 0.05) var yoyo_catch_radial_retention: float = 0.0
 @export_category("Original Reel Forces")
 ## Restored committed reel tuning. Hand steering/yank settings never scale these.
 @export var enemy_pull_strength: float = 1150.0
@@ -114,7 +124,7 @@ var mastery_range_multiplier: float = 1.0
 ## Minimum authored hang window before a low-energy orbit may begin reeling.
 @export var yoyo_min_orbit_time: float = 1.25
 ## Tangential speed above this value sustains the orbit after the hang window.
-@export var yoyo_recall_speed_threshold: float = 190.0
+@export var yoyo_recall_speed_threshold: float = 120.0
 ## Enables the retained one-point static obstruction pivot.
 ## Disabled by default while the direct Chakram yo-yo is the active mechanic.
 @export var yoyo_static_pivot_enabled: bool = false
@@ -143,6 +153,7 @@ var rope_taut: bool = false
 var previous_hand_position: Vector2 = Vector2.ZERO
 var smoothed_hand_velocity: Vector2 = Vector2.ZERO
 var yoyo_state: YoyoState = YoyoState.NONE
+var yoyo_catch_initialized: bool = false
 var yoyo_extend_time: float = 0.0
 var yoyo_orbit_time: float = 0.0
 var yoyo_wrap_active: bool = false
@@ -437,50 +448,45 @@ func _yoyo_enemy_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D 
 		return {"position": surface, "object": enemy}
 	return {}
 
+func _arena_object_from_collider(collider: Object) -> ArenaObject:
+	var node: Node = collider as Node
+	while node != null:
+		if node is ArenaObject:
+			return node as ArenaObject
+		node = node.get_parent()
+	return null
+
+func _terrain_capsule_hit(start: Vector2, end: Vector2, excluded: Node2D = null) -> Dictionary:
+	if player == null or not player.is_inside_tree() or start.is_equal_approx(end):
+		return {}
+	var excluded_rids: Array[RID] = []
+	if excluded is ArenaObject:
+		var excluded_object: ArenaObject = excluded as ArenaObject
+		if excluded_object.body != null and is_instance_valid(excluded_object.body):
+			excluded_rids.append(excluded_object.body.get_rid())
+	var query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(start, end, 4, excluded_rids)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	var hit: Dictionary = player.get_world_2d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return {}
+	var normal: Vector2 = hit.get("normal", Vector2.ZERO) as Vector2
+	var contact: Vector2 = hit.get("position", Vector2.ZERO) as Vector2
+	# A tiny outward clearance keeps the rendered/pivot line on the real rounded
+	# surface instead of numerically falling back inside the collider.
+	return {"position": contact + normal * 0.5, "normal": normal, "object": _arena_object_from_collider(hit.get("collider"))}
+
 func _yoyo_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D = null) -> Dictionary:
-	if player == null or not player.is_inside_tree():
-		return {}
-	var main_scene: Node = player.get_tree().current_scene
-	if main_scene == null:
-		return {}
-	if main_scene.has_method("get_terrain_obstruction_hit"):
-		var object_hit: Dictionary = main_scene.call("get_terrain_obstruction_hit", start, end, 2.0) as Dictionary
-		if not object_hit.is_empty():
-			var object: ArenaObject = object_hit.get("object") as ArenaObject
-			if object != null:
-				var collision_rect: Rect2 = object.world_collision_rect()
-				return {"position": yoyo_rect_surface_point(collision_rect, object_hit["position"] as Vector2), "object": object, "bounds": collision_rect}
-	if main_scene.has_method("get_terrain_wall_collision"):
-		var wall_hit: Dictionary = main_scene.call("get_terrain_wall_collision", start, end, 2.0) as Dictionary
-		if not wall_hit.is_empty():
-			var wall_bounds: Rect2 = wall_hit.get("rect", Rect2()) as Rect2
-			var wall_position: Vector2 = wall_hit.get("position", Vector2.ZERO) as Vector2
-			return {"position": yoyo_rect_surface_point(wall_bounds, wall_position), "object": null, "bounds": wall_bounds}
+	var terrain_hit: Dictionary = _terrain_capsule_hit(start, end, excluded)
+	if not terrain_hit.is_empty():
+		return terrain_hit
 	var enemy_hit: Dictionary = _yoyo_enemy_obstruction_hit(start, end, excluded)
 	if not enemy_hit.is_empty():
 		return enemy_hit
 	return {}
 
 func _yoyo_static_obstruction_hit(start: Vector2, end: Vector2) -> Dictionary:
-	if player == null or not player.is_inside_tree():
-		return {}
-	var main_scene: Node = player.get_tree().current_scene
-	if main_scene == null:
-		return {}
-	if main_scene.has_method("get_terrain_obstruction_hit"):
-		var object_hit: Dictionary = main_scene.call("get_terrain_obstruction_hit", start, end, 2.0) as Dictionary
-		if not object_hit.is_empty():
-			var object: ArenaObject = object_hit.get("object") as ArenaObject
-			if object != null:
-				var collision_rect: Rect2 = object.world_collision_rect()
-				if collision_rect.size.x > 0.0 and collision_rect.size.y > 0.0:
-					return {"position": yoyo_wrap_corner(collision_rect, object_hit["position"] as Vector2), "object": object}
-	if main_scene.has_method("get_terrain_wall_collision"):
-		var wall_hit: Dictionary = main_scene.call("get_terrain_wall_collision", start, end, 2.0) as Dictionary
-		if not wall_hit.is_empty():
-			var normal: Vector2 = wall_hit.get("normal", Vector2.ZERO) as Vector2
-			return {"position": (wall_hit["position"] as Vector2) + normal * 4.0, "object": null}
-	return {}
+	return _terrain_capsule_hit(start, end)
 
 func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_reacquire_blocked_object = reacquire_blocked_object
@@ -587,6 +593,7 @@ static func yoyo_segment_crosses_rect(start: Vector2, end: Vector2, rect: Rect2)
 
 func _reset_yoyo_state() -> void:
 	yoyo_state = YoyoState.NONE
+	yoyo_catch_initialized = false
 	yoyo_extend_time = 0.0
 	yoyo_orbit_time = 0.0
 	_clear_yoyo_wrap()
@@ -751,6 +758,7 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 			return Vector2.ZERO
 		anchor_position = target_node.global_position
 	var is_chakram_yoyo: bool = yoyo_enabled and target_type == TargetType.CHAKRAM and target_node is Chakram
+	var rope_was_taut: bool = rope_taut
 	yoyo_reel_shortfall = 0.0
 	if is_chakram_yoyo:
 		var yoyo_chakram: Chakram = target_node as Chakram
@@ -759,12 +767,17 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 		var local_rope_length: float = _yoyo_live_local_length(rope_length, current_hand_position)
 		var pivot_distance: float = pivot.distance_to(yoyo_chakram.global_position)
 		var path_length: float = _yoyo_live_path_length(current_hand_position, yoyo_chakram.global_position)
-		# Capture the live path exactly once when the line catches. Inward travel
-		# after that creates real temporary slack; it must never ratchet the rope
-		# shorter frame by frame and impersonate an automatic reel.
+		# Attachment slack has one visible authority. Once caught, inward travel
+		# never rewrites rope_length; it is temporary geometry, not hidden ratcheting.
 		if not rope_taut:
-			rope_length = maxf(MIN_ROPE_LENGTH, path_length)
-			rope_taut = true
+			if not yoyo_catch_initialized:
+				rope_length = maxf(MIN_ROPE_LENGTH, path_length + maxf(0.0, initial_slack))
+				yoyo_catch_initialized = true
+				rope_taut = initial_slack <= 0.0
+			else:
+				rope_length = reeled_length(rope_length, slack_take_up_speed, delta)
+				if rope_length <= path_length + 0.5:
+					rope_taut = true
 		local_rope_length = _yoyo_live_local_length(rope_length, current_hand_position)
 		if yoyo_state == YoyoState.NONE:
 			yoyo_state = YoyoState.EXTENDING
@@ -772,15 +785,14 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 			yoyo_extend_time += maxf(0.0, delta)
 			var outward_direction: Vector2 = pivot.direction_to(yoyo_chakram.global_position)
 			var outward_speed: float = yoyo_chakram.velocity.dot(outward_direction)
-			if pivot_distance >= local_rope_length - TAUT_CLEARANCE:
+			var catch_orbit: bool = pivot_distance >= local_rope_length - TAUT_CLEARANCE or (outward_speed <= 20.0 and rope_taut)
+			if catch_orbit:
+				# Settle radial travel once at capture. This prevents inward drift from
+				# manufacturing a large slack loop while preserving the full tangent.
+				yoyo_chakram.velocity = Chakram.yoyo_captured_velocity(yoyo_chakram.global_position, yoyo_chakram.velocity, pivot, yoyo_catch_radial_retention)
 				yoyo_state = YoyoState.ORBITING
 				yoyo_orbit_time = 0.0
 				rope_taut = true
-			elif outward_speed <= 20.0 and rope_taut:
-				# A damped/stalled catch still receives the authored hang; the old
-				# 0.30-second shortcut bypassed it and directly commanded recall.
-				yoyo_state = YoyoState.ORBITING
-				yoyo_orbit_time = 0.0
 		elif yoyo_state == YoyoState.ORBITING:
 			yoyo_orbit_time += maxf(0.0, delta)
 			rope_taut = true
@@ -856,9 +868,14 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				var chakram_tension: Vector2 = tension_acceleration(tethered_chakram.global_position, chakram_pivot, chakram_local_length, chakram_tether_strength, ramp) if reel_is_active else Vector2.ZERO
 				var chakram_yank: Vector2 = target_hand_acceleration(tethered_chakram.global_position, chakram_hand, articulated_hand_velocity, chakram_yank_strength, chakram_yank_strength * radial_yank_ratio, directional_transfer_ratio, rope_taut)
 				# Yo-yo motion is hand-authored: tangent dominates and only deliberate
-				# radial hand travel pulls the Chakram inward.
+				# radial hand travel pulls the Chakram inward. The one catch-edge impulse
+				# uses the full sampled hand motion from the known-good build; ongoing
+				# steering keeps GP2's Body Movement Transfer filtering.
 				tethered_chakram.apply_grapple_force(chakram_tension, delta)
 				tethered_chakram.apply_grapple_force(chakram_yank, delta)
+				if is_chakram_yoyo and rope_taut and not rope_was_taut:
+					var catch_yank: Vector2 = target_hand_acceleration(tethered_chakram.global_position, chakram_hand, smoothed_hand_velocity, chakram_yank_strength, chakram_yank_strength * radial_yank_ratio, directional_transfer_ratio, true)
+					tethered_chakram.apply_grapple_force(catch_yank, taut_catch_impulse_seconds)
 				if is_chakram_yoyo and rope_taut and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
 					var wrapped_enemy: Enemy = yoyo_wrap_object as Enemy
 					var path_stretch: float = maxf(0.0, _yoyo_live_path_length(live_hand_position, tethered_chakram.global_position) - rope_length)
@@ -1048,10 +1065,10 @@ func _update_hook_flight(delta: float) -> void:
 		if target_type == TargetType.CHAKRAM and is_instance_valid(target_node) and target_node.has_method("on_grapple_attached"):
 			target_node.call("on_grapple_attached")
 		if yoyo_enabled and target_type == TargetType.CHAKRAM:
-			# Initialize from the shared Grapple tuners. Yo-yo changes the later
-			# state behavior, but never grants a hidden full-range rope.
-			rope_length = minf(max_tether_length, _tether_distance())
-			rope_taut = true
+			# Measured catch length plus the one visible Initial Slack authority.
+			rope_length = minf(max_tether_length, _tether_distance() + maxf(0.0, initial_slack))
+			rope_taut = initial_slack <= 0.0
+			yoyo_catch_initialized = true
 			yoyo_state = YoyoState.EXTENDING
 		else:
 			rope_length = minf(max_tether_length, _tether_distance())

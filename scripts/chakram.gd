@@ -97,6 +97,14 @@ func launch(direction: Vector2, player: Player) -> void:
 static func updated_flight_time(current_time: float, delta: float, is_grapple_attached: bool) -> float:
 	return current_time if is_grapple_attached else current_time - maxf(delta, 0.0)
 
+static func yoyo_captured_velocity(moving_position: Vector2, current_velocity: Vector2, pivot: Vector2, radial_retention: float) -> Vector2:
+	var radial_direction: Vector2 = pivot.direction_to(moving_position)
+	if radial_direction == Vector2.ZERO:
+		return current_velocity
+	var radial_velocity: Vector2 = radial_direction * current_velocity.dot(radial_direction)
+	var tangential_velocity: Vector2 = current_velocity - radial_velocity
+	return tangential_velocity + radial_velocity * clampf(radial_retention, 0.0, 1.0)
+
 static func yoyo_constrained_velocity(moving_position: Vector2, current_velocity: Vector2, pivot: Vector2, maximum_length: float, soft_zone: float, radial_damping: float, tangential_drag: float, delta: float) -> Vector2:
 	var offset: Vector2 = moving_position - pivot
 	var distance: float = offset.length()

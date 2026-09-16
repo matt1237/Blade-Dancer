@@ -129,9 +129,12 @@ func _create_collision() -> void:
 	body.collision_layer = 4
 	body.collision_mask = 0
 	var shape_node: CollisionShape2D = CollisionShape2D.new()
-	var shape: RectangleShape2D = RectangleShape2D.new()
-	shape.size = footprint_size
+	var shape: CapsuleShape2D = CapsuleShape2D.new()
+	shape.radius = minf(footprint_size.x, footprint_size.y) * 0.5
+	shape.height = maxf(footprint_size.x, footprint_size.y)
 	shape_node.shape = shape
+	if footprint_size.x > footprint_size.y:
+		shape_node.rotation = PI * 0.5
 	body.add_child(shape_node)
 	add_child(body)
 
@@ -147,12 +150,16 @@ func world_collision_rect() -> Rect2:
 	if body != null and is_instance_valid(body):
 		for child: Node in body.get_children():
 			var collision: CollisionShape2D = child as CollisionShape2D
-			if collision == null or collision.disabled or not collision.shape is RectangleShape2D:
+			if collision == null or collision.disabled or not collision.shape is CapsuleShape2D:
 				continue
-			var rectangle: RectangleShape2D = collision.shape as RectangleShape2D
-			var half_size: Vector2 = rectangle.size * collision.global_transform.get_scale().abs() * 0.5
-			return Rect2(collision.global_position - half_size, half_size * 2.0)
-	# Unsupported or shapeless objects are not valid wrap geometry.
+			var capsule: CapsuleShape2D = collision.shape as CapsuleShape2D
+			var local_size: Vector2 = Vector2(capsule.radius * 2.0, capsule.height)
+			if absf(cos(collision.global_rotation)) < absf(sin(collision.global_rotation)):
+				local_size = Vector2(local_size.y, local_size.x)
+			var world_size: Vector2 = local_size * collision.global_transform.get_scale().abs()
+			return Rect2(collision.global_position - world_size * 0.5, world_size)
+	# Compatibility bounds only. Static wrap must consume capsule geometry before
+	# it is re-enabled; this rectangle is used by navigation and legacy queries.
 	return Rect2()
 
 func world_blocking_rects() -> Array[Rect2]:

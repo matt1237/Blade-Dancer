@@ -168,6 +168,13 @@ func test_desktop_cooldown_waits_for_confirmed_grapple_flight() -> void:
 	var consume_index: int = source.find("if grapple_started and (grapple_controller.firing or grapple_controller.active)")
 	assert(update_index >= 0 and consume_index > update_index, "Desktop must attempt the shot before consuming a charge/cooldown.")
 
+func test_yoyo_catch_can_remove_radial_motion_without_losing_tangent() -> void:
+	var caught: Vector2 = Chakram.yoyo_captured_velocity(Vector2(100.0, 0.0), Vector2(-180.0, 240.0), Vector2.ZERO, 0.0)
+	assert(absf(caught.x) < 0.001, "A crisp catch must be able to remove inward radial drift before it creates slack.")
+	assert(is_equal_approx(caught.y, 240.0), "Catch settling must preserve useful tangential orbit speed.")
+	var retained: Vector2 = Chakram.yoyo_captured_velocity(Vector2(100.0, 0.0), Vector2(-180.0, 240.0), Vector2.ZERO, 0.5)
+	assert(is_equal_approx(retained.x, -90.0) and is_equal_approx(retained.y, 240.0), "Radial retention must be a real tunable authority.")
+
 func test_yoyo_limit_removes_only_outward_radial_motion() -> void:
 	var at_limit: Vector2 = Vector2(100.0, 0.0)
 	var incoming: Vector2 = Vector2(320.0, 240.0)

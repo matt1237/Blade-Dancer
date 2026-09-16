@@ -521,6 +521,10 @@ static func _grapple_feel_tip(key: String) -> String:
 		"max_tether_length": ["Maximum distance a fired hook may travel and attach.", "Short, close-range grapples.", "Long-reaching grapples with more distant commitments.", "Set reach first; Grapple Mastery scales this same authority at runtime."],
 		"hook_travel_speed": ["Speed of the hook projectile before attachment.", "Readable, delayed distant attachments.", "Fast, nearly immediate attachment.", "Tune reach before judging flight speed."],
 		"reel_speed": ["Rate the rope shortens after it is taut and reeling.", "Slow, sustained hauling.", "Fast rope recovery and shorter exchanges.", "This changes rope length, not pull acceleration."],
+		"slack_take_up_speed": ["Rate used only to close Initial Attachment Slack.", "A softer delayed catch.", "Attachment slack disappears quickly.", "This stops acting once the first catch becomes taut."],
+		"initial_slack": ["Extra rope granted when the hook reaches its target.", "A crisp measured catch with little or no loose line.", "A visibly looser attachment before tension.", "Set this to zero to rule out attachment slack completely."],
+		"taut_catch_impulse_seconds": ["Duration of the one-shot hand impulse when the line first catches.", "Subtle hand influence at capture.", "A stronger directional flick into orbit.", "This changes velocity once; it never changes rope length."],
+		"yoyo_catch_radial_retention": ["Fraction of inward/outward radial velocity preserved as orbit begins.", "Radial drift is removed for a crisp tangent-only hang.", "More radial motion survives and may create temporary slack.", "Use zero when inward movement makes the caught line feel loose."],
 		"tension_ramp_distance": ["Stretch distance required to reach full pull acceleration.", "Stiff, immediate rope tension.", "Progressive, springier tension.", "Raise if taut contact snaps; lower if the rope feels vague."],
 		"enemy_pull_strength": ["Base reel acceleration applied to Light targets.", "Light enemies resist the reel.", "Light enemies accelerate strongly toward the player.", "Hand-authored steering is tuned separately by Light Target Hand Gain."],
 		"light_yank_strength": ["Gain for hand-motion steering of Light targets.", "The hand barely redirects Light targets.", "Hand sweeps strongly redirect Light targets.", "Direction Transfer and Outward Bias shape this gain; they do not replace it."],
@@ -722,6 +726,10 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "max_tether_length", "Hook Reach Limit", 200.0, 1000.0, 10.0, " px", _grapple_feel_tip("max_tether_length"))
 	_create_grapple_slider(grapple_section, "hook_travel_speed", "Hook Flight Speed", 300.0, 3000.0, 50.0, " px/s", _grapple_feel_tip("hook_travel_speed"))
 	_create_grapple_slider(grapple_section, "reel_speed", "Rope Shortening Speed", 0.0, 600.0, 5.0, " px/s", _grapple_feel_tip("reel_speed"))
+	_create_grapple_slider(grapple_section, "slack_take_up_speed", "Initial Slack Recovery", 0.0, 600.0, 5.0, " px/s", _grapple_feel_tip("slack_take_up_speed"))
+	_create_grapple_slider(grapple_section, "initial_slack", "Initial Attachment Slack", 0.0, 120.0, 1.0, " px", _grapple_feel_tip("initial_slack"))
+	_create_grapple_slider(grapple_section, "taut_catch_impulse_seconds", "Taut-Catch Hand Burst", 0.0, 0.5, 0.01, " s", _grapple_feel_tip("taut_catch_impulse_seconds"))
+	_create_grapple_slider(grapple_section, "yoyo_catch_radial_retention", "Yo-yo Catch Radial Retention", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("yoyo_catch_radial_retention"))
 	_create_grapple_slider(grapple_section, "tension_ramp_distance", "Tension Stiffness Distance", 1.0, 40.0, 1.0, " px", _grapple_feel_tip("tension_ramp_distance"))
 	_create_grapple_slider(grapple_section, "enemy_pull_strength", "Light Target Reel Force", 100.0, 3000.0, 50.0, " px/s²", _grapple_feel_tip("enemy_pull_strength"))
 	_create_grapple_slider(grapple_section, "light_yank_strength", "Light Target Hand Gain", 0.0, 12.0, 0.25, "×", _grapple_feel_tip("light_yank_strength"))
