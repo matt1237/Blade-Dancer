@@ -521,8 +521,6 @@ static func _grapple_feel_tip(key: String) -> String:
 		"max_tether_length": ["Maximum distance a fired hook may travel and attach.", "Short, close-range grapples.", "Long-reaching grapples with more distant commitments.", "Set reach first; Grapple Mastery scales this same authority at runtime."],
 		"hook_travel_speed": ["Speed of the hook projectile before attachment.", "Readable, delayed distant attachments.", "Fast, nearly immediate attachment.", "Tune reach before judging flight speed."],
 		"reel_speed": ["Rate the rope shortens after it is taut and reeling.", "Slow, sustained hauling.", "Fast rope recovery and shorter exchanges.", "This changes rope length, not pull acceleration."],
-		"slack_take_up_speed": ["Rate attach slack disappears before ordinary reeling begins.", "Soft, delayed tension onset.", "Rapid transition from attachment to tension.", "Do not use this to tune post-catch reel speed."],
-		"initial_slack": ["Extra rope length granted at attachment.", "Immediate tension with little free play.", "A loose attach followed by visible take-up.", "Pair with Initial Slack Recovery; this sets distance, not speed."],
 		"tension_ramp_distance": ["Stretch distance required to reach full pull acceleration.", "Stiff, immediate rope tension.", "Progressive, springier tension.", "Raise if taut contact snaps; lower if the rope feels vague."],
 		"enemy_pull_strength": ["Base reel acceleration applied to Light targets.", "Light enemies resist the reel.", "Light enemies accelerate strongly toward the player.", "Hand-authored steering is tuned separately by Light Target Hand Gain."],
 		"light_yank_strength": ["Gain for hand-motion steering of Light targets.", "The hand barely redirects Light targets.", "Hand sweeps strongly redirect Light targets.", "Direction Transfer and Outward Bias shape this gain; they do not replace it."],
@@ -540,15 +538,13 @@ static func _grapple_feel_tip(key: String) -> String:
 		"player_radial_yank_strength": ["Extra player pull generated only when the taut hand moves away from an anchor.", "Little outward-hand pull boost.", "Strong outward-hand acceleration toward the anchor.", "Tune after Terrain/Medium/Heavy Player Pull Force."],
 		"hand_velocity_smoothing": ["Response rate of the hand-motion signal used by all hand steering.", "Soft, delayed input with less animation jitter.", "Immediate hand response that may expose jitter.", "Choose signal quality before tuning any Hand Gain."],
 		"hand_velocity_cap": ["Maximum hand-motion speed admitted into steering and yank calculations.", "Large hand or dash spikes are heavily limited.", "More extreme motion reaches the gain stages.", "Raise only if deliberate fast gestures feel clipped."],
-		"taut_catch_impulse_seconds": ["One-time hand-force burst when slack first becomes taut.", "Smooth catch with little initial jerk.", "Pronounced snap as tension engages.", "This is an entry impulse, not sustained tension or Yo-yo braking."],
+		"body_movement_transfer": ["Fraction of player movement admitted into the shared hand signal.", "Walking and dashing barely whip targets; hand motion relative to the body stays expressive.", "Body movement strongly whips the Chakram and dynamic targets.", "Keep this low if ordinary movement masquerades as an intentional yank."],
 		"wall_pull_strength": ["Base acceleration pulling the player toward terrain or glyph anchors.", "Slow, floaty traversal pull.", "Fast, forceful traversal pull.", "Hand steering layers on top; this remains the base pull authority."],
 		"grapple_dash_traction": ["Steering retained during grapple-dashes and brief terrain-release slides.", "Dash momentum commits to its existing path.", "Movement input redirects the dash strongly.", "This does not change rope pull or ordinary grounded traction."],
-		"yoyo_enabled": ["Master switch for Chakram extension, catch, orbit, and recall states.", "Ordinary Chakram grapple behavior only.", "A flying grappled Chakram may enter the Yo-yo sequence.", "Disable for baseline comparison; enemy and terrain grapples are unchanged."],
+		"yoyo_enabled": ["Master switch for Chakram extension, catch, and held orbit states.", "Ordinary Chakram grapple behavior only.", "A flying grappled Chakram may enter the Yo-yo sequence.", "Disable for baseline comparison; enemy and terrain grapples are unchanged."],
 		"yoyo_soft_tension_zone": ["Distance before full extension where outward-speed easing begins.", "Late, abrupt catch near the line limit.", "Early, broad approach into tension.", "Move right if the catch snaps; left if energy dies too early."],
 		"yoyo_radial_damping": ["Brake applied only to outward radial speed during the catch approach.", "Springy catch with more overshoot.", "Firm catch that settles onto the radius quickly.", "This preserves tangent; Orbit Energy Burn is the separate tangent control."],
-		"yoyo_orbit_drag": ["Tangential energy lost per second while orbiting at full extension.", "Long, lively orbit and more trick time.", "Orbit fades quickly toward recall eligibility.", "Tune only after the catch feels right."],
-		"yoyo_min_orbit_time": ["Minimum guaranteed orbit time before automatic recall may begin.", "Recall may follow the catch immediately.", "A longer mandatory showcase hang.", "This is a time gate; Auto-Recall Energy Gate is the speed gate."],
-		"yoyo_recall_speed_threshold": ["Maximum Chakram speed eligible for auto-recall after the guaranteed hang.", "Only nearly exhausted orbits recall.", "More energetic orbits hand off to recall.", "Move right if orbit never ends; left if useful momentum is recalled."],
+		"yoyo_orbit_drag": ["Tangential energy lost per second while orbiting at full extension.", "Long, lively orbit and more trick time.", "Orbit settles quickly while remaining at its held radius.", "Tune only after the catch feels right."],
 		"yoyo_static_pivot_enabled": ["Allows one static obstruction point to redirect the Yo-yo rope when full boundary wrapping is off.", "Rope always uses the direct hand-to-Chakram path.", "Rocks, trees, and walls may become one local pivot.", "This is the stable fallback; Full Boundary Wrap overrides it."],
 		"yoyo_boundary_wrap_enabled": ["Enables the complete experimental enemy and terrain boundary-wrap solver.", "Uses the simpler Static Tether Point fallback.", "Uses live circle/rectangle boundaries, winding, reeling, and unwind state.", "Known experimental behavior is preserved for Astra investigation."],
 	}
@@ -723,9 +719,6 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	grapple_section.add_child(grapple_status_label)
 	_create_grapple_slider(grapple_section, "max_tether_length", "Hook Reach Limit", 200.0, 1000.0, 10.0, " px", _grapple_feel_tip("max_tether_length"))
 	_create_grapple_slider(grapple_section, "hook_travel_speed", "Hook Flight Speed", 300.0, 3000.0, 50.0, " px/s", _grapple_feel_tip("hook_travel_speed"))
-	_create_grapple_slider(grapple_section, "reel_speed", "Rope Shortening Speed", 20.0, 500.0, 5.0, " px/s", _grapple_feel_tip("reel_speed"))
-	_create_grapple_slider(grapple_section, "slack_take_up_speed", "Initial Slack Recovery", 20.0, 1500.0, 10.0, " px/s", _grapple_feel_tip("slack_take_up_speed"))
-	_create_grapple_slider(grapple_section, "initial_slack", "Attach Slack", 0.0, 30.0, 1.0, " px", _grapple_feel_tip("initial_slack"))
 	_create_grapple_slider(grapple_section, "tension_ramp_distance", "Tension Stiffness Distance", 1.0, 40.0, 1.0, " px", _grapple_feel_tip("tension_ramp_distance"))
 	_create_grapple_slider(grapple_section, "enemy_pull_strength", "Light Target Reel Force", 100.0, 3000.0, 50.0, " px/s²", _grapple_feel_tip("enemy_pull_strength"))
 	_create_grapple_slider(grapple_section, "light_yank_strength", "Light Target Hand Gain", 0.0, 12.0, 0.25, "×", _grapple_feel_tip("light_yank_strength"))
@@ -737,6 +730,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "heavy_player_pull_strength", "Heavy Target Player Pull", 100.0, 5000.0, 50.0, " px/s²", _grapple_feel_tip("heavy_player_pull_strength"))
 	_create_grapple_slider(grapple_section, "chakram_tether_strength", "Chakram Recall Force", 100.0, 3000.0, 50.0, " px/s²", _grapple_feel_tip("chakram_tether_strength"))
 	_create_grapple_slider(grapple_section, "chakram_yank_strength", "Chakram Hand-Steering Gain", 0.0, 16.0, 0.25, "×", _grapple_feel_tip("chakram_yank_strength"))
+	_create_grapple_slider(grapple_section, "body_movement_transfer", "Body Movement Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("body_movement_transfer"))
 	var yoyo_section: VBoxContainer = _create_section_header(grapple_section, "GRAPPLE YO-YO (Global)", true)
 	var yoyo_note: Label = Label.new()
 	yoyo_note.text = "Chakram + Grapple: Full Boundary Wrap restores the complete enemy/terrain experiment. Turn it off to use the simpler Static Tether Point fallback."
@@ -746,8 +740,6 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(yoyo_section, "yoyo_soft_tension_zone", "Yo-yo Catch Approach", 0.0, 180.0, 5.0, " px", _grapple_feel_tip("yoyo_soft_tension_zone"))
 	_create_grapple_slider(yoyo_section, "yoyo_radial_damping", "Yo-yo Outward Catch Brake", 0.0, 40.0, 0.5, "×", _grapple_feel_tip("yoyo_radial_damping"))
 	_create_grapple_slider(yoyo_section, "yoyo_orbit_drag", "Yo-yo Orbit Energy Burn", 0.0, 4.0, 0.05, " /s", _grapple_feel_tip("yoyo_orbit_drag"))
-	_create_grapple_slider(yoyo_section, "yoyo_min_orbit_time", "Yo-yo Guaranteed Hang", 0.0, 2.0, 0.05, " s", _grapple_feel_tip("yoyo_min_orbit_time"))
-	_create_grapple_slider(yoyo_section, "yoyo_recall_speed_threshold", "Yo-yo Auto-Recall Energy Gate", 0.0, 500.0, 10.0, " px/s", _grapple_feel_tip("yoyo_recall_speed_threshold"))
 	_create_grapple_slider(yoyo_section, "yoyo_static_pivot_enabled", "Yo-yo Static Tether Point", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_static_pivot_enabled"))
 	_create_grapple_slider(yoyo_section, "yoyo_boundary_wrap_enabled", "Yo-yo Full Boundary Wrap (Experimental)", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_boundary_wrap_enabled"))
 	_create_grapple_slider(grapple_section, "directional_transfer_ratio", "Dynamic Target Direction Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("directional_transfer_ratio"))
@@ -756,7 +748,6 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "player_radial_yank_strength", "Player Outward Pull Gain", 0.0, 8.0, 0.25, "×", _grapple_feel_tip("player_radial_yank_strength"))
 	_create_grapple_slider(grapple_section, "hand_velocity_smoothing", "Hand Signal Response", 1.0, 40.0, 1.0, " /s", _grapple_feel_tip("hand_velocity_smoothing"))
 	_create_grapple_slider(grapple_section, "hand_velocity_cap", "Hand Signal Speed Ceiling", 300.0, 3000.0, 50.0, " px/s", _grapple_feel_tip("hand_velocity_cap"))
-	_create_grapple_slider(grapple_section, "taut_catch_impulse_seconds", "Taut-Catch Hand Burst", 0.0, 0.5, 0.01, " s", _grapple_feel_tip("taut_catch_impulse_seconds"))
 	_create_grapple_slider(grapple_section, "wall_pull_strength", "Terrain Player Pull Force", 250.0, 6000.0, 50.0, " px/s²", _grapple_feel_tip("wall_pull_strength"))
 	_create_grapple_slider(grapple_section, "grapple_dash_traction", "Grapple-Dash Steering Retention", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("grapple_dash_traction"))
 
@@ -782,12 +773,8 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(contact_section, "contact_zoom_duration", "Zoom Duration", 0.0, 0.4, 0.01, " s")
 	_create_contact_slider(contact_section, "contact_impact", "Impact / Speed-Line Intensity", 0.0, 2.5, 0.05, "×")
 
-	experimental_bind_section = _create_section_header(box, "SLIDE & BIND FEEL (All Weapons)", true)
-	var bind_note: Label = Label.new()
-	bind_note.text = "One authoritative profile for both legacy Bind IDs and every sword. Slide Entry governs contact; Stable Bind governs the connected exchange."
-	bind_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	experimental_bind_section.add_child(bind_note)
-	var slide_section: VBoxContainer = _create_section_header(experimental_bind_section, "SLIDE ENTRY", true)
+	# Slide is shared contact behavior, so its controls stay visible for every form.
+	var slide_section: VBoxContainer = _create_section_header(box, "SLIDE FEEL (Per Preset)", true)
 	_create_contact_slider(slide_section, "slide_contact_tolerance", "Contact Tolerance", 2.0, 30.0, 1.0, " px", _form_three_feel_tip("Maximum blade-to-blade distance that may begin a parallel slide.", "Precise contact; slides are rarer and may miss under fast motion.", "Forgiving proximity; slides are easier, but near misses may count.", "This helps achieve a slide; Form III Bind Retention Tolerance controls keeping it."))
 	_create_contact_slider(slide_section, "slide_angle", "Angle Tolerance", 5.0, 90.0, 1.0, "°", _form_three_feel_tip("How close to parallel the blades must be for a slide instead of a crossing clash.", "Only nearly parallel blades slide; clear classification but harder entry.", "More diagonal contacts may slide; easier entry but fewer contacts read as clashes.", "Try 40–45° for a forgiving Form III profile without making every crossing a slide."))
 	_create_contact_slider(slide_section, "slide_cling", "Cling Duration", 0.0, 2.5, 0.02, " s", _form_three_feel_tip("How long slide friction and sword-speed drag remain available after slide entry.", "Brief scrape that quickly returns to free motion.", "Longer weighted contact that gives Form III more time to capture.", "This is entry assistance, not guaranteed physical contact. The range is extended for longer experiments."))
@@ -804,15 +791,15 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(slide_section, "slide_zoom_duration", "Zoom Duration", 0.0, 0.4, 0.01, " s", _form_three_feel_tip("How long slide-entry zoom takes to settle.", "Fast visual pulse.", "Slower cinematic settle.", "Keep this below typical Capture Time if you want bind focus to feel like a second beat."))
 	_create_contact_slider(slide_section, "slide_impact", "Presentation Intensity", 0.0, 2.5, 0.05, "×", _form_three_feel_tip("Overall impact/speed-line intensity for slide entry.", "Quiet, readable blade geometry.", "Bold contact accent with more visual energy.", "Presentation only."))
 
-	var unified_bind_content: VBoxContainer = experimental_bind_section
+	# Bind remains form-specific and is the only conditional part of this area.
+	var unified_bind_content: VBoxContainer = _create_section_header(box, "BIND FEEL (All Weapons)", true)
+	var bind_note: Label = Label.new()
+	bind_note.text = "One authoritative profile for both legacy Bind IDs and every sword."
+	bind_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	unified_bind_content.add_child(bind_note)
 	var bind_section: VBoxContainer = _create_section_header(unified_bind_content, "STABLE BIND", true)
 	# Existing bind slider construction below targets this content variable.
 	experimental_bind_section = bind_section
-	experimental_bind_status = Label.new()
-	experimental_bind_status.text = "NO BIND — establish a parallel blade slide"
-	experimental_bind_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	experimental_bind_status.add_theme_color_override("font_color", Color("#75dcff"))
-	bind_section.add_child(experimental_bind_status)
 	_create_hand_slider(experimental_bind_section, "bind_enabled", "Bind Enabled", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Master switch for Form III bind capture. Ordinary blade collisions still work while this is off.", "Bind capture is disabled; Form III behaves like its Form II baseline.", "Validated slides can mature into stable binds.", "Use this as an instant A/B comparison without touching the other values."))
 	_create_hand_slider(experimental_bind_section, "bind_capture_time", "Capture Time", 0.02, 0.40, 0.01, " s", _form_three_feel_tip("Continuous blade contact and minimum pressure required before focus begins.", "Binds engage quickly and feel eager, but incidental slides may capture.", "Binds require a longer deliberate press and feel more earned, but may be hard to establish.", "Start near 0.10 s; adjust this before changing retention."))
 	_create_hand_slider(experimental_bind_section, "bind_contact_tolerance", "Contact Retention Tolerance", 7.0, 30.0, 1.0, " px", _form_three_feel_tip("Maximum blade-edge separation before Release Grace begins. It cannot create the initial slide.", "Precise, brittle contact that releases from small gaps.", "Forgiving, sticky contact that survives wider gaps and rough motion.", "Raise only until normal hand jitter stops breaking good binds; too high can feel magnetic."))
@@ -843,9 +830,8 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(experimental_bind_section, "bind_beat_stagger", "Beat Weapon Stagger", 0.05, 0.80, 0.01, " s", _form_three_feel_tip("How long a successful beat displaces the enemy weapon stance. It deals no health damage.", "Brief deflection with a tight follow-up opening.", "Long, obvious weapon displacement with a generous opening.", "This is weapon control, not a free counter or invulnerability window."))
 	_create_hand_slider(experimental_bind_section, "bind_beat_recoil", "Beat Weapon Recoil", 20.0, 300.0, 5.0, " px/s", _form_three_feel_tip("Physical enemy recoil after a valid pressure spike and leverage check.", "Subtle guard movement that preserves close distance.", "Strong displacement that visibly wins space but may push the target out of reach.", "If successful beats ruin the follow-up distance, move left."))
 	_create_hand_slider(experimental_bind_section, "bind_failed_beat_recoil", "Rejected Beat Recoil", 0.0, 220.0, 5.0, " px/s", _form_three_feel_tip("Player recoil when a high-pressure beat is attempted from bad leverage.", "Little consequence, allowing repeated forceful attempts.", "Strong self-displacement that makes poor leverage clearly costly.", "Raise this to discourage spam; lower it if one mistake breaks combat flow too harshly."))
-	_create_hand_slider(experimental_bind_section, "bind_debug", "Debug Readout", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Shows live contact time, pressure, tangential speed/travel, leverage, and earned outcome.", "Hides the diagnostic values for a clean play-feel test.", "Shows the diagnostic values for mechanical tuning.", "Tune with this on, then turn it off to judge whether the animation communicates the same information."))
 	# _create_section_header returns its content container; retain the outer
-	# section so visibility also hides the header for Forms I–II and IV–IX.
+	# section so visibility also hides the header for non-Bind forms.
 	experimental_bind_section = unified_bind_content.get_parent() as VBoxContainer
 
 	var clash_section: VBoxContainer = _create_section_header(box, "CLASH FEEL (Per Preset)")
@@ -1673,18 +1659,10 @@ func _sync_combat_controls() -> void:
 	_sync_blade_shape_controls()
 	_sync_visualizer_controls()
 
-func _sync_experimental_bind_status(player: Player) -> void:
-	if experimental_bind_status == null or not player.is_experimental_bind_form():
+func _sync_experimental_bind_status(player_ref: Player) -> void:
+	# Detailed Bind evidence is intentionally console-only.
+	if player_ref == null:
 		return
-	if player.get_combat_hand_setting_for_sword(selected_combat_sword_id, "bind_debug") < 0.5:
-		experimental_bind_status.text = "Debug readout disabled"
-		return
-	var state: String = "BOUND" if player.experimental_bind_active else ("CAPTURING" if player.experimental_bind_candidate else "NO BIND")
-	if player.experimental_reentry_time_left > 0.0:
-		state = "RE-ENTRY %.2fs" % player.experimental_reentry_time_left
-	var outcome: String = "" if player.experimental_bind_outcome.is_empty() else " | Outcome: %s" % player.experimental_bind_outcome
-	var reason: String = "" if player.experimental_bind_release_reason.is_empty() else " | Last: %s" % player.experimental_bind_release_reason
-	experimental_bind_status.text = "%s | Contact %.2fs | Pressure %.0f | Tangent %.0f / Travel %.0f | Leverage %.2f%s%s" % [state, player.experimental_bind_total_contact_time, player.experimental_bind_pressure, player.experimental_bind_tangent_speed, player.experimental_bind_tangent_travel, player.experimental_bind_leverage, outcome, reason]
 
 func open() -> void:
 	_bind_forest_visual_settings()
@@ -1776,8 +1754,8 @@ func _sync_auto_spawner_controls() -> void:
 func _sync_training_target_controls() -> void:
 	if training_dummy_button == null or test_turkey_button == null:
 		return
-	var dummy_enabled: bool = main != null and bool(main.call("is_training_dummy_enabled"))
-	var turkey_enabled: bool = main != null and bool(main.call("is_test_turkey_enabled"))
+	var dummy_enabled: bool = main != null and main.has_method("is_training_dummy_enabled") and bool(main.call("is_training_dummy_enabled"))
+	var turkey_enabled: bool = main != null and main.has_method("is_test_turkey_enabled") and bool(main.call("is_test_turkey_enabled"))
 	training_dummy_button.text = "TRAINING DUMMY: %s" % ("ON" if dummy_enabled else "OFF")
 	test_turkey_button.text = "TEST TURKEY (REPLACES ON DEATH): %s" % ("ON" if turkey_enabled else "OFF")
 	training_dummy_button.modulate = Color(0.55, 1.0, 0.55) if dummy_enabled else Color.WHITE

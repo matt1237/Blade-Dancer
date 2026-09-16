@@ -252,7 +252,7 @@ func test_preset_copy_keeps_experimental_fields_out_of_forms_one_and_two() -> vo
 	assert(bind_form.has("bind_enabled"), "Preset operations must preserve the canonical shared Bind Form values.")
 	player.free()
 
-func test_training_tuner_is_form_three_only_and_exposes_bind_diagnostics() -> void:
+func test_training_tuner_keeps_slide_shared_and_bind_controls_form_specific() -> void:
 	var fake_main: Node = Node.new()
 	add_child(fake_main)
 	var player: Player = PLAYER_SCENE.instantiate() as Player
@@ -263,15 +263,21 @@ func test_training_tuner_is_form_three_only_and_exposes_bind_diagnostics() -> vo
 	fake_main.add_child(menu)
 	player.sword_style = Player.SwordStyle.METRONOME_WINDUP
 	menu._sync_combat_controls()
-	assert(not menu.experimental_bind_section.visible, "The entire experimental section, including its header, must be hidden for Form II.")
+	assert(not menu.experimental_bind_section.visible, "Bind controls must be hidden for non-Bind forms.")
+	var slide_row: Dictionary = menu.contact_controls.get("slide_speed", {}) as Dictionary
+	assert(not slide_row.is_empty(), "Shared Slide controls must exist independently from Bind controls.")
+	assert((slide_row["slider"] as HSlider).visible, "Shared Slide controls must stay visible for every form.")
 	player.sword_style = Player.SwordStyle.METRONOME_BIND
 	menu._sync_combat_controls()
-	assert(menu.experimental_bind_section.visible, "The existing form selector must reveal the experimental tuner for Form III.")
+	assert(menu.experimental_bind_section.visible, "The Bind form must reveal its form-specific tuner.")
 	for setting_key: String in Player.EXPERIMENTAL_BIND_SETTING_KEYS:
+		if setting_key == "bind_debug":
+			assert(not menu.hand_controls.has(setting_key), "The retired player-facing Bind readout must not have a visible control.")
+			continue
 		var row: Dictionary = menu.hand_controls.get(setting_key, {}) as Dictionary
-		assert(not row.is_empty(), "Every experimental setting must have a live slider row: %s" % setting_key)
+		assert(not row.is_empty(), "Every Bind feel setting must have a live slider row: %s" % setting_key)
 		var slider: HSlider = row["slider"] as HSlider
 		assert(slider.tooltip_text.contains("← LEFT:") and slider.tooltip_text.contains("→ RIGHT:"), "The full slider hover area must explain both feel directions: %s" % setting_key)
 	var source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
-	assert(source.contains("Pressure %.0f | Tangent %.0f / Travel %.0f | Leverage %.2f"), "The tuner must expose live physical bind signals instead of gesture labels.")
+	assert(not source.contains("Pressure %.0f | Tangent %.0f / Travel %.0f | Leverage %.2f"), "Detailed Bind evidence must not render in the player-facing tuner.")
 	fake_main.free()

@@ -291,7 +291,8 @@ func _ready() -> void:
 	_apply_forest_visual_settings()
 	set_forest_time_phase(active_forest_time_phase)
 	_create_backyard_training_menu()
-	_create_combat_debug_tracker()
+	# Combat diagnostics remain available through Player's concise console log.
+	# Do not mount the former player-facing Combat Tracker panel.
 	screen_shake_rest_position = position
 	_configure_audio_buses()
 	audio_manager = AUDIO_MANAGER_SCRIPT.new() as AudioManager

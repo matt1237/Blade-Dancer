@@ -145,6 +145,8 @@ func test_bind_form_has_one_shared_slide_authority_for_every_weapon() -> void:
 	assert((row.get("label") as Label).text == "0.42 s", "The shared slider label must show the authoritative value.")
 	var source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	assert(not source.contains("FORM-LOCAL SLIDE ENTRY"), "The duplicate form-local Slide section must remain retired.")
+	assert(not source.contains("\"Rope Shortening Speed\""), "The ineffective rope-length implementation detail must not remain a visible feel tuner.")
+	assert(not source.contains("\"Yo-yo Hang Time\""), "Held Yo-yo orbit must not expose a retired automatic-recall timer.")
 	main.free()
 
 func test_bind_b_slider_drag_updates_without_full_panel_resync() -> void:

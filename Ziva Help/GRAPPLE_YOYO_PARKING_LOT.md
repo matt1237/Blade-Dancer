@@ -22,12 +22,13 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 
 ## Active direct yo-yo foundation
 
-1. **Correction:** A grapple attached to a flying Chakram must initialize and shorten the rope through the same live Grapple tuners as every other target. It must not grant `max_tether_length * mastery_range_multiplier` as a hidden one-time override. The previous full-line behavior was an implementation mistake and is explicitly retired.
+1. A grapple attached to a flying Chakram adopts the measured live hand-to-Chakram path immediately. Attach Slack, Initial Slack Recovery, and Taut-Catch Burst were removed on 2026-09-16 because they were short-lived overlapping authorities that made the catch feel loose while providing little useful control.
 2. The final approach to maximum extension progressively damps outward radial velocity.
 3. At the limit, outward radial velocity is removed while tangential velocity is preserved.
-4. Full-extension tangential energy burns down gradually, creating an orbit/hang before the existing `reel_speed` and `chakram_tether_strength` take over.
-5. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
-6. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
+4. `Yo-yo Hang Time` is the one authoritative automatic orbit window. When it expires, the existing `reel_speed` and `chakram_tether_strength` take over directly; the former Auto-Recall Energy Gate was removed so it cannot shadow the visible hang control.
+5. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
+6. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
+7. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
 
 ## Implementation authority contract
 

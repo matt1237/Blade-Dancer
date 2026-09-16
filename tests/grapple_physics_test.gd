@@ -39,6 +39,13 @@ func test_hand_velocity_smoothing_caps_animation_and_dash_spikes() -> void:
 	var smoothed: Vector2 = GrappleController.smoothed_velocity(Vector2.ZERO, Vector2(9000.0, 0.0), 16.0, 1.0 / 60.0, 1800.0)
 	assert(smoothed.length() > 0.0 and smoothed.length() <= 1800.0, "Hand velocity should remain responsive but capped.")
 
+func test_body_movement_transfer_separates_walking_from_authored_hand_motion() -> void:
+	var world_hand_velocity: Vector2 = Vector2(500.0, 120.0)
+	var body_velocity: Vector2 = Vector2(500.0, 0.0)
+	assert(GrappleController.authored_hand_velocity(world_hand_velocity, body_velocity, 0.0) == Vector2(0.0, 120.0), "Zero transfer must remove ordinary body travel while preserving relative hand motion.")
+	assert(GrappleController.authored_hand_velocity(world_hand_velocity, body_velocity, 1.0) == world_hand_velocity, "Full transfer must preserve the complete world-space hand signal.")
+	assert(GrappleController.authored_hand_velocity(world_hand_velocity, body_velocity, 0.25) == Vector2(125.0, 120.0), "Intermediate transfer must scale only the body-motion contribution.")
+
 func test_aimed_ground_endpoint_clamps_to_tether_range() -> void:
 	var origin: Vector2 = Vector2(100.0, 100.0)
 	assert(GrappleController.aimed_endpoint(origin, Vector2(300.0, 100.0), 640.0) == Vector2(740.0, 100.0), "Mouse distance should supply direction only; clear shots always use maximum range.")
@@ -65,8 +72,8 @@ func test_committed_reel_tuning_is_restored_and_independent_from_hand_response()
 	assert(enemy_reel == Vector2(-1150.0, 0.0), "Disabling hand response must leave exact original enemy reel acceleration.")
 	assert(chakram_reel == Vector2(-800.0, 0.0), "Disabling hand response must leave exact original Chakram reel acceleration.")
 	assert(controller.wall_pull_strength > controller.enemy_pull_strength)
-	assert(controller.initial_slack <= 6.0, "Initial slack must default to snappy tight engagement.")
 	assert(controller.tension_ramp_distance <= 12.0, "Tension ramp must engage quickly.")
+	assert(controller.yoyo_enabled, "The held Chakram Yo-yo must remain enabled by default.")
 	controller.free()
 
 func test_reeling_is_gradual_and_has_a_safe_minimum() -> void:
@@ -188,8 +195,10 @@ func test_yoyo_wrap_path_uses_last_anchor_as_local_pivot() -> void:
 	var chakram_position: Vector2 = Vector2(60.0, 80.0)
 	assert(is_equal_approx(GrappleController.yoyo_path_length(hand, chakram_position, true, wrap), 140.0))
 	assert(is_equal_approx(GrappleController.yoyo_local_rope_length(180.0, hand, true, wrap), 120.0), "The fixed inner rope segment must reduce the line available around the newest pivot.")
-	assert(not GrappleController.yoyo_should_recall(0.20, 0.35, 100.0, 190.0), "Low energy cannot skip the authored orbit hang.")
-	assert(GrappleController.yoyo_should_recall(0.40, 0.35, 180.0, 190.0), "After hang time, low orbit energy should hand off to the existing reel.")
+	var controller: GrappleController = GrappleController.new()
+	assert(controller.yoyo_enabled)
+	assert(controller.yoyo_state == GrappleController.YoyoState.NONE)
+	controller.free()
 
 func test_release_preserves_player_velocity() -> void:
 	var player: Player = preload("res://scenes/player.tscn").instantiate() as Player

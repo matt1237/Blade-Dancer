@@ -8,7 +8,10 @@ enum ForwardStepMode { OFF, ALWAYS, SWORD_CONTACT, ANY_DAMAGE }
 const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
-const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.METRONOME, SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME_BIND_B, SwordStyle.THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4, SwordStyle.THRUST_METRONOME]
+## Public presentation order is intentionally independent from persisted enum IDs.
+## Canonical Bind (ID 9) is Form I; the original Metronome (ID 0) now occupies
+## Bind's former third public slot without moving either form's saved profile.
+const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.METRONOME_BIND_B, SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME, SwordStyle.THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4, SwordStyle.THRUST_METRONOME]
 const LEGACY_BIND_SLIDE_SETTING_KEYS: Array[String] = ["bind_slide_contact_tolerance", "bind_slide_angle", "bind_slide_cling", "bind_slide_friction", "bind_slide_speed", "bind_slide_duration"]
 ## Event types printed to the Godot console (gated by debug_print_sword_events)
 ## so bind/wind/beat/release activity can be read from a text log, not just a
@@ -393,7 +396,9 @@ var experimental_bind_count: int = 0
 var experimental_wind_count: int = 0
 var experimental_beat_count: int = 0
 var experimental_rejected_beat_count: int = 0
-var sword_style: SwordStyle = SwordStyle.METRONOME
+## New players begin in the canonical public Form I. Persisted IDs stay stable:
+## Bind is ID 9 even though it is presented first.
+var sword_style: SwordStyle = SwordStyle.METRONOME_BIND_B
 ## "classic" = original procedural vector knight. "hd" = generated HD sprite body.
 ## Sword/chakram visuals also branch on this. Toggle from Home > Options.
 var visual_style: String = "classic"
@@ -1449,15 +1454,16 @@ func set_metronome_visualizer_palette(value: String) -> void:
 
 func _style_name() -> String:
 	match sword_style:
+		SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B: return "Form I: Bind"
 		SwordStyle.METRONOME_WINDUP: return "Form II: Metronome Wind-up"
-		SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B: return "Bind Form"
+		SwordStyle.METRONOME: return "Form III: Metronome V"
 		SwordStyle.THRUST: return "Form V: Thrusting A"
 		SwordStyle.MOULINET: return "Form VI: Moulinet 1 (Full 8)"
 		SwordStyle.MOULINET_2: return "Form VII: Moulinet 2 (Single Lobe)"
 		SwordStyle.MOULINET_3: return "Form VIII: Moulinet 3 (Aim-Driven)"
 		SwordStyle.MOULINET_4: return "Form IX: Flattened Infinity"
 		SwordStyle.THRUST_METRONOME: return "Form X: Metronome Thrusts"
-		_: return "Form I: Metronome V"
+		_: return "Unknown Form"
 
 func _is_elbow_style() -> bool:
 	return false
@@ -4067,7 +4073,9 @@ func _draw() -> void:
 			if flow >= flow_sparkle_threshold and trail_index % 2 == 0:
 				var sparkle_position: Vector2 = trail_start + Vector2(sin(float(trail_index) * 4.0 + Time.get_ticks_msec() * 0.006), cos(float(trail_index) * 3.0 + Time.get_ticks_msec() * 0.005)) * 4.0
 				draw_circle(sparkle_position, 2.0 + flow_ratio * 1.5, Color(1.0, 0.92, 0.35, trail_alpha * fade))
-	if debug_show_sword_events and sword_event_left > 0.0:
+	# Bind lifecycle diagnostics are console-only; ordinary contact labels can
+	# still provide lightweight spatial feedback during development.
+	if debug_show_sword_events and sword_event_left > 0.0 and sword_event_label not in BIND_LIFECYCLE_EVENT_TYPES:
 		var event_alpha: float = clampf(sword_event_left / 0.45, 0.0, 1.0)
 		var event_position: Vector2 = sword_event_point - global_position + Vector2(8.0, -18.0)
 		draw_string(ThemeDB.fallback_font, event_position, sword_event_label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 13, Color(0.8, 0.95, 1.0, event_alpha))
@@ -4118,12 +4126,9 @@ func _draw() -> void:
 	if contact_spark_left > 0.0 and contact_spark_count > 0:
 		var burst_alpha: float = clampf(contact_spark_left / 0.22, 0.0, 1.0)
 		_draw_contact_spark_burst(contact_spark_point - global_position, burst_alpha)
-	var overhead_debug: PackedStringArray = experimental_overhead_debug_lines()
-	if not overhead_debug.is_empty():
-		for debug_index: int in range(overhead_debug.size()):
-			var debug_y: float = -94.0 + float(debug_index) * 14.0
-			draw_string(ThemeDB.fallback_font, Vector2(-46.0, debug_y), overhead_debug[debug_index], HORIZONTAL_ALIGNMENT_CENTER, 92.0, 13, Color(1.0, 0.72, 0.18, 0.88))
-	elif debug_show_slide_counter:
+	# Bind lifecycle evidence is console-only; keep gameplay free of diagnostic
+	# counters. The generic slide count remains available for contact testing.
+	if debug_show_slide_counter:
 		draw_string(ThemeDB.fallback_font, Vector2(-46.0, -52.0), "Slides: %d" % sword_slide_count, HORIZONTAL_ALIGNMENT_CENTER, 92.0, 14, Color(1.0, 0.72, 0.18, 0.95))
 	if chain_lightning_flash > 0.0:
 		var flying_chakrams: Array[Chakram] = []

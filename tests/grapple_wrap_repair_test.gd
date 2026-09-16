@@ -1,6 +1,6 @@
 class_name GrappleWrapRepairTest extends Node
 
-func test_orbit_inward_slack_is_taken_up_by_the_live_tuner() -> void:
+func test_held_orbit_captures_once_and_inward_motion_creates_temporary_slack() -> void:
 	var player: Player = preload("res://scenes/player.tscn").instantiate() as Player
 	add_child(player)
 	player.set_physics_process(false)
@@ -8,22 +8,26 @@ func test_orbit_inward_slack_is_taken_up_by_the_live_tuner() -> void:
 	var chakram: Chakram = Chakram.new()
 	add_child(chakram)
 	chakram.set_physics_process(false)
-	chakram.global_position = player.get_grapple_hand_position() + Vector2(100.0, 0.0)
+	var hand: Vector2 = player.get_grapple_hand_position()
+	chakram.global_position = hand + Vector2(100.0, 0.0)
 	controller.active = true
 	controller.input_was_down = true
 	controller.target_type = GrappleController.TargetType.CHAKRAM
 	controller.target_node = chakram
 	controller.rope_length = 180.0
-	controller.rope_taut = true
+	controller.rope_taut = false
 	controller.yoyo_state = GrappleController.YoyoState.ORBITING
-	controller.yoyo_min_orbit_time = 10.0
-	controller.slack_take_up_speed = 200.0
 	controller.yoyo_boundary_wrap_enabled = false
 	controller.yoyo_static_pivot_enabled = false
 	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 0.1)
-	assert(is_equal_approx(controller.rope_length, 160.0), "Orbit must continue tuned take-up after inward motion creates slack.")
-	assert(not controller.rope_taut, "Orbit state must not forge tautness.")
-	assert(controller.yoyo_state == GrappleController.YoyoState.ORBITING, "Slack recovery must preserve the authored hang.")
+	assert(is_equal_approx(controller.rope_length, 100.0), "Catch must capture the live Chakram radius exactly once.")
+	assert(controller.rope_taut, "The direct Yo-yo catch must stay meaningfully connected during its held orbit.")
+	chakram.global_position = hand + Vector2(60.0, 0.0)
+	controller.reel_speed = 5000.0
+	controller.yoyo_min_orbit_time = 0.0
+	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 2.0)
+	assert(controller.yoyo_state == GrappleController.YoyoState.ORBITING, "Elapsed time must never turn a held Yo-yo into automatic recall.")
+	assert(is_equal_approx(controller.rope_length, 100.0), "Inward motion must create temporary slack instead of permanently ratcheting the orbit smaller.")
 	controller.release_tether()
 	chakram.free()
 	player.free()

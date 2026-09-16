@@ -25,7 +25,19 @@ static func get_slot(slot: int) -> Dictionary:
 	var library: Dictionary = load_library()
 	var slots: Dictionary = library.get("slots", {}) as Dictionary
 	var value: Variant = slots.get(str(clampi(slot, 1, SLOT_COUNT)), {})
-	return (value as Dictionary).duplicate(true) if value is Dictionary else {}
+	if not value is Dictionary:
+		return {}
+	var state: Dictionary = (value as Dictionary).duplicate(true)
+	_normalize_grapple_state(state)
+	return state
+
+static func _normalize_grapple_state(state: Dictionary) -> void:
+	var stored: Dictionary = state.get("grapple", {}) as Dictionary
+	var canonical: Dictionary = GrappleController.default_tuning_state()
+	for key: String in GrappleController.TUNING_KEYS:
+		if stored.has(key):
+			canonical[key] = stored[key]
+	state["grapple"] = canonical
 
 static func list_slots() -> Array[Dictionary]:
 	var library: Dictionary = load_library()
