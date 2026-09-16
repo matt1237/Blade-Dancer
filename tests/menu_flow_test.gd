@@ -59,6 +59,15 @@ func test_slide_clash_and_parry_controls_have_feel_guidance() -> void:
 				break
 		assert(matching_line.contains("_form_three_feel_tip("), "Missing explicit slide feel guidance for %s" % slide_key)
 
+func test_backyard_layout_tab_offers_forest_and_empty_without_hiding_tools() -> void:
+	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
+	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
+	assert(menu_source.contains("layout_tab.name = \"Layout\""), "Training Tools must expose the Layout tab.")
+	assert(menu_source.contains("forest_button.text = \"Forest\"") and menu_source.contains("empty_button.text = \"Empty\""), "Layout must offer Forest and Empty choices.")
+	assert(main_source.contains("func set_backyard_training_layout(layout_id: String) -> void:"), "Main must own Backyard layout switching.")
+	assert(main_source.contains("arena_generator.set_forest_content_enabled(use_forest)"), "Empty must remove generated collision and scenery, not merely hide it.")
+	assert(main_source.contains("var forest_layout_visible: bool"), "World restoration must preserve the chosen Empty layout.")
+
 func test_training_tools_rect_centers_the_complete_menu_assembly() -> void:
 	for viewport_size: Vector2 in [Vector2(1280.0, 720.0), Vector2(960.0, 540.0), Vector2(640.0, 360.0)]:
 		var menu_rect: Rect2 = BackyardTrainingMenu.centered_training_rect(viewport_size)

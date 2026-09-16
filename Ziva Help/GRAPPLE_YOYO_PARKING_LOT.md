@@ -32,6 +32,7 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 8. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
 9. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
 10. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
+11. A grapple may target a grounded Chakram. On hook arrival it enters a dedicated direct retrieval at `1100 px/s`, ends the tether immediately, and collects on reaching the player. Ground retrieval never enters Yo-yo extension, orbit, wrapping, or combat collision logic.
 
 ## Implementation authority contract
 

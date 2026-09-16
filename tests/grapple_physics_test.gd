@@ -140,6 +140,30 @@ func test_enemy_grapple_weights_match_authored_defaults() -> void:
 	assert(ogre.grapple_weight == Enemy.GrappleWeight.MEDIUM, "Ogre should be a Medium grapple target.")
 	ogre.queue_free()
 
+func test_grounded_chakram_grapple_retrieval_is_direct_and_separate_from_yoyo() -> void:
+	var player: Player = preload("res://scenes/player.tscn").instantiate() as Player
+	add_child(player)
+	player.set_physics_process(false)
+	var chakram: Chakram = Chakram.new()
+	add_child(chakram)
+	chakram.set_physics_process(false)
+	chakram.owner_player = player
+	chakram.grounded = true
+	chakram.global_position = player.global_position + Vector2(200.0, 0.0)
+	chakram.begin_grapple_retrieval()
+	assert(not chakram.grounded and chakram.grapple_retrieving, "A grappled downed Chakram must leave the grounded state and enter retrieval.")
+	var retrieval_velocity: Vector2 = Chakram.grapple_retrieval_velocity(chakram.global_position, player.global_position, chakram.grapple_retrieval_speed)
+	assert(retrieval_velocity.x < 0.0 and is_equal_approx(retrieval_velocity.length(), chakram.grapple_retrieval_speed), "Retrieval must zip directly toward the owner at its authored speed.")
+	assert(not chakram.grapple_attached and not chakram.yoyo_constraint_active, "Ground retrieval must not enter flying Yo-yo physics.")
+	var retrieval_velocity_before_sword: Vector2 = chakram.velocity
+	assert(not chakram.hit_by_player_sword(chakram.global_position, Vector2.RIGHT * 900.0), "A downed Chakram being grapple-retrieved must ignore sword contact.")
+	assert(chakram.velocity.is_equal_approx(retrieval_velocity_before_sword), "Ignored sword contact must not redirect grapple retrieval.")
+	var grapple_source: String = FileAccess.get_file_as_string("res://scripts/grapple_controller.gd")
+	assert(not grapple_source.contains("and not (node as Chakram).grounded"), "Grounded Chakrams must not be filtered out of grapple selection.")
+	assert(grapple_source.contains("begin_grapple_retrieval()"), "Hook arrival must hand grounded Chakrams to the dedicated retrieval path.")
+	chakram.free()
+	player.free()
+
 func test_chakram_grapple_extends_once_and_pauses_flight_timer() -> void:
 	var chakram: Chakram = Chakram.new()
 	chakram.time_left = 3.0

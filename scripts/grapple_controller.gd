@@ -979,7 +979,7 @@ func _begin_shot(aim_point: Vector2) -> bool:
 			selected_node = node
 			selected_anchor = node.global_position
 			selected_distance = hand_position.distance_to(hit_position)
-		elif node.is_in_group("chakram") and node is Chakram and not (node as Chakram).grounded:
+		elif node.is_in_group("chakram") and node is Chakram:
 			selected_type = TargetType.CHAKRAM
 			selected_node = node
 			selected_anchor = node.global_position
@@ -1056,8 +1056,6 @@ func _find_dynamic_target_hit(origin: Vector2, endpoint: Vector2) -> Dictionary:
 			if target == null or seen_targets.has(target.get_instance_id()):
 				continue
 			seen_targets[target.get_instance_id()] = true
-			if target.is_in_group("chakram") and (target as Chakram).grounded:
-				continue
 			return {"node": target, "position": sample_position}
 	return {}
 
@@ -1073,6 +1071,20 @@ func _update_hook_flight(delta: float) -> void:
 	if travel_direction != Vector2.ZERO: hook_direction = travel_direction
 	if hook_position.distance_squared_to(shot_target_position) <= 1.0:
 		firing = false
+		if shot_target_type == TargetType.CHAKRAM and shot_target_node is Chakram and (shot_target_node as Chakram).grounded:
+			# Downed retrieval is a separate verb: launch the disc straight home and
+			# end the hook. It must never enter flying Yo-yo attachment/orbit state.
+			(shot_target_node as Chakram).begin_grapple_retrieval()
+			active = false
+			target_type = TargetType.NONE
+			target_node = null
+			shot_target_type = TargetType.NONE
+			shot_target_node = null
+			tension_ratio = 0.0
+			rope_taut = false
+			_reset_yoyo_state()
+			queue_redraw()
+			return
 		active = true
 		target_type = shot_target_type
 		target_node = shot_target_node

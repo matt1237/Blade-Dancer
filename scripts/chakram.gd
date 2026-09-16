@@ -24,6 +24,8 @@ var chakram_texture_hd: Texture2D = null
 @export_category("Grapple Interaction")
 ## Same one-time flight extension a successful sword bat grants.
 @export var grapple_flight_extension: float = 5.0
+## Direct return speed used only when a grapple catches a grounded Chakram.
+@export var grapple_retrieval_speed: float = 1100.0
 
 @export_category("Enemy Contact")
 ## Radius used by swept Chakram-to-enemy collision checks.
@@ -37,6 +39,7 @@ var sword_launch_grace: float = 0.0
 var sword_cooldown: float = 0.0
 var sword_contact_latched: bool = false
 var grapple_attached: bool = false
+var grapple_retrieving: bool = false
 # Grapple Yo-yo constraint data is authored by GrappleController each frame and
 # consumed here immediately before movement, so the Chakram cannot tunnel past
 # the radial limit between controller and projectile physics ticks.
@@ -89,6 +92,7 @@ func launch(direction: Vector2, player: Player) -> void:
 	explosion_level = 0
 	explosion_flash = 0.0
 	grapple_attached = false
+	grapple_retrieving = false
 	clear_yoyo_constraint()
 	pierces_remaining = player.chakram_pierce
 	hit_enemy_ids.clear()
@@ -153,7 +157,34 @@ func _apply_yoyo_constraint(delta: float) -> void:
 	velocity = yoyo_constrained_velocity(global_position, velocity, yoyo_pivot, yoyo_local_rope_length, yoyo_soft_zone, yoyo_radial_damping, yoyo_tangential_drag, delta)
 	velocity = velocity.limit_length(sword_hit_speed_ceiling)
 
+static func grapple_retrieval_velocity(from_position: Vector2, owner_position: Vector2, speed: float) -> Vector2:
+	return from_position.direction_to(owner_position) * maxf(0.0, speed)
+
+func begin_grapple_retrieval() -> void:
+	if owner_player == null:
+		return
+	grounded = false
+	grapple_attached = false
+	grapple_retrieving = true
+	clear_yoyo_constraint()
+	velocity = grapple_retrieval_velocity(global_position, owner_player.global_position, grapple_retrieval_speed)
+	trail_points.clear()
+	queue_redraw()
+
 func _physics_process(delta: float) -> void:
+	if grapple_retrieving:
+		if owner_player == null or not is_instance_valid(owner_player):
+			grapple_retrieving = false
+			grounded = true
+			velocity = Vector2.ZERO
+			return
+		velocity = grapple_retrieval_velocity(global_position, owner_player.global_position, grapple_retrieval_speed)
+		global_position += velocity * delta
+		spin_angle = fmod(spin_angle + spin_speed * delta, TAU)
+		if global_position.distance_to(owner_player.global_position) < 30.0:
+			owner_player.collect_chakram(self)
+		queue_redraw()
+		return
 	if grounded:
 		# A landed Chakram keeps its final authored orientation instead of
 		# continuing to rotate while it waits to be collected.
@@ -363,7 +394,9 @@ func _distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float
 	return point.distance_to(start + segment * factor)
 
 func hit_by_player_sword(hit_position: Vector2, swing_velocity: Vector2 = Vector2.ZERO, sword_weight: float = 0.8, inherited_weight: float = 0.2, minimum_speed: float = 380.0, maximum_speed: float = 900.0) -> bool:
-	if grounded or sword_launch_grace > 0.0 or sword_cooldown > 0.0 or sword_contact_latched: return false
+	# Ground retrieval is still the downed-disc lifecycle even though it clears
+	# `grounded` to animate home. Sword batting must not steal or redirect it.
+	if grounded or grapple_retrieving or sword_launch_grace > 0.0 or sword_cooldown > 0.0 or sword_contact_latched: return false
 	sword_contact_latched = true
 	var swing_direction: Vector2 = swing_velocity.normalized()
 	if swing_direction == Vector2.ZERO: swing_direction = global_position.direction_to(hit_position)

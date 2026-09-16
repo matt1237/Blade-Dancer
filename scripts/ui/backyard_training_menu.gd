@@ -85,6 +85,7 @@ func _build_ui() -> void:
 	training_tabs.set_anchors_preset(Control.PRESET_FULL_RECT)
 	panel.add_child(training_tabs)
 
+	_build_layout_tab(training_tabs)
 	_build_enemy_tab(training_tabs)
 	_build_spawn_items_tab(training_tabs)
 	_build_bonus_tab(training_tabs)
@@ -95,6 +96,43 @@ func _build_ui() -> void:
 	_build_saves_tab(training_tabs)
 	_build_forest_visuals_tab(training_tabs)
 	training_tabs.tab_changed.connect(_on_training_tab_changed)
+
+func _build_layout_tab(tabs: TabContainer) -> void:
+	var layout_tab: VBoxContainer = VBoxContainer.new()
+	layout_tab.name = "Layout"
+	layout_tab.add_theme_constant_override("separation", 12)
+	tabs.add_child(layout_tab)
+
+	var title: Label = Label.new()
+	title.text = "BACKYARD LAYOUT"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout_tab.add_child(title)
+
+	var forest_button: Button = Button.new()
+	forest_button.name = "ForestLayout"
+	forest_button.text = "Forest"
+	forest_button.custom_minimum_size = Vector2(0.0, 52.0)
+	forest_button.focus_mode = Control.FOCUS_NONE
+	forest_button.pressed.connect(_select_backyard_layout.bind("forest"))
+	layout_tab.add_child(forest_button)
+
+	var empty_button: Button = Button.new()
+	empty_button.name = "EmptyLayout"
+	empty_button.text = "Empty"
+	empty_button.custom_minimum_size = Vector2(0.0, 52.0)
+	empty_button.focus_mode = Control.FOCUS_NONE
+	empty_button.pressed.connect(_select_backyard_layout.bind("empty"))
+	layout_tab.add_child(empty_button)
+
+	var hint: Label = Label.new()
+	hint.text = "Forest uses the current generated backyard. Empty removes all forest scenery, props, hazards, and wrap obstacles while keeping the player, arena bounds, and Training Tools available."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	layout_tab.add_child(hint)
+
+func _select_backyard_layout(layout_id: String) -> void:
+	if is_instance_valid(main) and main.has_method("set_backyard_training_layout"):
+		main.call("set_backyard_training_layout", layout_id)
 
 func _build_forest_visuals_tab(tabs: TabContainer) -> void:
 	forest_visual_tuner = ForestVisualTuner.new()

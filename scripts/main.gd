@@ -182,6 +182,8 @@ var boss_arena_border: BossArenaBorder = null
 var boss_title_label: Label = null
 var boss_message_tween: Tween = null
 var backyard_training_menu: BackyardTrainingMenu = null
+## Runtime-only Backyard presentation choice. Adventure always restores Forest.
+var backyard_training_layout: String = "forest"
 var training_dummy: TrainingDummy = null
 var test_turkey: Turkey = null
 var test_turkey_enabled: bool = false
@@ -383,6 +385,24 @@ func _create_backyard_training_menu() -> void:
 	backyard_training_menu.main = self
 	$CanvasLayer.add_child(backyard_training_menu)
 
+func set_backyard_training_layout(layout_id: String) -> void:
+	var normalized_layout: String = layout_id.to_lower()
+	if normalized_layout != "forest" and normalized_layout != "empty":
+		return
+	if backyard_training_layout == normalized_layout:
+		return
+	backyard_training_layout = normalized_layout
+	var use_forest: bool = backyard_training_layout == "forest"
+	$ForestFloor.visible = use_forest
+	$ForestRoad.visible = use_forest
+	forest_ambient_fx.visible = use_forest
+	arena_generator.visible = use_forest
+	arena_generator.set_forest_content_enabled(use_forest)
+	if use_forest:
+		arena_generator.regenerate()
+	refresh_population_navigation()
+	combat_presentation_fx._update_blur()
+
 func _create_combat_debug_tracker() -> void:
 	combat_debug_tracker = COMBAT_DEBUG_TRACKER_SCRIPT.new() as CombatDebugTracker
 	$CanvasLayer.add_child(combat_debug_tracker)
@@ -399,21 +419,24 @@ func _set_world_visible(world_visible: bool) -> void:
 	combat_presentation_fx._update_blur()
 	player.visible = world_visible
 	var forest_world_visible: bool = world_visible and active_adventure_zone != "chasm"
-	$ForestFloor.visible = forest_world_visible
-	$ForestRoad.visible = forest_world_visible
-	forest_ambient_fx.visible = forest_world_visible
+	var forest_layout_visible: bool = forest_world_visible and backyard_training_layout == "forest"
+	$ForestFloor.visible = forest_layout_visible
+	$ForestRoad.visible = forest_layout_visible
+	forest_ambient_fx.visible = forest_layout_visible
+	# Empty remains a playable test room: perimeter collision stays active but
+	# has no rendered scenery, props, hazards, or wrap candidates.
 	$ArenaBounds.visible = forest_world_visible
 	var forest_bounds: StaticBody2D = $ArenaBounds as StaticBody2D
 	forest_bounds.collision_layer = 2 if forest_world_visible else 0
-	arena_generator.visible = forest_world_visible
+	arena_generator.visible = forest_layout_visible
 	var chasm_world_visible: bool = world_visible and active_adventure_zone == "chasm"
 	chasm_stage.visible = chasm_world_visible
 	chasm_stage.set_collision_enabled(chasm_world_visible)
 	var trap_overlay: Node = get_node_or_null("TerrainTrapOverlay")
 	if is_instance_valid(trap_overlay) and trap_overlay is CanvasItem:
-		(trap_overlay as CanvasItem).visible = forest_world_visible
+		(trap_overlay as CanvasItem).visible = forest_layout_visible
 	var forest_population: ArenaPopulation = get_arena_population()
-	if is_instance_valid(forest_population): forest_population.visible = forest_world_visible
+	if is_instance_valid(forest_population): forest_population.visible = forest_layout_visible
 	wave_label.visible = world_visible
 	wave_timer_label.visible = world_visible
 	health_label.visible = world_visible
@@ -2215,6 +2238,7 @@ func _start_chasm_run() -> void:
 	_start_arena_run("chasm")
 
 func _start_arena_run(zone_id: String) -> void:
+	backyard_training_layout = "forest"
 	active_adventure_zone = "chasm" if zone_id == "chasm" else "forest"
 	spawner.set_chasm_stage(chasm_stage if active_adventure_zone == "chasm" else null)
 	arena_generator.set_forest_content_enabled(active_adventure_zone != "chasm")
@@ -2385,6 +2409,7 @@ func _spawn_training_enemy_at(spawn_position: Vector2, enemy_scene: PackedScene)
 	add_child(enemy)
 
 func _start_backyard_run() -> void:
+	backyard_training_layout = "forest"
 	active_adventure_zone = "backyard"
 	spawner.set_chasm_stage(null)
 	arena_generator.set_forest_content_enabled(true)
