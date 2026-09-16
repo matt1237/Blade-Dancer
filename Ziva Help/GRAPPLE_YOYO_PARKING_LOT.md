@@ -1,40 +1,33 @@
 # Grapple Yo-yo
 
-## Bounded repair handoff — 2026-09-15
+## Yo-yo scope cut and cleanup handoff — 2026-09-15
 
-**User correction overrides the MainVIDEO relay:** enemy AND obstacle wrapping in both directions are required. Do not disable wrapping to improve catch feel. Discussion was explicitly ended for this repair; user owns all gameplay testing.
+The user has shelved enemy/obstacle tetherball wrapping. The active mechanic is the direct Chakram yo-yo: grapple the flying Chakram, establish a taut line, preserve tangential motion, steer/redirect it, enjoy the hang/whip, and reel it home. Full Boundary Wrap and Static Tether Point are disabled in GP2 and by default. The retained wrap code is dormant for possible future work; it is not part of current acceptance.
 
-Authority/lifecycle: hook flight -> attachment length from current distance + `initial_slack` -> Extending -> Orbiting (authored minimum hang plus speed gate) -> Reeling. Controller owns length/contact topology/forces; Chakram owns velocity and swept body response. Tangential steering and unilateral inward motion remain. No full-range grant exists in the inspected attachment code, and no hardcoded false disables full wraps.
+Authority/lifecycle: hook flight -> attachment length from current distance + `initial_slack` -> Extending -> Orbiting -> Reeling. Controller owns rope length and hand/tension forces; Chakram owns velocity and its direct radial/tangential constraint. No live gameplay run was performed by Astra; the user owns playtesting.
 
-Demonstrated code defects repaired:
-- Orbit latched taut and stopped taking up slack after inward travel. Live path now measures tautness and existing `slack_take_up_speed` recovers that slack during hang.
-- The 0.30 s stalled-extension shortcut skipped the configured hang; a taut stalled catch now enters Orbiting instead.
-- Frozen enemy entry contacts and modulo-minimum winding clamps disagreed with live geometry. Both tangencies now follow endpoints; signed winding crosses zero without manufacturing a turn.
-- Rectangle nearest-surface contacts, independently subtracted reel arc, bounding-box release, and omitted boundary rendering were incompatible. Full mode now uses supporting corners, continuous entry/exit perimeter deltas, segment/rectangle clearance, and renders the same perimeter consumed by the constraint.
-- Removed reel-clock arc erasure (including the obsolete helper). Reel still shortens total available rope; geometry can only unwind through contact motion. Occupied-prefix floor/shortfall remains for blocked reels and weight response.
-- Wrapped-enemy damage suppression previously skipped physical response. Its swept combined-radius contact now resolves on the incoming side regardless of whether the earned damage exception is armed. No new damage reward was added.
-- Switching full/fallback mode clears incompatible shared topology; fallback once again selects a corner. Enemy render center uses live collision offset, dead wrap owners clear, and enemy acquisition requires actual radius crossing (release retains clearance).
+Audit findings:
+- The current branch contained no active hardcoded `false` gate overriding the wrap tuner.
+- GP2 actually still contained both wrap switches as `true`, despite the user having disabled tetherball in the tuner. The canonical GlobalPresetConfig slot was corrected so both are now `false`.
+- The recent wrap repair added wrap-only enemy coil contact coupling and boundary bookkeeping, but those paths are unreachable with both GP2 switches disabled. They were left dormant rather than deleted to avoid broad recovery risk.
+- The direct yo-yo path still contains the recent slack take-up and state-transition changes. They are gameplay behavior, not confirmed dead baggage, so they were not guessed away in this cleanup.
 
-Verification: 5 repair helper tests, 21 grapple physics tests, 12 enemy-wrap tests passed; no live gameplay run. Helpers cover inward orbit slack, both winding signs/seam, rectangle supporting legs and stationary reel geometry, diagonal clearance, and incoming-side swept body contact. They do NOT establish gameplay success.
-
-GP2: read Main capture/apply consumers and `GlobalPresetConfig` save authority. Existing values preserved (initial slack 1, take-up 200, reel 150, hang 0.8, drag 0.6, recall gate 240, catch zone 55, damping 22.5). Only missing `yoyo_boundary_wrap_enabled=true` and `yoyo_static_pivot_enabled=true` were added via canonical `save_slot(2, ...)`; unrelated payload and all existing grapple values checked unchanged. No shadow preset or Git write.
-
-Limits needing user testing: single owner only; rotated terrain rectangles remain unsupported by the existing world-collision-Rect2 adapter, nonuniform circle scale is still approximated by max scale, acquisition is frame-sampled, and contact changes exceeding half a perimeter per frame can alias. Completed coils now require actual reverse contact travel, not an artificial reel clock; assess blocked-coil feel and near-body rebound/release. The exact cause of the historical reported CCW video failure remains a hypothesis, not proven reproduction.
+Verification: focused helper tests remain available for the parked solver; no live gameplay run. This audit does not claim that the direct yo-yo feel is solved. User should judge catch tightness, tangential control, hang, and reel behavior before any further change.
 
 Earlier sections below are historical and are superseded where they conflict with this handoff (especially permanent retention and automatic reel-unwind claims).
 
 ## Player fantasy
 
-Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Chakram combines two verbs into a fourth toy: a physical yo-yo whose outward motion becomes orbit, whose rope can redirect around geometry, and whose eventual reel follows that geometry rather than a canned trajectory.
+Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Chakram combines two verbs into a fourth toy: a physical yo-yo whose outward motion becomes orbit, whose rope preserves momentum under a direct tether, and whose eventual reel follows that motion rather than a canned trajectory.
 
-## Implemented foundation
+## Active direct yo-yo foundation
 
 1. **Correction:** A grapple attached to a flying Chakram must initialize and shorten the rope through the same live Grapple tuners as every other target. It must not grant `max_tether_length * mastery_range_multiplier` as a hidden one-time override. The previous full-line behavior was an implementation mistake and is explicitly retired.
 2. The final approach to maximum extension progressively damps outward radial velocity.
 3. At the limit, outward radial velocity is removed while tangential velocity is preserved.
 4. Full-extension tangential energy burns down gradually, creating an orbit/hang before the existing `reel_speed` and `chakram_tether_strength` take over.
-5. One static obstruction or wall corner can become a local pivot. Rope length is measured as `hand -> wrap -> Chakram`, and a continuously clear direct path unwraps it with hysteresis.
-6. The rope renders through the active pivot and the live Training Tools status identifies Extending, Orbiting, Wrapped, and Reeling states.
+5. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
+6. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
 
 ## Implementation authority contract
 
@@ -49,11 +42,11 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 - Chakram velocity remains capped by `Player.max_chakram_bat_speed` (700 in the current player tuning).
 - The constraint is unilateral: inward velocity is never blocked.
 - Tangential motion is not converted into a canned path.
-- Wrap topology remains attached while RMB is held; only explicit body invalidation or release may remove an anchor in the current prototype.
+- No wrap topology is active in the direct yo-yo path; disabling the two wrap switches clears any retained wrap state.
 
-## Restored boundary-wrap experiment for Astra investigation
+## Retained boundary-wrap experiment
 
-The complete enemy/terrain boundary-wrap implementation is restored behind the persisted `yoyo_boundary_wrap_enabled` control. It includes enemy circle tangencies, rectangle perimeter tracking, winding accumulation, reeling/unwinding, live collision geometry, and hysteretic release. This is intentionally marked experimental: the last live evaluation found counterclockwise tunneling, and a motion-sign patch introduced persistent rope slack. `yoyo_static_pivot_enabled` remains the simpler fallback when Full Boundary Wrap is off. Astra should treat those failures as the current reproduction case rather than assuming the existing unit tests prove player-facing correctness.
+The enemy/terrain boundary-wrap implementation remains in the source behind `yoyo_boundary_wrap_enabled`, but it is shelved and disabled by default. Static pivot mode is also disabled by default. Do not treat the parked solver or its helper tests as part of current gameplay acceptance.
 
 ## Historical enemy-wrap prototype
 

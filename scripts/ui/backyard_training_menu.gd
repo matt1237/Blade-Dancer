@@ -15,6 +15,8 @@ var snapshot_list: VBoxContainer = null
 var snapshot_feedback_label: Label = null
 var auto_spawner_button: Button = null
 var auto_spawner_status: Label = null
+var training_dummy_button: Button = null
+var test_turkey_button: Button = null
 
 var hand_controls: Dictionary = {}
 var contact_controls: Dictionary = {}
@@ -199,6 +201,21 @@ func _build_enemy_tab(tabs: TabContainer) -> void:
 	auto_spawner_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	enemy_tab.add_child(auto_spawner_status)
 	_sync_auto_spawner_controls()
+
+	training_dummy_button = Button.new()
+	training_dummy_button.name = "TrainingDummyToggle"
+	training_dummy_button.custom_minimum_size = Vector2(0.0, 44.0)
+	training_dummy_button.focus_mode = Control.FOCUS_NONE
+	training_dummy_button.pressed.connect(_toggle_training_dummy)
+	enemy_tab.add_child(training_dummy_button)
+
+	test_turkey_button = Button.new()
+	test_turkey_button.name = "TestTurkeyToggle"
+	test_turkey_button.custom_minimum_size = Vector2(0.0, 44.0)
+	test_turkey_button.focus_mode = Control.FOCUS_NONE
+	test_turkey_button.pressed.connect(_toggle_test_turkey)
+	enemy_tab.add_child(test_turkey_button)
+	_sync_training_target_controls()
 
 	for enemy_entry: Dictionary in [
 		{"label":"Turkey", "scene":WaveSpawner.TURKEY_SCENE},
@@ -1705,6 +1722,7 @@ func _process(_delta: float) -> void:
 	_sync_grapple_controls()
 	_sync_experimental_bind_status(player)
 	_sync_auto_spawner_controls()
+	_sync_training_target_controls()
 
 func close() -> void:
 	_set_gameplay_input_locked(false)
@@ -1712,6 +1730,9 @@ func close() -> void:
 		forest_visual_tuner.end_comparison()
 	if main != null and main.has_method("set_backyard_wave_spawner_enabled"):
 		main.call("set_backyard_wave_spawner_enabled", false)
+	if main != null:
+		main.call("set_training_dummy_enabled", false)
+		main.call("set_test_turkey_enabled", false)
 	visible = false
 
 func _exit_tree() -> void:
@@ -1751,6 +1772,26 @@ func _sync_auto_spawner_controls() -> void:
 		auto_spawner_status.text = "Running real config • Wave %d • %d queued • %d alive" % [spawner.current_wave, spawner.enemies_to_spawn, spawner.enemies_alive] if spawner != null else "Running real WaveSpawner configuration"
 	else:
 		auto_spawner_status.text = "OFF — manual enemy buttons remain available"
+
+func _sync_training_target_controls() -> void:
+	if training_dummy_button == null or test_turkey_button == null:
+		return
+	var dummy_enabled: bool = main != null and bool(main.call("is_training_dummy_enabled"))
+	var turkey_enabled: bool = main != null and bool(main.call("is_test_turkey_enabled"))
+	training_dummy_button.text = "TRAINING DUMMY: %s" % ("ON" if dummy_enabled else "OFF")
+	test_turkey_button.text = "TEST TURKEY (REPLACES ON DEATH): %s" % ("ON" if turkey_enabled else "OFF")
+	training_dummy_button.modulate = Color(0.55, 1.0, 0.55) if dummy_enabled else Color.WHITE
+	test_turkey_button.modulate = Color(0.55, 1.0, 0.55) if turkey_enabled else Color.WHITE
+
+func _toggle_training_dummy() -> void:
+	if main != null:
+		main.call("set_training_dummy_enabled", not bool(main.call("is_training_dummy_enabled")))
+	_sync_training_target_controls()
+
+func _toggle_test_turkey() -> void:
+	if main != null:
+		main.call("set_test_turkey_enabled", not bool(main.call("is_test_turkey_enabled")))
+	_sync_training_target_controls()
 
 func _sync_training_input_lock() -> void:
 	# Releasing outside the toggle cancels its click; do not leave input latched.

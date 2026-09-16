@@ -21,7 +21,8 @@ const TAUT_CLEARANCE: float = 4.0
 const ENEMY_WRAP_RADIUS: float = 28.0
 const ENEMY_WRAP_CLEARANCE: float = 3.0
 const WRAPPED_LOCAL_SEGMENT_MIN: float = 1.0
-## Full boundary wrapping is the primary path; the static pivot is an opt-out fallback.
+## Full boundary wrapping is retained for possible future work but disabled by default.
+## The direct Chakram yo-yo path is the normal gameplay path; the static pivot is optional.
 ## One canonical list for every persisted and player-facing Grapple tuner.
 ## UI and Global Presets consume this list instead of maintaining shadow copies.
 const TUNING_DEFAULTS: Dictionary = {
@@ -39,8 +40,8 @@ const TUNING_DEFAULTS: Dictionary = {
 	"chakram_yank_strength": 7.0, "yoyo_enabled": true,
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
 	"yoyo_orbit_drag": 1.15, "yoyo_min_orbit_time": 0.35,
-	"yoyo_recall_speed_threshold": 190.0, "yoyo_static_pivot_enabled": true,
-	"yoyo_boundary_wrap_enabled": true
+	"yoyo_recall_speed_threshold": 190.0, "yoyo_static_pivot_enabled": false,
+	"yoyo_boundary_wrap_enabled": false
 }
 const TUNING_KEYS: Array[String] = [
 	"max_tether_length", "hook_travel_speed", "reel_speed", "slack_take_up_speed",
@@ -115,10 +116,12 @@ var mastery_range_multiplier: float = 1.0
 @export var yoyo_orbit_drag: float = 1.15
 @export var yoyo_min_orbit_time: float = 0.35
 @export var yoyo_recall_speed_threshold: float = 190.0
-## Enables the original one-point static obstruction pivot only.
-@export var yoyo_static_pivot_enabled: bool = true
-## Enables the full experimental enemy and collision-boundary wrap solver.
-@export var yoyo_boundary_wrap_enabled: bool = true
+## Enables the retained one-point static obstruction pivot.
+## Disabled by default while the direct Chakram yo-yo is the active mechanic.
+@export var yoyo_static_pivot_enabled: bool = false
+## Enables the retained experimental enemy and collision-boundary wrap solver.
+## Disabled by default; direct Chakram yo-yo remains the normal path.
+@export var yoyo_boundary_wrap_enabled: bool = false
 
 var player: Player = null
 var active: bool = false

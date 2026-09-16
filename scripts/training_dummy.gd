@@ -35,7 +35,7 @@ func _physics_process(delta: float) -> void:
 		health_bar.value = health
 	queue_redraw()
 
-func take_damage(amount: float, force: Vector2 = Vector2.ZERO, stagger_duration: float = 0.0, impact_quality: float = 0.0) -> void:
+func take_damage(amount: float, _force: Vector2 = Vector2.ZERO, _stagger_duration: float = 0.0, _impact_quality: float = 0.0) -> void:
 	if health <= 0.0: return
 	health -= amount
 	if health < MIN_HEALTH:

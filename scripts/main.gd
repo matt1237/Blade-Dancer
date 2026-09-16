@@ -13,6 +13,7 @@ const BACKYARD_TRAINING_MENU_SCRIPT: Script = preload("res://scripts/ui/backyard
 const COMBAT_DEBUG_TRACKER_SCRIPT: Script = preload("res://scripts/ui/combat_debug_tracker.gd")
 const GLOBAL_PRESET_CONFIG_SCRIPT: Script = preload("res://scripts/global_preset_config.gd")
 const SPAWN_WARNING_SCENE: PackedScene = preload("res://scenes/spawn_warning.tscn")
+const TRAINING_DUMMY_SCENE: PackedScene = preload("res://scenes/training_dummy.tscn")
 const DROP_SCENE: PackedScene = preload("res://scenes/drop_pickup.tscn")
 const GEAR_DROP_SCENE: PackedScene = preload("res://scenes/gear_drop_pickup.tscn")
 const ArenaObjectScript: Script = preload("res://scripts/terrain/arena_object.gd")
@@ -181,6 +182,9 @@ var boss_arena_border: BossArenaBorder = null
 var boss_title_label: Label = null
 var boss_message_tween: Tween = null
 var backyard_training_menu: BackyardTrainingMenu = null
+var training_dummy: TrainingDummy = null
+var test_turkey: Turkey = null
+var test_turkey_enabled: bool = false
 var combat_debug_tracker: CombatDebugTracker = null
 var forest_visual_settings: ForestVisualSettings = ForestVisualSettings.new()
 var forest_visual_settings_persistence_enabled: bool = false
@@ -2287,6 +2291,62 @@ func set_backyard_wave_spawner_enabled(enabled: bool) -> void:
 		spawner.begin_training_test()
 	else:
 		spawner.end_training_test()
+
+func is_training_dummy_enabled() -> bool:
+	return is_instance_valid(training_dummy)
+
+func set_training_dummy_enabled(enabled: bool) -> void:
+	if enabled:
+		if is_instance_valid(training_dummy):
+			return
+		var spawn_position: Vector2 = spawner._random_position()
+		if spawn_position.x < 0.0:
+			push_warning("Training dummy spawn skipped: no safe location available.")
+			return
+		training_dummy = TRAINING_DUMMY_SCENE.instantiate() as TrainingDummy
+		if training_dummy == null:
+			return
+		training_dummy.global_position = spawn_position
+		training_dummy.set_meta("training_no_drops", true)
+		add_child(training_dummy)
+	else:
+		if is_instance_valid(training_dummy):
+			training_dummy.queue_free()
+		training_dummy = null
+
+func is_test_turkey_enabled() -> bool:
+	return test_turkey_enabled
+
+func set_test_turkey_enabled(enabled: bool) -> void:
+	test_turkey_enabled = enabled
+	if enabled:
+		if not is_instance_valid(test_turkey):
+			_spawn_test_turkey()
+	else:
+		if is_instance_valid(test_turkey):
+			test_turkey.queue_free()
+		test_turkey = null
+
+func _spawn_test_turkey() -> void:
+	if not test_turkey_enabled or is_instance_valid(test_turkey):
+		return
+	var spawn_position: Vector2 = spawner._random_position()
+	if spawn_position.x < 0.0:
+		push_warning("Test turkey spawn skipped: no safe location available.")
+		return
+	var turkey: Turkey = spawner.instantiate_enemy(WaveSpawner.TURKEY_SCENE) as Turkey
+	if turkey == null:
+		return
+	test_turkey = turkey
+	turkey.global_position = spawn_position
+	turkey.set_meta("training_no_drops", true)
+	turkey.defeated.connect(_on_test_turkey_defeated)
+	add_child(turkey)
+
+func _on_test_turkey_defeated(_points: int) -> void:
+	test_turkey = null
+	if test_turkey_enabled:
+		_spawn_test_turkey.call_deferred()
 
 func spawn_training_enemy(enemy_scene: PackedScene) -> void:
 	var spawn_position: Vector2 = spawner._random_position()
