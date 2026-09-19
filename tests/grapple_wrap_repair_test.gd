@@ -28,7 +28,7 @@ func test_held_orbit_captures_once_and_inward_motion_creates_temporary_slack() -
 	chakram.velocity = Vector2(0.0, controller.yoyo_recall_speed_threshold + 100.0)
 	controller.update_and_get_player_acceleration(true, Vector2.ZERO, 2.0)
 	assert(controller.yoyo_state == GrappleController.YoyoState.ORBITING, "Sufficient tangential speed must sustain the held orbit after Hang Time.")
-	assert(is_equal_approx(controller.rope_length, 100.0), "Inward motion must create temporary slack instead of permanently ratcheting the orbit smaller.")
+	assert(is_equal_approx(controller.rope_length, 60.0), "Orbit slack recovery may shorten only to the live inward path; it must never pay rope outward.")
 	controller.release_tether()
 	chakram.free()
 	player.free()

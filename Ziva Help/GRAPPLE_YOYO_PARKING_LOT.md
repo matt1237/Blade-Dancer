@@ -33,6 +33,8 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 9. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
 10. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
 11. A grapple may target a grounded Chakram. On hook arrival it enters a dedicated direct retrieval at `1100 px/s`, ends the tether immediately, and collects on reaching the player. Ground retrieval never enters Yo-yo extension, orbit, wrapping, or combat collision logic.
+12. Enemy wrap now separates player-authored entry from deterministic completion: rope intersection tracks real circle contacts until `Wrap Commit Point`, then the grappled dynamic object (Chakram or enemy) follows an exact, collision-validated target-relative inward spiral for `Automated Coil Revolutions` (default `1.5`) using independent `Tangential Coil Speed` and `Radial Cinch Speed` authorities while retaining swept collision checks.
+13. A committed coil collision uses the real impact bounce, then `Obstruction Unwind Speed` reverses the authored path until free. A completed coil damages once, shows `Wrapped!`, stuns the enemy with its existing stunned visual for `Completed Coil Hold` (default `1.0 s`), and immediately starts retracing the spiral outward. During that window the existing Light/Medium/Heavy grapple-force authority controls whether the target or player moves. `Tightening Speed Gain` accelerates tangential travel as the radius closes.
 
 ## Implementation authority contract
 

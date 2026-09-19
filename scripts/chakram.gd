@@ -49,6 +49,7 @@ var yoyo_local_rope_length: float = 0.0
 var yoyo_soft_zone: float = 0.0
 var yoyo_radial_damping: float = 0.0
 var yoyo_tangential_drag: float = 0.0
+var yoyo_speed_ceiling_override: float = 0.0
 var yoyo_last_constraint_correction: float = 0.0
 var yoyo_last_enemy_hit_frame: int = -1
 var yoyo_last_enemy_hit_incoming: Vector2 = Vector2.ZERO
@@ -130,7 +131,7 @@ static func yoyo_constrained_velocity(moving_position: Vector2, current_velocity
 		tangential_velocity *= exp(-maxf(0.0, tangential_drag) * maxf(0.0, delta))
 	return radial_direction * radial_speed + tangential_velocity
 
-func configure_yoyo_constraint(pivot: Vector2, local_rope_length: float, soft_zone: float, radial_damping: float, tangential_drag: float, coil_enemy_id: int = -1, coil_contact_armed: bool = false) -> void:
+func configure_yoyo_constraint(pivot: Vector2, local_rope_length: float, soft_zone: float, radial_damping: float, tangential_drag: float, coil_enemy_id: int = -1, coil_contact_armed: bool = false, speed_ceiling_override: float = 0.0) -> void:
 	yoyo_constraint_active = true
 	yoyo_coil_contact_enemy_id = coil_enemy_id
 	yoyo_coil_contact_armed = coil_contact_armed
@@ -139,11 +140,13 @@ func configure_yoyo_constraint(pivot: Vector2, local_rope_length: float, soft_zo
 	yoyo_soft_zone = maxf(0.0, soft_zone)
 	yoyo_radial_damping = maxf(0.0, radial_damping)
 	yoyo_tangential_drag = maxf(0.0, tangential_drag)
+	yoyo_speed_ceiling_override = maxf(0.0, speed_ceiling_override)
 
 func clear_yoyo_constraint() -> void:
 	yoyo_constraint_active = false
 	yoyo_coil_contact_enemy_id = -1
 	yoyo_coil_contact_armed = false
+	yoyo_speed_ceiling_override = 0.0
 
 func _apply_yoyo_constraint(delta: float) -> void:
 	yoyo_last_constraint_correction = 0.0
@@ -155,7 +158,7 @@ func _apply_yoyo_constraint(delta: float) -> void:
 		yoyo_last_constraint_correction = distance - yoyo_local_rope_length
 		global_position = yoyo_pivot + offset / distance * yoyo_local_rope_length
 	velocity = yoyo_constrained_velocity(global_position, velocity, yoyo_pivot, yoyo_local_rope_length, yoyo_soft_zone, yoyo_radial_damping, yoyo_tangential_drag, delta)
-	velocity = velocity.limit_length(sword_hit_speed_ceiling)
+	velocity = velocity.limit_length(maxf(sword_hit_speed_ceiling, yoyo_speed_ceiling_override))
 
 static func grapple_retrieval_velocity(from_position: Vector2, owner_position: Vector2, speed: float) -> Vector2:
 	return from_position.direction_to(owner_position) * maxf(0.0, speed)
@@ -227,6 +230,7 @@ func _physics_process(delta: float) -> void:
 			var glyph_normal: Vector2 = glyph_hit["normal"] as Vector2
 			global_position = (glyph_hit["position"] as Vector2) + glyph_normal * 2.0
 			velocity = velocity.bounce(glyph_normal)
+			_notify_yoyo_obstruction_hit(glyph)
 			if glyph != null:
 				glyph.on_chakram_hit(self, velocity)
 			if main_scene.has_method("spawn_impact_fx"): main_scene.spawn_impact_fx(global_position, 0.8)
@@ -242,6 +246,7 @@ func _physics_process(delta: float) -> void:
 				if rebound == Vector2.ZERO: rebound = -velocity.normalized()
 				global_position = previous_position + rebound * 3.0
 				velocity = velocity.bounce(rebound.normalized())
+				_notify_yoyo_obstruction_hit(obstruction)
 				if main_scene.has_method("spawn_impact_fx"): main_scene.spawn_impact_fx(global_position, 0.8)
 				queue_redraw()
 				return
@@ -251,6 +256,7 @@ func _physics_process(delta: float) -> void:
 			var wall_normal: Vector2 = wall_hit["normal"] as Vector2
 			global_position = (wall_hit["position"] as Vector2) + wall_normal * 2.0
 			velocity = velocity.bounce(wall_normal)
+			_notify_yoyo_obstruction_hit(wall_hit.get("object") as Node)
 			if main_scene.has_method("spawn_impact_fx"): main_scene.spawn_impact_fx(global_position, 0.45)
 		else:
 			global_position = proposed_position
@@ -287,6 +293,16 @@ func _physics_process(delta: float) -> void:
 		boosted = false
 		trail_points.clear()
 	queue_redraw()
+
+func get_collision_radius() -> float:
+	return _chakram_collision_radius()
+
+func _notify_yoyo_obstruction_hit(collider: Node = null) -> void:
+	if owner_player == null:
+		return
+	var grapple_controller: GrappleController = owner_player.get_node_or_null("GrappleController") as GrappleController
+	if grapple_controller != null:
+		grapple_controller.notify_yoyo_obstruction_hit(collider)
 
 func _chakram_collision_radius() -> float:
 	var shape_node: CollisionShape2D = get_node_or_null("CollisionShape2D") as CollisionShape2D
@@ -343,9 +359,8 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 			continue
 		if hit_enemy_ids.has(enemy_id) and not is_active_coil:
 			continue
-		if is_active_coil:
-			yoyo_coil_contact_armed = false
-			grapple_controller.notify_yoyo_coil_hit(enemy)
+		if grapple_controller != null and not is_active_coil:
+			grapple_controller.notify_yoyo_obstruction_hit(enemy)
 		var incoming_velocity: Vector2 = velocity
 		var away: Vector2 = enemy_center.direction_to(global_position)
 		if enemy.has_method("chakram_blocked_from_front") and enemy.chakram_blocked_from_front(global_position):
@@ -368,6 +383,9 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 			var dealt_damage: float = damage * (1.0 + speed_bonus)
 			var chakram_quality: float = clampf((incoming_velocity.length() - base_speed) / maxf(1.0, 900.0 - base_speed), 0.0, 1.0)
 			enemy.take_damage(dealt_damage, away * 180.0, 0.18, chakram_quality)
+			if is_active_coil:
+				yoyo_coil_contact_armed = false
+				grapple_controller.notify_yoyo_coil_hit(enemy)
 			if owner_player != null: owner_player.notify_player_damage_dealt(false)
 			var typed_enemy: Enemy = enemy as Enemy
 			var main_scene: Node = get_tree().current_scene

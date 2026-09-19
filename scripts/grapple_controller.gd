@@ -8,6 +8,7 @@ var spear_tip_texture: Texture2D = null
 enum TargetType { NONE, TERRAIN, ENEMY, CHAKRAM, GLYPH }
 enum YoyoState { NONE, EXTENDING, ORBITING, REELING }
 enum YoyoWrapPhase { FREE, WRAP_ACQUIRED, WRAPPED, RETURNING }
+enum YoyoCoilPhase { NONE, TRACKING, COMMITTED, UNWINDING, DAMAGE_ARMED, HOLDING }
 
 const MIN_ROPE_LENGTH = 42.0
 const TERRAIN_RELEASE_SLIDE_DURATION = 0.25
@@ -43,7 +44,10 @@ const TUNING_DEFAULTS: Dictionary = {
 	"yoyo_orbit_drag": 0.35, "yoyo_orbit_slack_recovery_speed": 180.0,
 	"yoyo_min_orbit_time": 1.25, "yoyo_recall_speed_threshold": 120.0,
 	"yoyo_static_pivot_enabled": false,
-	"yoyo_boundary_wrap_enabled": false
+	"yoyo_boundary_wrap_enabled": false,
+	"yoyo_wrap_commit_turns": 0.45, "yoyo_coil_revolutions": 1.5,
+	"yoyo_coil_tangential_speed": 760.0, "yoyo_coil_radial_speed": 220.0,
+	"yoyo_coil_speed_gain": 0.35, "yoyo_coil_hold_duration": 1.0, "yoyo_unwind_speed": 420.0
 }
 const TUNING_KEYS: Array[String] = [
 	"max_tether_length", "hook_travel_speed", "reel_speed", "slack_take_up_speed",
@@ -55,7 +59,9 @@ const TUNING_KEYS: Array[String] = [
 	"medium_player_pull_strength", "heavy_player_pull_strength", "chakram_yank_strength",
 	"yoyo_enabled", "yoyo_soft_tension_zone", "yoyo_radial_damping", "yoyo_orbit_drag",
 	"yoyo_orbit_slack_recovery_speed", "yoyo_min_orbit_time", "yoyo_recall_speed_threshold", "yoyo_static_pivot_enabled",
-	"yoyo_boundary_wrap_enabled"
+	"yoyo_boundary_wrap_enabled", "yoyo_wrap_commit_turns", "yoyo_coil_revolutions",
+	"yoyo_coil_tangential_speed", "yoyo_coil_radial_speed", "yoyo_coil_speed_gain",
+	"yoyo_coil_hold_duration", "yoyo_unwind_speed"
 ]
 
 static func default_tuning_state() -> Dictionary:
@@ -134,6 +140,20 @@ var mastery_range_multiplier: float = 1.0
 ## Enables the retained experimental enemy and collision-boundary wrap solver.
 ## Disabled by default; direct Chakram yo-yo remains the normal path.
 @export var yoyo_boundary_wrap_enabled: bool = false
+## Player-authored winding required before the rest of the coil commits.
+@export_range(0.1, 1.0, 0.05) var yoyo_wrap_commit_turns: float = 0.45
+## Full target-relative turns completed after player-authored commitment.
+@export_range(1.0, 2.0, 0.1) var yoyo_coil_revolutions: float = 1.5
+## Tangential speed is authoritative during commitment so the spiral cannot stall.
+@export var yoyo_coil_tangential_speed: float = 760.0
+## Independent inward cinch speed; tangent remains strong after capture radius is reached.
+@export var yoyo_coil_radial_speed: float = 220.0
+## Extra tangential speed gained as the spiral tightens: 0.35 ends 35% faster.
+@export_range(0.0, 1.0, 0.05) var yoyo_coil_speed_gain: float = 0.35
+## Time the completed coil treats its wrapped enemy as the grapple target.
+@export var yoyo_coil_hold_duration: float = 1.0
+## Linear speed used to reverse the authored coil after an obstruction bounce.
+@export var yoyo_unwind_speed: float = 420.0
 
 var player: Player = null
 var active: bool = false
@@ -183,6 +203,15 @@ var yoyo_enemy_arc_initialized: bool = false
 var yoyo_enemy_minimum_arc: float = 0.0
 var yoyo_enemy_winding_delta: float = 0.0
 var yoyo_coil_hit_consumed: bool = false
+var yoyo_coil_phase: YoyoCoilPhase = YoyoCoilPhase.NONE
+var yoyo_coil_progress: float = 0.0
+var yoyo_coil_path_length: float = 0.0
+var yoyo_coil_start_radius: float = 0.0
+var yoyo_coil_start_angle: float = 0.0
+var yoyo_coil_angle_travel: float = 0.0
+var yoyo_coil_current_radius: float = 0.0
+var yoyo_coil_hold_left: float = 0.0
+var yoyo_coil_committed_enemy_id: int = -1
 var yoyo_enemy_last_acceleration: Vector2 = Vector2.ZERO
 var yoyo_debug_sample_left: float = 0.0
 var yoyo_reel_shortfall: float = 0.0
@@ -402,6 +431,16 @@ static func yoyo_accumulated_arc(previous_arc: float, _minimum_arc: float, previ
 	# invent a complete turn when the last contact unwinds across the seam.
 	return maxf(0.0, previous_arc + directed_delta)
 
+static func coil_progress(current: float, speed: float, delta: float, path_length: float, unwinding: bool) -> float:
+	var step: float = maxf(0.0, speed) * maxf(0.0, delta) / maxf(1.0, path_length)
+	return clampf(current - step if unwinding else current + step, 0.0, 1.0)
+
+static func coil_position(center: Vector2, start_radius: float, capture_radius: float, start_angle: float, winding_sign: float, progress: float, revolutions: float = 1.0) -> Vector2:
+	var ratio: float = clampf(progress, 0.0, 1.0)
+	var radius: float = lerpf(maxf(capture_radius, start_radius), capture_radius, ratio)
+	var angle: float = start_angle + signf(winding_sign) * TAU * maxf(1.0, revolutions) * ratio
+	return center + Vector2.from_angle(angle) * radius
+
 static func yoyo_enemy_wrap_acceleration(hand_direction: Vector2, chakram_direction: Vector2, path_stretch: float, ramp_distance: float, enemy_strength: float, weight_scale: float) -> Vector2:
 	var engagement: float = clampf(maxf(0.0, path_stretch) / maxf(0.001, ramp_distance), 0.0, 1.0)
 	return (hand_direction.normalized() + chakram_direction.normalized()) * 0.5 * maxf(0.0, enemy_strength) * maxf(0.0, weight_scale) * engagement
@@ -525,6 +564,15 @@ func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_enemy_minimum_arc = 0.0
 	yoyo_enemy_winding_delta = 0.0
 	yoyo_coil_hit_consumed = false
+	yoyo_coil_phase = YoyoCoilPhase.NONE
+	yoyo_coil_progress = 0.0
+	yoyo_coil_path_length = 0.0
+	yoyo_coil_start_radius = 0.0
+	yoyo_coil_start_angle = 0.0
+	yoyo_coil_angle_travel = 0.0
+	yoyo_coil_current_radius = 0.0
+	yoyo_coil_hold_left = 0.0
+	yoyo_coil_committed_enemy_id = -1
 	yoyo_enemy_last_acceleration = Vector2.ZERO
 	yoyo_debug_sample_left = 0.0
 	yoyo_reel_shortfall = 0.0
@@ -569,6 +617,13 @@ func _update_circle_contacts(hand: Vector2, endpoint: Vector2, center: Vector2, 
 	yoyo_enemy_previous_exit_angle = exit
 	yoyo_enemy_winding_delta = yoyo_enemy_arc_angle - previous
 	yoyo_wrap_position = yoyo_enemy_exit_point
+	if yoyo_coil_phase == YoyoCoilPhase.NONE:
+		yoyo_coil_phase = YoyoCoilPhase.TRACKING
+	var commit_angle: float = TAU * clampf(yoyo_wrap_commit_turns, 0.1, 1.0)
+	if yoyo_coil_phase == YoyoCoilPhase.TRACKING and previous < commit_angle and yoyo_enemy_arc_angle >= commit_angle:
+		yoyo_coil_phase = YoyoCoilPhase.COMMITTED
+		yoyo_coil_committed_enemy_id = enemy.get_instance_id()
+		yoyo_coil_progress = 0.0
 	if yoyo_enemy_arc_angle <= 0.03 and yoyo_enemy_segment_hit(hand, endpoint, center, radius + ENEMY_WRAP_CLEARANCE) == Vector2.INF:
 		_clear_yoyo_wrap(enemy)
 
@@ -741,6 +796,109 @@ func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 		yoyo_enemy_wrap_sign = yoyo_shortest_wrap_sign(_enemy_wrap_center(enemy), hand_position, chakram_position, _enemy_wrap_radius(enemy))
 		_update_yoyo_wrap(hand_position, chakram_position, 0.0)
 
+func _coil_motion_is_clear(moving_target: Node2D, wrapped_enemy: Enemy, from_position: Vector2, to_position: Vector2, moving_radius: float) -> bool:
+	var main_scene: Node = player.get_tree().current_scene if player != null and player.is_inside_tree() else null
+	if main_scene != null and main_scene.has_method("get_terrain_obstruction_hit") and not (main_scene.call("get_terrain_obstruction_hit", from_position, to_position, moving_radius) as Dictionary).is_empty():
+		return false
+	if main_scene != null and main_scene.has_method("get_terrain_wall_collision") and not (main_scene.call("get_terrain_wall_collision", from_position, to_position, moving_radius) as Dictionary).is_empty():
+		return false
+	for node: Node in player.get_tree().get_nodes_in_group("enemies"):
+		var obstacle: Enemy = node as Enemy
+		if obstacle == null or obstacle == moving_target or obstacle == wrapped_enemy or obstacle.health <= 0.0:
+			continue
+		var boundary: Dictionary = enemy_collision_circle(obstacle)
+		if bool(boundary.get("supported", false)) and Chakram.swept_circle_contact(from_position, to_position, boundary.get("center") as Vector2, moving_radius + float(boundary.get("radius", 0.0))):
+			return false
+	return true
+
+func _place_committed_target(moving_target: Node2D, next_position: Vector2, _delta: float) -> void:
+	moving_target.global_position = next_position
+	if moving_target is Chakram:
+		# Position is authoritative during committed traversal; leaving derived
+		# velocity active would make Chakram._physics_process move the path twice.
+		(moving_target as Chakram).velocity = Vector2.ZERO
+	elif moving_target is Enemy:
+		var moving_enemy: Enemy = moving_target as Enemy
+		moving_enemy.velocity = Vector2.ZERO
+		moving_enemy.knockback = Vector2.ZERO
+
+func _update_committed_coil(moving_target: Node2D, moving_radius: float, enemy: Enemy, delta: float) -> void:
+	var center: Vector2 = _enemy_wrap_center(enemy)
+	var capture_radius: float = _enemy_wrap_radius(enemy) + moving_radius + 0.5
+	var total_angle: float = TAU * clampf(yoyo_coil_revolutions, 1.0, 2.0)
+	if yoyo_coil_start_radius <= 0.0:
+		yoyo_coil_start_radius = maxf(capture_radius, center.distance_to(moving_target.global_position))
+		yoyo_coil_current_radius = yoyo_coil_start_radius
+		yoyo_coil_start_angle = center.angle_to_point(moving_target.global_position)
+		yoyo_coil_angle_travel = 0.0
+		var average_radius: float = (yoyo_coil_start_radius + capture_radius) * 0.5
+		yoyo_coil_path_length = maxf(1.0, total_angle * average_radius + yoyo_coil_start_radius - capture_radius)
+	if yoyo_coil_phase == YoyoCoilPhase.HOLDING:
+		# Impact begins the visible uncoil immediately. The enemy remains the live
+		# grapple target and stays stunned for the complete authored hold window.
+		yoyo_coil_hold_left = maxf(0.0, yoyo_coil_hold_left - maxf(0.0, delta))
+		yoyo_coil_progress = coil_progress(yoyo_coil_progress, yoyo_unwind_speed, delta, yoyo_coil_path_length, true)
+		var hold_unwind_position: Vector2 = coil_position(center, yoyo_coil_start_radius, capture_radius, yoyo_coil_start_angle, yoyo_enemy_wrap_sign, yoyo_coil_progress, yoyo_coil_revolutions)
+		if _coil_motion_is_clear(moving_target, enemy, moving_target.global_position, hold_unwind_position, moving_radius):
+			_place_committed_target(moving_target, hold_unwind_position, delta)
+		if yoyo_coil_hold_left <= 0.0 and yoyo_coil_progress <= 0.0:
+			yoyo_state = YoyoState.REELING
+			_clear_yoyo_wrap(enemy)
+		return
+	if yoyo_coil_phase == YoyoCoilPhase.UNWINDING:
+		yoyo_coil_progress = coil_progress(yoyo_coil_progress, yoyo_unwind_speed, delta, yoyo_coil_path_length, true)
+		var unwind_position: Vector2 = coil_position(center, yoyo_coil_start_radius, capture_radius, yoyo_coil_start_angle, yoyo_enemy_wrap_sign, yoyo_coil_progress, yoyo_coil_revolutions)
+		if _coil_motion_is_clear(moving_target, enemy, moving_target.global_position, unwind_position, moving_radius):
+			_place_committed_target(moving_target, unwind_position, delta)
+		if yoyo_coil_progress <= 0.0:
+			_clear_yoyo_wrap(enemy)
+		return
+	if yoyo_coil_phase == YoyoCoilPhase.COMMITTED:
+		var accepted_angle: float = yoyo_coil_angle_travel
+		var accepted_radius: float = yoyo_coil_current_radius
+		var accepted_progress: float = yoyo_coil_progress
+		# Tangent and cinch have separate authorities. This guarantees one-to-two
+		# readable revolutions even when the capture radius is reached early.
+		var tightening_distance: float = yoyo_coil_start_radius - capture_radius
+		var tightening_ratio: float = 1.0 if tightening_distance <= 0.001 else clampf((yoyo_coil_start_radius - yoyo_coil_current_radius) / tightening_distance, 0.0, 1.0)
+		var authored_tangential_speed: float = maxf(0.0, yoyo_coil_tangential_speed) * (1.0 + maxf(0.0, yoyo_coil_speed_gain) * tightening_ratio)
+		var angular_speed: float = authored_tangential_speed / maxf(capture_radius, yoyo_coil_current_radius)
+		yoyo_coil_angle_travel = minf(total_angle, yoyo_coil_angle_travel + angular_speed * maxf(0.0, delta))
+		yoyo_coil_current_radius = move_toward(yoyo_coil_current_radius, capture_radius, maxf(0.0, yoyo_coil_radial_speed) * maxf(0.0, delta))
+		var angular_progress: float = clampf(yoyo_coil_angle_travel / maxf(0.001, total_angle), 0.0, 1.0)
+		var radial_distance: float = yoyo_coil_start_radius - capture_radius
+		var radial_progress: float = 1.0 if radial_distance <= 0.001 else clampf((yoyo_coil_start_radius - yoyo_coil_current_radius) / radial_distance, 0.0, 1.0)
+		yoyo_coil_progress = minf(angular_progress, radial_progress)
+		var angle: float = yoyo_coil_start_angle + signf(yoyo_enemy_wrap_sign) * yoyo_coil_angle_travel
+		var inward_position: Vector2 = center + Vector2.from_angle(angle) * yoyo_coil_current_radius
+		if not _coil_motion_is_clear(moving_target, enemy, moving_target.global_position, inward_position, moving_radius):
+			yoyo_coil_angle_travel = accepted_angle
+			yoyo_coil_current_radius = accepted_radius
+			yoyo_coil_progress = accepted_progress
+			yoyo_coil_phase = YoyoCoilPhase.UNWINDING
+			return
+		_place_committed_target(moving_target, inward_position, delta)
+		if angular_progress >= 1.0 and radial_progress >= 1.0:
+			yoyo_coil_progress = 1.0
+			yoyo_coil_phase = YoyoCoilPhase.DAMAGE_ARMED
+			if moving_target is Chakram:
+				(moving_target as Chakram).velocity = moving_target.global_position.direction_to(center) * maxf(120.0, yoyo_coil_radial_speed)
+			else:
+				_complete_grappled_enemy_coil(enemy)
+
+func _complete_grappled_enemy_coil(wrapped_enemy: Enemy) -> void:
+	if yoyo_coil_phase != YoyoCoilPhase.DAMAGE_ARMED:
+		return
+	wrapped_enemy.take_damage(10.0, Vector2.ZERO, 0.18, 0.75)
+	notify_yoyo_coil_hit(wrapped_enemy)
+
+func notify_yoyo_obstruction_hit(collider: Node = null) -> void:
+	if yoyo_coil_phase != YoyoCoilPhase.COMMITTED and yoyo_coil_phase != YoyoCoilPhase.DAMAGE_ARMED:
+		return
+	if collider != null and collider == yoyo_wrap_object:
+		return
+	yoyo_coil_phase = YoyoCoilPhase.UNWINDING
+
 func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: float) -> Vector2:
 	visual_time += delta
 	var current_hand_position: Vector2 = player.get_grapple_hand_position() if player != null else Vector2.ZERO
@@ -770,11 +928,20 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 			return Vector2.ZERO
 		anchor_position = target_node.global_position
 	var is_chakram_yoyo: bool = yoyo_enabled and target_type == TargetType.CHAKRAM and target_node is Chakram
+	var is_enemy_wrap_target: bool = yoyo_enabled and yoyo_boundary_wrap_enabled and target_type == TargetType.ENEMY and target_node is Enemy
+	if is_enemy_wrap_target:
+		var grappled_enemy: Enemy = target_node as Enemy
+		_update_yoyo_wrap(current_hand_position, grappled_enemy.global_position, delta)
+		if is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy and yoyo_wrap_object != grappled_enemy and yoyo_coil_phase in [YoyoCoilPhase.COMMITTED, YoyoCoilPhase.UNWINDING, YoyoCoilPhase.DAMAGE_ARMED, YoyoCoilPhase.HOLDING]:
+			var moving_boundary: Dictionary = enemy_collision_circle(grappled_enemy)
+			_update_committed_coil(grappled_enemy, float(moving_boundary.get("radius", ENEMY_WRAP_RADIUS)), yoyo_wrap_object as Enemy, delta)
 	var rope_was_taut: bool = rope_taut
 	yoyo_reel_shortfall = 0.0
 	if is_chakram_yoyo:
 		var yoyo_chakram: Chakram = target_node as Chakram
 		_update_yoyo_wrap(current_hand_position, yoyo_chakram.global_position, delta)
+		if is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy and yoyo_coil_phase in [YoyoCoilPhase.COMMITTED, YoyoCoilPhase.UNWINDING, YoyoCoilPhase.DAMAGE_ARMED, YoyoCoilPhase.HOLDING]:
+			_update_committed_coil(yoyo_chakram, yoyo_chakram.get_collision_radius(), yoyo_wrap_object as Enemy, delta)
 		var pivot: Vector2 = yoyo_wrap_position if yoyo_wrap_active else current_hand_position
 		var local_rope_length: float = _yoyo_live_local_length(rope_length, current_hand_position)
 		var pivot_distance: float = pivot.distance_to(yoyo_chakram.global_position)
@@ -815,7 +982,7 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 			var radial_direction: Vector2 = pivot.direction_to(yoyo_chakram.global_position)
 			var radial_velocity: Vector2 = radial_direction * yoyo_chakram.velocity.dot(radial_direction)
 			var tangential_speed: float = (yoyo_chakram.velocity - radial_velocity).length()
-			if yoyo_should_recall(yoyo_orbit_time, yoyo_min_orbit_time, tangential_speed, yoyo_recall_speed_threshold):
+			if yoyo_coil_phase in [YoyoCoilPhase.NONE, YoyoCoilPhase.TRACKING] and yoyo_should_recall(yoyo_orbit_time, yoyo_min_orbit_time, tangential_speed, yoyo_recall_speed_threshold):
 				yoyo_state = YoyoState.REELING
 		elif yoyo_state == YoyoState.REELING:
 			rope_taut = true
@@ -824,10 +991,15 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 		var active_drag: float = yoyo_orbit_drag if yoyo_state == YoyoState.ORBITING else 0.0
 		var coil_enemy_id: int = -1
 		var coil_contact_armed: bool = false
-		if not yoyo_coil_hit_consumed and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy and yoyo_enemy_arc_angle >= TAU:
-			coil_enemy_id = yoyo_wrap_object.get_instance_id()
+		if not yoyo_coil_hit_consumed and yoyo_coil_phase == YoyoCoilPhase.DAMAGE_ARMED and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy and yoyo_wrap_object.get_instance_id() == yoyo_coil_committed_enemy_id:
+			coil_enemy_id = yoyo_coil_committed_enemy_id
 			coil_contact_armed = true
-		yoyo_chakram.configure_yoyo_constraint(pivot, local_rope_length, yoyo_soft_tension_zone, yoyo_radial_damping, active_drag, coil_enemy_id, coil_contact_armed)
+		var coil_speed_override: float = yoyo_coil_tangential_speed * (1.0 + yoyo_coil_speed_gain) if yoyo_coil_phase in [YoyoCoilPhase.COMMITTED, YoyoCoilPhase.UNWINDING, YoyoCoilPhase.DAMAGE_ARMED, YoyoCoilPhase.HOLDING] else 0.0
+		if coil_speed_override > 0.0:
+			# The accepted kinematic spiral is authoritative; ordinary rope projection
+			# must not alter it after progress has already been counted.
+			local_rope_length = maxf(local_rope_length, pivot.distance_to(yoyo_chakram.global_position) + 2.0)
+		yoyo_chakram.configure_yoyo_constraint(pivot, local_rope_length, yoyo_soft_tension_zone, yoyo_radial_damping, active_drag, coil_enemy_id, coil_contact_armed, coil_speed_override)
 	else:
 		var current_tether_distance: float = _tether_distance()
 		if not rope_taut:
@@ -940,12 +1112,17 @@ func is_yoyo_coiling_enemy(enemy: Enemy) -> bool:
 	return active and target_type == TargetType.CHAKRAM and yoyo_wrap_active and enemy != null and enemy == yoyo_wrap_object
 
 func notify_yoyo_coil_hit(enemy: Enemy) -> void:
-	if not active or target_type != TargetType.CHAKRAM or enemy == null or enemy != yoyo_wrap_object:
+	if not active or target_type not in [TargetType.CHAKRAM, TargetType.ENEMY] or enemy == null or enemy != yoyo_wrap_object:
 		return
-	if yoyo_enemy_arc_angle < TAU or yoyo_coil_hit_consumed:
+	if yoyo_coil_phase != YoyoCoilPhase.DAMAGE_ARMED or yoyo_coil_hit_consumed or enemy.get_instance_id() != yoyo_coil_committed_enemy_id:
 		return
 	yoyo_coil_hit_consumed = true
-	yoyo_state = YoyoState.REELING
+	yoyo_coil_phase = YoyoCoilPhase.HOLDING
+	yoyo_coil_hold_left = maxf(0.0, yoyo_coil_hold_duration)
+	enemy.stun_for(yoyo_coil_hold_left)
+	var main_scene: Node = player.get_tree().current_scene if player != null and player.is_inside_tree() else null
+	if main_scene != null and main_scene.has_method("spawn_wrapped_popup"):
+		main_scene.call("spawn_wrapped_popup", enemy.global_position)
 	yoyo_orbit_time = 0.0
 	yoyo_debug_sample_left = 0.0
 
@@ -1162,6 +1339,8 @@ func target_name() -> String:
 		TargetType.TERRAIN: return "Terrain"
 		TargetType.ENEMY: return "Enemy"
 		TargetType.CHAKRAM:
+			if yoyo_coil_phase not in [YoyoCoilPhase.NONE, YoyoCoilPhase.TRACKING]:
+				return "Chakram Coil — %s" % str(YoyoCoilPhase.keys()[yoyo_coil_phase]).capitalize()
 			match yoyo_state:
 				YoyoState.EXTENDING: return "Chakram Yo-yo — Extending"
 				YoyoState.ORBITING: return "Chakram Yo-yo — Orbiting%s" % (" / Wrapped" if yoyo_wrap_active else "")
@@ -1187,7 +1366,7 @@ func yoyo_debug_status() -> String:
 			radial_speed = chakram.velocity.dot(radial_direction)
 			tangent_speed = chakram.velocity.dot(radial_direction.orthogonal())
 	var hit_age: int = Engine.get_physics_frames() - chakram.yoyo_last_enemy_hit_frame if chakram.yoyo_last_enemy_hit_frame >= 0 else -1
-	return "Wrap %s | Path %.1f / Rope %.1f | Stretch %.1f | Reel shortfall %.1f\nArc %.2f turns (minimum %.2f, delta %.3f) | Arc rope %.1f | Local %.1f\nRadial %.1f | Tangent %.1f | Correction %.1f px | Enemy accel %.1f | Hit age %d (in %.0f / out %.0f)" % [owner_name, measured_path, rope_length, measured_path - rope_length, yoyo_reel_shortfall, yoyo_enemy_arc_angle / TAU, yoyo_enemy_minimum_arc / TAU, yoyo_enemy_winding_delta / TAU, yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius, local_rope, radial_speed, tangent_speed, chakram.yoyo_last_constraint_correction, yoyo_enemy_last_acceleration.length(), hit_age, chakram.yoyo_last_enemy_hit_incoming.length(), chakram.yoyo_last_enemy_hit_outgoing.length()]
+	return "Wrap %s | Coil %s %.0f%% | Path %.1f / Rope %.1f | Stretch %.1f | Reel shortfall %.1f\nArc %.2f turns (minimum %.2f, delta %.3f) | Arc rope %.1f | Local %.1f\nRadial %.1f | Tangent %.1f | Correction %.1f px | Enemy accel %.1f | Hit age %d (in %.0f / out %.0f)" % [owner_name, str(YoyoCoilPhase.keys()[yoyo_coil_phase]).capitalize(), yoyo_coil_progress * 100.0, measured_path, rope_length, measured_path - rope_length, yoyo_reel_shortfall, yoyo_enemy_arc_angle / TAU, yoyo_enemy_minimum_arc / TAU, yoyo_enemy_winding_delta / TAU, yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius, local_rope, radial_speed, tangent_speed, chakram.yoyo_last_constraint_correction, yoyo_enemy_last_acceleration.length(), hit_age, chakram.yoyo_last_enemy_hit_incoming.length(), chakram.yoyo_last_enemy_hit_outgoing.length()]
 
 func _tether_distance() -> float:
 	if player == null:

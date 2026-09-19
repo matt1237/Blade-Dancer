@@ -684,6 +684,9 @@ func spawn_chakram_bat_presentation(chakram: Chakram, launch_direction: Vector2,
 func spawn_damage_number(world_position: Vector2, damage: float, against_player: bool, contact_quality: float = 0.0) -> void:
 	combat_presentation_fx.show_damage_number(world_position, damage, against_player, contact_quality)
 
+func spawn_wrapped_popup(world_position: Vector2) -> void:
+	combat_presentation_fx.show_status_text(world_position, "Wrapped!", Color(1.0, 0.82, 0.2, 1.0))
+
 func get_terrain_navigation_direction(from_position: Vector2, target_position: Vector2) -> Vector2:
 	if arena_generator == null: return from_position.direction_to(target_position)
 	return arena_generator.navigation_direction(from_position, target_position)

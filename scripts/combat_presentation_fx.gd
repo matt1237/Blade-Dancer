@@ -310,6 +310,31 @@ func show_damage_number(world_position: Vector2, damage: float, against_player: 
 	floating_damage_numbers.append(number)
 	_update_damage_number_label(number, 0.0)
 
+func show_status_text(world_position: Vector2, text: String, color: Color = Color(1.0, 0.82, 0.2, 1.0)) -> void:
+	if not enabled or overlay_layer == null or text.is_empty():
+		return
+	var number: FloatingDamageNumber = FloatingDamageNumber.new()
+	number.world_position = world_position + Vector2(0.0, -46.0)
+	number.velocity = Vector2(0.0, -42.0)
+	number.total_life = 0.9
+	number.life = number.total_life
+	number.size_scale = 1.25
+	var label: Label = Label.new()
+	label.text = text
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.size = Vector2(180.0, 54.0)
+	label.pivot_offset = label.size * 0.5
+	label.add_theme_font_size_override("font_size", 28)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", damage_number_outline_color)
+	label.add_theme_constant_override("outline_size", 7)
+	overlay_layer.add_child(label)
+	number.label = label
+	floating_damage_numbers.append(number)
+	_update_damage_number_label(number, 0.0)
+
 func _should_trigger_time_slow(contact_quality: float) -> bool:
 	if contact_quality >= max_hit_quality_threshold: return time_slow_on_max_hits
 	if contact_quality >= strong_hit_quality_threshold: return time_slow_on_strong_hits

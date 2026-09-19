@@ -591,7 +591,14 @@ static func _grapple_feel_tip(key: String) -> String:
 		"yoyo_min_orbit_time": ["Minimum time the caught Chakram hangs in orbit before low energy may start recall.", "A quick catch-and-return cycle.", "A longer trick window before recall is allowed.", "This is a minimum window: sufficient tangential speed continues sustaining the orbit."],
 		"yoyo_recall_speed_threshold": ["Tangential speed at or below which recall begins after Hang Time.", "Only a nearly spent orbit begins reeling.", "Recall begins while the Chakram still carries more orbital speed.", "Move left for player-sustained tricks; move right for a more automatic return."],
 		"yoyo_static_pivot_enabled": ["Allows one static obstruction point to redirect the Yo-yo rope when full boundary wrapping is off.", "Rope always uses the direct hand-to-Chakram path.", "Rocks, trees, and walls may become one local pivot.", "This is the stable fallback; Full Boundary Wrap overrides it."],
-		"yoyo_boundary_wrap_enabled": ["Enables the complete experimental enemy and terrain boundary-wrap solver.", "Uses direct tethering, or the separate Static Tether Point option when enabled.", "Uses live circle/rectangle boundaries, winding, reeling, and unwind state.", "This overrides Static Tether Point and remains a parked experiment."],
+		"yoyo_boundary_wrap_enabled": ["Enables enemy and collision-object tether wrapping.", "Uses direct tethering, or the separate Static Tether Point option when enabled.", "Rope intersections may progress into committed automated coils.", "This overrides Static Tether Point."],
+		"yoyo_wrap_commit_turns": ["Player-authored turns required before the coil automates.", "The coil commits quickly after a shallow bend.", "More manual winding is required before commitment.", "Set the hand-authored skill threshold before tuning automation speed."],
+		"yoyo_coil_revolutions": ["Full automated turns completed while the spiral cinches inward.", "One concise revolution.", "Two highly readable revolutions.", "Start at 1.5 turns so the wrap is unmistakable."],
+		"yoyo_coil_tangential_speed": ["Authoritative sideways speed around the wrapped target.", "A slower deliberate orbit.", "A forceful fast coil that resists stalling.", "This remains independent from inward cinch speed."],
+		"yoyo_coil_radial_speed": ["Independent speed that closes the spiral radius.", "Wide revolutions remain visible longer.", "The Chakram cinches toward contact quickly.", "Keep below tangential speed for a readable spiral."],
+		"yoyo_coil_speed_gain": ["Extra tangential speed gained as the spiral tightens.", "The orbit keeps a constant linear speed.", "The Chakram accelerates strongly toward impact.", "A moderate gain makes the tightening spiral feel energetic without becoming unreadable."],
+		"yoyo_coil_hold_duration": ["Time a completed damaging coil treats the enemy as grappled.", "A brief positional beat.", "A longer pull-and-movement window.", "Default is the requested one-second hold."],
+		"yoyo_unwind_speed": ["Reverse travel speed after the committed coil hits an obstruction.", "A slow visible escape.", "A quick recovery back out of the wrap.", "The impact bounce remains physical; this controls the deterministic escape."],
 	}
 	var values: Array = guide.get(key, ["Grapple tuning value.", "Less of this effect.", "More of this effect.", "Tune one authority at a time."]) as Array
 	return _form_three_feel_tip(str(values[0]), str(values[1]), str(values[2]), str(values[3]))
@@ -783,7 +790,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(grapple_section, "body_movement_transfer", "Body Movement Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("body_movement_transfer"))
 	var yoyo_section: VBoxContainer = _create_section_header(grapple_section, "GRAPPLE YO-YO (Global)", true)
 	var yoyo_note: Label = Label.new()
-	yoyo_note.text = "Direct tether is the default. Static Tether Point adds one obstruction pivot. Full Boundary Wrap enables the parked experimental enemy/terrain solver and overrides Static Tether Point."
+	yoyo_note.text = "A rope intersection begins a manual bend. At Wrap Commit the Chakram automates inward, reverses out after an obstruction bounce, or damages and holds a fully coiled enemy as the grapple target."
 	yoyo_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	yoyo_section.add_child(yoyo_note)
 	_create_grapple_slider(yoyo_section, "yoyo_enabled", "Yo-yo Sequence Enabled", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_enabled"))
@@ -794,7 +801,14 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_grapple_slider(yoyo_section, "yoyo_min_orbit_time", "Yo-yo Hang Time", 0.0, 4.0, 0.05, " s", _grapple_feel_tip("yoyo_min_orbit_time"))
 	_create_grapple_slider(yoyo_section, "yoyo_recall_speed_threshold", "Yo-yo Reel Energy Threshold", 0.0, 500.0, 10.0, " px/s", _grapple_feel_tip("yoyo_recall_speed_threshold"))
 	_create_grapple_slider(yoyo_section, "yoyo_static_pivot_enabled", "Yo-yo Static Tether Point", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_static_pivot_enabled"))
-	_create_grapple_slider(yoyo_section, "yoyo_boundary_wrap_enabled", "Yo-yo Full Boundary Wrap (Experimental)", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_boundary_wrap_enabled"))
+	_create_grapple_slider(yoyo_section, "yoyo_boundary_wrap_enabled", "Tether Wrap Enabled", 0.0, 1.0, 1.0, "", _grapple_feel_tip("yoyo_boundary_wrap_enabled"))
+	_create_grapple_slider(yoyo_section, "yoyo_wrap_commit_turns", "Wrap Commit Point", 0.10, 1.0, 0.05, " turns", _grapple_feel_tip("yoyo_wrap_commit_turns"))
+	_create_grapple_slider(yoyo_section, "yoyo_coil_revolutions", "Automated Coil Revolutions", 1.0, 2.0, 0.1, " turns", _grapple_feel_tip("yoyo_coil_revolutions"))
+	_create_grapple_slider(yoyo_section, "yoyo_coil_tangential_speed", "Tangential Coil Speed", 200.0, 1200.0, 20.0, " px/s", _grapple_feel_tip("yoyo_coil_tangential_speed"))
+	_create_grapple_slider(yoyo_section, "yoyo_coil_radial_speed", "Radial Cinch Speed", 40.0, 600.0, 10.0, " px/s", _grapple_feel_tip("yoyo_coil_radial_speed"))
+	_create_grapple_slider(yoyo_section, "yoyo_coil_speed_gain", "Tightening Speed Gain", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("yoyo_coil_speed_gain"))
+	_create_grapple_slider(yoyo_section, "yoyo_coil_hold_duration", "Completed Coil Hold", 0.0, 3.0, 0.05, " s", _grapple_feel_tip("yoyo_coil_hold_duration"))
+	_create_grapple_slider(yoyo_section, "yoyo_unwind_speed", "Obstruction Unwind Speed", 60.0, 1000.0, 10.0, " px/s", _grapple_feel_tip("yoyo_unwind_speed"))
 	_create_grapple_slider(grapple_section, "directional_transfer_ratio", "Dynamic Target Direction Transfer", 0.0, 1.0, 0.05, "×", _grapple_feel_tip("directional_transfer_ratio"))
 	_create_grapple_slider(grapple_section, "radial_yank_ratio", "Dynamic Target Outward Bias", 0.0, 2.0, 0.05, "×", _grapple_feel_tip("radial_yank_ratio"))
 	_create_grapple_slider(grapple_section, "player_hand_orbit_strength", "Player Tangential Steering Gain", 0.0, 12.0, 0.25, "×", _grapple_feel_tip("player_hand_orbit_strength"))
