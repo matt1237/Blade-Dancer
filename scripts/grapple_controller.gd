@@ -211,6 +211,7 @@ var yoyo_coil_start_angle: float = 0.0
 var yoyo_coil_angle_travel: float = 0.0
 var yoyo_coil_current_radius: float = 0.0
 var yoyo_coil_hold_left: float = 0.0
+var yoyo_wrapped_hold_rope_length: float = 0.0
 var yoyo_coil_committed_enemy_id: int = -1
 var yoyo_enemy_last_acceleration: Vector2 = Vector2.ZERO
 var yoyo_debug_sample_left: float = 0.0
@@ -572,6 +573,7 @@ func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_coil_angle_travel = 0.0
 	yoyo_coil_current_radius = 0.0
 	yoyo_coil_hold_left = 0.0
+	yoyo_wrapped_hold_rope_length = 0.0
 	yoyo_coil_committed_enemy_id = -1
 	yoyo_enemy_last_acceleration = Vector2.ZERO
 	yoyo_debug_sample_left = 0.0
@@ -899,6 +901,28 @@ func notify_yoyo_obstruction_hit(collider: Node = null) -> void:
 		return
 	yoyo_coil_phase = YoyoCoilPhase.UNWINDING
 
+func _apply_enemy_grapple_response(enemy: Enemy, active_rope_length: float, hand_position: Vector2, hand_velocity: Vector2, delta: float, ramp: float) -> Vector2:
+	if enemy == null or not is_instance_valid(enemy):
+		return Vector2.ZERO
+	var response: Vector2 = Vector2.ZERO
+	match enemy.grapple_weight:
+		Enemy.GrappleWeight.LIGHT:
+			var light_tension: Vector2 = tension_acceleration(enemy.global_position, player.global_position, active_rope_length, enemy_pull_strength, ramp)
+			var light_yank: Vector2 = target_hand_acceleration(enemy.global_position, hand_position, hand_velocity, light_yank_strength, light_yank_strength * radial_yank_ratio, directional_transfer_ratio, true)
+			enemy.apply_grapple_force(light_tension, delta)
+			enemy.apply_grapple_force(light_yank, delta, INF, light_slide_fraction)
+		Enemy.GrappleWeight.MEDIUM:
+			var medium_tension: Vector2 = tension_acceleration(enemy.global_position, player.global_position, active_rope_length, enemy_pull_strength * medium_reel_multiplier, ramp)
+			var medium_yank: Vector2 = target_hand_acceleration(enemy.global_position, hand_position, hand_velocity, medium_yank_strength, medium_yank_strength * radial_yank_ratio, directional_transfer_ratio, true)
+			enemy.apply_grapple_force(medium_tension, delta)
+			enemy.apply_grapple_force(medium_yank, delta, INF, medium_slide_fraction)
+			response = tension_acceleration(player.global_position, enemy.global_position, active_rope_length, medium_player_pull_strength, ramp)
+			response += player_hand_acceleration(hand_position, enemy.global_position, hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, true)
+		Enemy.GrappleWeight.HEAVY:
+			response = tension_acceleration(player.global_position, enemy.global_position, active_rope_length, heavy_player_pull_strength, ramp)
+			response += player_hand_acceleration(hand_position, enemy.global_position, hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, true)
+	return response
+
 func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: float) -> Vector2:
 	visual_time += delta
 	var current_hand_position: Vector2 = player.get_grapple_hand_position() if player != null else Vector2.ZERO
@@ -1022,30 +1046,7 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 			player_acceleration = tension_acceleration(player.global_position, anchor_position, rope_length, wall_pull_strength, ramp)
 			player_acceleration += player_hand_acceleration(live_hand_position, anchor_position, articulated_hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, rope_taut)
 		TargetType.ENEMY:
-			var grapple_target: Enemy = target_node as Enemy
-			var target_weight: Enemy.GrappleWeight = grapple_target.grapple_weight if grapple_target != null else Enemy.GrappleWeight.LIGHT
-			var hand_position: Vector2 = live_hand_position
-			match target_weight:
-				Enemy.GrappleWeight.LIGHT:
-					var light_tension: Vector2 = tension_acceleration(target_node.global_position, player.global_position, rope_length, enemy_pull_strength, ramp)
-					var light_yank: Vector2 = target_hand_acceleration(target_node.global_position, hand_position, articulated_hand_velocity, light_yank_strength, light_yank_strength * radial_yank_ratio, directional_transfer_ratio, rope_taut)
-					if target_node.has_method("apply_grapple_force"):
-						# Original reel force remains unscaled and uncapped.
-						target_node.call("apply_grapple_force", light_tension, delta)
-						target_node.call("apply_grapple_force", light_yank, delta, INF, light_slide_fraction)
-
-				Enemy.GrappleWeight.MEDIUM:
-					var medium_tension: Vector2 = tension_acceleration(target_node.global_position, player.global_position, rope_length, enemy_pull_strength * medium_reel_multiplier, ramp)
-					var medium_yank: Vector2 = target_hand_acceleration(target_node.global_position, hand_position, articulated_hand_velocity, medium_yank_strength, medium_yank_strength * radial_yank_ratio, directional_transfer_ratio, rope_taut)
-					if target_node.has_method("apply_grapple_force"):
-						target_node.call("apply_grapple_force", medium_tension, delta)
-						target_node.call("apply_grapple_force", medium_yank, delta, INF, medium_slide_fraction)
-
-					player_acceleration = tension_acceleration(player.global_position, target_node.global_position, rope_length, medium_player_pull_strength, ramp)
-					player_acceleration += player_hand_acceleration(live_hand_position, target_node.global_position, articulated_hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, rope_taut)
-				Enemy.GrappleWeight.HEAVY:
-					player_acceleration = tension_acceleration(player.global_position, target_node.global_position, rope_length, heavy_player_pull_strength, ramp)
-					player_acceleration += player_hand_acceleration(live_hand_position, target_node.global_position, articulated_hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, rope_taut)
+			player_acceleration = _apply_enemy_grapple_response(target_node as Enemy, rope_length, live_hand_position, articulated_hand_velocity, delta, ramp)
 		TargetType.CHAKRAM:
 			var tethered_chakram: Chakram = target_node as Chakram
 			if tethered_chakram != null:
@@ -1064,7 +1065,7 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 				if is_chakram_yoyo and rope_taut and not rope_was_taut:
 					var catch_yank: Vector2 = target_hand_acceleration(tethered_chakram.global_position, chakram_hand, smoothed_hand_velocity, chakram_yank_strength, chakram_yank_strength * radial_yank_ratio, directional_transfer_ratio, true)
 					tethered_chakram.apply_grapple_force(catch_yank, taut_catch_impulse_seconds)
-				if is_chakram_yoyo and rope_taut and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
+				if is_chakram_yoyo and rope_taut and yoyo_coil_phase != YoyoCoilPhase.HOLDING and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
 					var wrapped_enemy: Enemy = yoyo_wrap_object as Enemy
 					var path_stretch: float = maxf(0.0, _yoyo_live_path_length(live_hand_position, tethered_chakram.global_position) - rope_length)
 					var tension_demand: float = maxf(path_stretch, yoyo_reel_shortfall)
@@ -1096,6 +1097,12 @@ func update_and_get_player_acceleration(held: bool, aim_point: Vector2, delta: f
 		TargetType.GLYPH:
 			player_acceleration = tension_acceleration(player.global_position, anchor_position, rope_length, wall_pull_strength, ramp)
 			player_acceleration += player_hand_acceleration(live_hand_position, anchor_position, articulated_hand_velocity, player_hand_orbit_strength, player_radial_yank_strength, rope_taut)
+	# A completed wrap temporarily creates a second dynamic grapple endpoint.
+	# It uses the exact same weight authority as a direct enemy hit while the
+	# original Chakram/enemy target continues following its own grapple path.
+	if yoyo_coil_phase == YoyoCoilPhase.HOLDING and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
+		yoyo_wrapped_hold_rope_length = reeled_length(yoyo_wrapped_hold_rope_length, reel_speed, delta)
+		player_acceleration += _apply_enemy_grapple_response(yoyo_wrap_object as Enemy, yoyo_wrapped_hold_rope_length, live_hand_position, articulated_hand_velocity, delta, ramp)
 	var current_distance: float = _tether_distance()
 	tension_ratio = clampf((current_distance - rope_length) / ramp, 0.0, 1.0)
 	if is_chakram_yoyo and yoyo_wrap_active and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
@@ -1119,6 +1126,7 @@ func notify_yoyo_coil_hit(enemy: Enemy) -> void:
 	yoyo_coil_hit_consumed = true
 	yoyo_coil_phase = YoyoCoilPhase.HOLDING
 	yoyo_coil_hold_left = maxf(0.0, yoyo_coil_hold_duration)
+	yoyo_wrapped_hold_rope_length = maxf(MIN_ROPE_LENGTH, player.get_grapple_hand_position().distance_to(enemy.global_position))
 	enemy.stun_for(yoyo_coil_hold_left)
 	var main_scene: Node = player.get_tree().current_scene if player != null and player.is_inside_tree() else null
 	if main_scene != null and main_scene.has_method("spawn_wrapped_popup"):

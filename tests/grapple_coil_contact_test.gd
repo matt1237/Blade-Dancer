@@ -61,6 +61,26 @@ func test_committed_placement_is_exact_for_chakram_and_enemy_targets() -> void:
 	chakram.free()
 	controller.free()
 
+func test_wrapped_hold_uses_direct_grapple_weight_authority() -> void:
+	var player: Player = preload("res://scenes/player.tscn").instantiate() as Player
+	add_child(player)
+	player.set_physics_process(false)
+	var enemy: Enemy = preload("res://scenes/enemy.tscn").instantiate() as Enemy
+	add_child(enemy)
+	enemy.set_physics_process(false)
+	player.global_position = Vector2.ZERO
+	enemy.global_position = Vector2(200.0, 0.0)
+	var controller: GrappleController = player.grapple_controller
+	enemy.grapple_weight = Enemy.GrappleWeight.LIGHT
+	var light_player_pull: Vector2 = controller._apply_enemy_grapple_response(enemy, 100.0, player.get_grapple_hand_position(), Vector2.ZERO, 0.1, controller.tension_ramp_distance)
+	assert(light_player_pull == Vector2.ZERO and enemy.knockback.x < 0.0, "A wrapped Light target must reel toward the player without pulling the player.")
+	enemy.knockback = Vector2.ZERO
+	enemy.grapple_weight = Enemy.GrappleWeight.HEAVY
+	var heavy_player_pull: Vector2 = controller._apply_enemy_grapple_response(enemy, 100.0, player.get_grapple_hand_position(), Vector2.ZERO, 0.1, controller.tension_ramp_distance)
+	assert(enemy.knockback == Vector2.ZERO and heavy_player_pull.x > 0.0, "A wrapped Heavy target must remain stable and pull the player toward it.")
+	enemy.free()
+	player.free()
+
 func test_obstruction_only_reverses_a_committed_coil() -> void:
 	var controller: GrappleController = GrappleController.new()
 	controller.yoyo_coil_phase = GrappleController.YoyoCoilPhase.TRACKING
