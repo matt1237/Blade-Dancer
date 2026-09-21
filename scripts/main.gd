@@ -68,6 +68,7 @@ var classic_shake_applied: bool = false
 @onready var arena_generator: ArenaGenerator = $ArenaGenerator
 @onready var wave_label: Label = $CanvasLayer/WaveLabel
 @onready var wave_timer_label: Label = $CanvasLayer/WaveTimerLabel
+var remaining_enemies_label: Label = null
 @onready var health_label: Label = $CanvasLayer/HealthLabel
 @onready var status_label: Label = $CanvasLayer/StatusLabel
 @onready var style_label: Label = $CanvasLayer/StyleLabel
@@ -303,7 +304,9 @@ func _ready() -> void:
 	add_child(audio_manager)
 	_configure_music_loop()
 	spawner.wave_started.connect(_on_wave_started)
+	spawner.cleanup_started.connect(_on_wave_cleanup_started)
 	spawner.wave_cleared.connect(_on_wave_cleared)
+	_create_remaining_enemies_label()
 	spawner.boss_wave_started.connect(_on_boss_wave_started)
 	spawner.boss_wave_cleared.connect(_on_boss_wave_cleared)
 	spawner.enemy_defeated.connect(_on_enemy_defeated)
@@ -1090,7 +1093,29 @@ func _on_boss_wave_cleared(_number: int) -> void:
 	home_progression.mines_unlocked = true
 	save_game()
 
+func _create_remaining_enemies_label() -> void:
+	remaining_enemies_label = Label.new()
+	remaining_enemies_label.name = "RemainingEnemiesLabel"
+	remaining_enemies_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	remaining_enemies_label.offset_top = 92.0
+	remaining_enemies_label.offset_bottom = 138.0
+	remaining_enemies_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	remaining_enemies_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	remaining_enemies_label.add_theme_font_size_override("font_size", 26)
+	remaining_enemies_label.add_theme_color_override("font_color", Color("ffe5a0"))
+	remaining_enemies_label.add_theme_color_override("font_shadow_color", Color(0.08, 0.04, 0.02, 0.95))
+	remaining_enemies_label.add_theme_constant_override("shadow_offset_x", 3)
+	remaining_enemies_label.add_theme_constant_override("shadow_offset_y", 3)
+	remaining_enemies_label.text = "DEFEAT THE REMAINING ENEMIES!"
+	remaining_enemies_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	remaining_enemies_label.visible = false
+	$CanvasLayer.add_child(remaining_enemies_label)
+
+func _on_wave_cleanup_started(_remaining_enemies: int) -> void:
+	if remaining_enemies_label != null: remaining_enemies_label.visible = true
+
 func _on_wave_started(number: int) -> void:
+	if remaining_enemies_label != null: remaining_enemies_label.visible = false
 	wave_label.text = "Wave: %d" % number
 	wave_timer_label.text = "TIME: %.0f" % spawner.wave_duration
 	player.start_resonant_glyph_wave()
@@ -1170,6 +1195,7 @@ func _apply_equipped_gear_to_player() -> void:
 	var armor_base_name: String = str(armor_item.get("base_name", "Basic Leather Armor")) if not armor_item.is_empty() else "Basic Leather Armor"
 	player.set_equipped_armor(armor_base_name)
 func _on_wave_cleared(number: int) -> void:
+	if remaining_enemies_label != null: remaining_enemies_label.visible = false
 	clear_resonant_glyphs()
 	player.reset_resonant_glyph_timer()
 	if spawner.training_mode:
@@ -2224,7 +2250,7 @@ func _on_cauldron_quality_result(passed: bool, _catch_rate: float) -> void:
 	if passed and home_progression != null:
 		home_progression.arm_cooking_bonus()
 	if not is_instance_valid(home_menu): return
-	if passed: home_menu.show_cooking_bonus_button()
+	home_menu.show_cooking_bonus_button()
 	var tutorial_handled: bool = false
 	if home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
 		tutorial_handled = home_menu.home_tutorial_guide.on_cauldron_result(passed)

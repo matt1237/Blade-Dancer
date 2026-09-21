@@ -258,7 +258,9 @@ func _build_enemy_tab(tabs: TabContainer) -> void:
 
 	for enemy_entry: Dictionary in [
 		{"label":"Turkey", "scene":WaveSpawner.TURKEY_SCENE},
-		{"label":"Goblin", "scene":WaveSpawner.GOBLIN_SCENE},
+		{"label":"Spear Goblin", "scene":WaveSpawner.GOBLIN_SCENE},
+		{"label":"Archer Goblin", "scene":WaveSpawner.ARCHER_GOBLIN_SCENE},
+		{"label":"Sword Goblin", "scene":WaveSpawner.SWORD_GOBLIN_SCENE},
 		{"label":"Bug", "scene":WaveSpawner.BUG_SCENE},
 		{"label":"Wolf", "scene":WaveSpawner.WOLF_SCENE},
 		{"label":"Ogre", "scene":WaveSpawner.OGRE_SCENE}

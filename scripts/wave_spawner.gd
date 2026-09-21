@@ -3,6 +3,8 @@ class_name WaveSpawner extends Node2D
 const WARNING_SCENE: PackedScene = preload("res://scenes/spawn_warning.tscn")
 const TURKEY_SCENE: PackedScene = preload("res://scenes/enemies/turkey.tscn")
 const GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/goblin.tscn")
+const ARCHER_GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/archer_goblin.tscn")
+const SWORD_GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/sword_goblin.tscn")
 const BUG_SCENE: PackedScene = preload("res://scenes/enemies/bug.tscn")
 const WOLF_SCENE: PackedScene = preload("res://scenes/enemies/wolf.tscn")
 const OGRE_SCENE: PackedScene = preload("res://scenes/enemies/ogre.tscn")
@@ -50,6 +52,7 @@ var wave_elapsed: float = 0.0
 var wave_duration: float = 30.0
 var spawn_timer: float = 0.0
 var wave_active: bool = false
+var cleanup_active: bool = false
 var awaiting_next_wave: bool = false
 var boss_active: bool = false
 ## Backyard can run this exact production spawner without granting drops or progression.
@@ -64,6 +67,7 @@ signal wave_started(number: int)
 signal boss_wave_started(number: int)
 signal boss_wave_cleared(number: int)
 signal wave_cleared(number: int)
+signal cleanup_started(remaining_enemies: int)
 signal enemy_defeated(points: int)
 signal enemy_defeated_with_identity(enemy_identity: StringName, points: int)
 
@@ -108,23 +112,29 @@ func _process(delta: float) -> void:
 				spawn_timer *= 2.0  # 50 % rate
 			_create_warning()
 		if wave_elapsed >= wave_duration and not boss_active:
-			for enemy_node: Node in get_tree().get_nodes_in_group("enemies"):
-				if is_instance_valid(enemy_node): enemy_node.queue_free()
+			enemies_to_spawn = 0
 			for warning_node: Node in get_tree().get_nodes_in_group("spawn_warnings"):
 				if is_instance_valid(warning_node): warning_node.queue_free()
-			enemies_to_spawn = 0
-			enemies_alive = 0
 			wave_active = false
-			wave_cleared.emit(current_wave)
-			if training_mode:
-				awaiting_next_wave = false
-				wave_timer = training_wave_interval
-			else:
-				awaiting_next_wave = true
-				wave_timer = -1.0
+			cleanup_active = true
+			cleanup_started.emit(_count_alive_enemies())
+	elif cleanup_active:
+		if _count_alive_enemies() <= 0:
+			_finish_wave_clear()
 	elif not awaiting_next_wave:
 		wave_timer -= delta
 		if wave_timer <= 0.0: _start_wave()
+
+func _finish_wave_clear() -> void:
+	cleanup_active = false
+	enemies_alive = 0
+	wave_cleared.emit(current_wave)
+	if training_mode:
+		awaiting_next_wave = false
+		wave_timer = training_wave_interval
+	else:
+		awaiting_next_wave = true
+		wave_timer = -1.0
 
 func begin_tutorial_turkeys() -> void:
 	tutorial_turkey_mode = true
@@ -192,6 +202,7 @@ func _start_wave() -> void:
 	wave_duration = minf(wave_duration_start + float(current_wave - 1) * wave_duration_step, wave_duration_max)
 	wave_elapsed = 0.0
 	wave_active = true
+	cleanup_active = false
 	spawn_timer = 0.0
 	wave_started.emit(current_wave)
 	if current_wave == ZungarConfig.BOSS_WAVE and not training_mode:
@@ -254,11 +265,13 @@ func _spawn_enemy(spawn_position: Vector2) -> void:
 	enemy.global_position = spawn_position
 	if training_mode:
 		enemy.set_meta("training_no_drops", true)
+	# Concrete enemies establish spawn_identity in _ready(). Add them first so
+	# quest tracking binds the real identity instead of Enemy's default "enemy".
+	get_parent().add_child(enemy)
 	enemy.tree_exited.connect(_enemy_died)
 	if not training_mode and not tutorial_turkey_mode:
 		enemy.defeated.connect(_on_enemy_defeated)
 		enemy.defeated.connect(_on_enemy_defeated_with_identity.bind(enemy.spawn_identity))
-	get_parent().add_child(enemy)
 
 func instantiate_enemy(scene: PackedScene) -> Enemy:
 	return scene.instantiate() as Enemy if scene != null else null
@@ -267,6 +280,8 @@ func scene_for_name(enemy_name: StringName) -> PackedScene:
 	match enemy_name:
 		&"turkey", &"chaser": return TURKEY_SCENE
 		&"goblin", &"duelist": return GOBLIN_SCENE
+		&"archer_goblin", &"archer": return ARCHER_GOBLIN_SCENE
+		&"sword_goblin", &"swordsman": return SWORD_GOBLIN_SCENE
 		&"bug", &"ranged": return BUG_SCENE
 		&"wolf", &"charger": return WOLF_SCENE
 		&"ogre", &"elite": return OGRE_SCENE
@@ -289,6 +304,8 @@ func spawn_boss_reinforcement(scene: PackedScene, spawn_position: Vector2) -> En
 func _available_enemy_scenes() -> Array[PackedScene]:
 	var available: Array[PackedScene] = [TURKEY_SCENE]
 	if current_wave >= 2: available.append(GOBLIN_SCENE)
+	if current_wave >= 3: available.append(SWORD_GOBLIN_SCENE)
+	if current_wave >= 4: available.append(ARCHER_GOBLIN_SCENE)
 	if current_wave >= 3: available.append(BUG_SCENE)
 	if current_wave >= 4: available.append(WOLF_SCENE)
 	if current_wave >= 5: available.append(OGRE_SCENE)
@@ -297,6 +314,8 @@ func _available_enemy_scenes() -> Array[PackedScene]:
 func _scene_balance_key(scene: PackedScene) -> StringName:
 	if scene == TURKEY_SCENE: return &"turkey"
 	if scene == GOBLIN_SCENE: return &"goblin"
+	if scene == ARCHER_GOBLIN_SCENE: return &"archer_goblin"
+	if scene == SWORD_GOBLIN_SCENE: return &"sword_goblin"
 	if scene == BUG_SCENE: return &"bug"
 	if scene == WOLF_SCENE: return &"wolf"
 	if scene == OGRE_SCENE: return &"ogre"

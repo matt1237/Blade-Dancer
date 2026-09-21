@@ -2,6 +2,8 @@ class_name HomeMenu extends Control
 
 const HOME_TUTORIAL_GUIDE_SCRIPT: Script = preload("res://scripts/ui/home_tutorial_guide.gd")
 const TUTORIAL_GLOW_SCRIPT: Script = preload("res://scripts/ui/tutorial_button_glow.gd")
+const RED_HEART_GLOW_SCRIPT: Script = preload("res://scripts/ui/red_heart_glow.gd")
+const HEART_CHARGE_TEXTURE: Texture2D = preload("res://assets/generated/ui_heart_charge.png")
 
 signal progression_changed(message: String)
 signal recipe_list_opened
@@ -105,6 +107,8 @@ var home_tutorial_guide: HomeTutorialGuide = null
 var quest_tracker_panel: Panel = null
 var quest_tracker_label: Label = null
 var cooking_bonus_button: Button = null
+var cooking_heart_badge: TextureRect = null
+var cooking_heart_glow: RedHeartGlow = null
 var cooking_bonus_selection_armed: bool = false
 var tutorial_star_glow: TutorialButtonGlow = null
 
@@ -142,32 +146,59 @@ func _update_quest_tracker() -> void:
 func _create_cooking_bonus_button() -> void:
 	cooking_bonus_button = Button.new()
 	cooking_bonus_button.name = "CookingBonusHeartButton"
-	cooking_bonus_button.position = Vector2(481.0, 398.0)
-	cooking_bonus_button.size = Vector2(320.0, 48.0)
-	cooking_bonus_button.text = "♥ GIVE THIS MEAL EXTRA LOVE"
-	cooking_bonus_button.add_theme_font_size_override("font_size", 17)
-	cooking_bonus_button.modulate = Color(1.0, 0.82, 0.55, 1.0)
-	cooking_bonus_button.visible = false
+	cooking_bonus_button.position = Vector2(438.0, 350.0)
+	cooking_bonus_button.size = Vector2(68.0, 68.0)
+	cooking_bonus_button.text = ""
+	cooking_bonus_button.icon = HEART_CHARGE_TEXTURE
+	cooking_bonus_button.expand_icon = true
+	cooking_bonus_button.tooltip_text = "Heart Charge: pass Cauldron Catch, then click this Heart and the cooking meal to make 2 servings."
+	cooking_bonus_button.visible = true
 	cooking_bonus_button.pressed.connect(_arm_cooking_bonus_selection)
 	kitchen_page.add_child(cooking_bonus_button)
+	cooking_heart_badge = TextureRect.new()
+	cooking_heart_badge.name = "CookingHeartBadge"
+	cooking_heart_badge.position = crafting_slot.position + Vector2(crafting_slot.size.x - 38.0, 4.0)
+	cooking_heart_badge.size = Vector2(32.0, 32.0)
+	cooking_heart_badge.texture = HEART_CHARGE_TEXTURE
+	cooking_heart_badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	cooking_heart_badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	cooking_heart_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cooking_heart_badge.visible = false
+	kitchen_page.add_child(cooking_heart_badge)
+	cooking_heart_glow = RED_HEART_GLOW_SCRIPT.new() as RedHeartGlow
+	cooking_heart_glow.name = "CookingHeartGlow"
+	add_child(cooking_heart_glow)
 
 func hide_cooking_bonus_button() -> void:
 	if cooking_bonus_button == null: return
-	cooking_bonus_button.visible = false
 	cooking_bonus_selection_armed = false
+	_update_cooking_heart_ui()
 	_update_crafting_slot()
 
 func show_cooking_bonus_button() -> void:
 	if cooking_bonus_button == null: return
-	cooking_bonus_button.visible = progression != null and progression.is_crafting()
+	cooking_bonus_button.visible = true
 	cooking_bonus_selection_armed = false
+	_update_cooking_heart_ui()
 	_update_crafting_slot()
 
+func _update_cooking_heart_ui() -> void:
+	if cooking_bonus_button == null or progression == null: return
+	var charged: bool = progression.cooking_bonus_pending
+	var applied: bool = progression.is_crafting() and progression.crafting_servings >= 2
+	cooking_bonus_button.disabled = not charged or applied
+	cooking_bonus_button.modulate = Color(1.0, 1.0, 1.0, 1.0 if charged else 0.4)
+	cooking_bonus_button.tooltip_text = "Heart charged — click it, then click the cooking meal." if charged else "Heart empty — pass Cauldron Catch to charge it."
+	if cooking_heart_glow != null: cooking_heart_glow.set_charged(cooking_bonus_button, charged)
+	if cooking_heart_badge != null: cooking_heart_badge.visible = applied
+
 func _arm_cooking_bonus_selection() -> void:
-	if progression == null or not progression.is_crafting() or not progression.cooking_bonus_pending: return
+	if progression == null or not progression.cooking_bonus_pending: return
+	if not progression.is_crafting():
+		feedback_label.text = "Start cooking a meal, then use this Heart on it."
+		return
 	cooking_bonus_selection_armed = true
-	cooking_bonus_button.text = "♥ NOW CLICK THE COOKING MEAL"
-	feedback_label.text = "Choose the meal currently being cooked."
+	feedback_label.text = "Now click the meal Grandma is cooking."
 	_update_crafting_slot()
 	cooking_bonus_selection_started.emit()
 
@@ -175,9 +206,7 @@ func _on_crafting_slot_pressed() -> void:
 	if cooking_bonus_selection_armed:
 		if progression != null and progression.apply_cooking_bonus_to_current_meal():
 			cooking_bonus_selection_armed = false
-			cooking_bonus_button.visible = false
-			cooking_bonus_button.text = "♥ GIVE THIS MEAL EXTRA LOVE"
-			feedback_label.text = "Grandma added extra love to this meal."
+			feedback_label.text = "Grandma added the Heart. This meal will make 2 servings."
 			_update_crafting_slot()
 			cooking_bonus_applied.emit()
 		return
@@ -452,6 +481,7 @@ func _ready() -> void:
 	queue_redraw()
 
 func _process(_delta: float) -> void:
+	if progression != null: _update_cooking_heart_ui()
 	if progression == null or not progression.is_crafting(): return
 	craft_progress.value = progression.crafting_progress() * 100.0
 	var remaining_second: int = ceili(progression.crafting_remaining_seconds())
@@ -646,6 +676,7 @@ func refresh(message: String = "") -> void:
 	storage_text.text = storage_lines
 	cooking_text.text = _cooking_summary_bbcode()
 	_update_crafting_slot()
+	_update_cooking_heart_ui()
 	_update_cauldron_catch_button()
 	_update_forge_button()
 	if food_list_panel.visible: _rebuild_food_list()

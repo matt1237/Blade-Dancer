@@ -251,17 +251,19 @@ func on_cauldron_result(passed: bool) -> bool:
 func on_cauldron_closed() -> void:
 	skip_button.visible = true
 	if stage != Stage.COOKING_STARTED: return
-	# Returning from the tutorial minigame completes Grandma's first stew now;
-	# never leave progression waiting on a hidden real-time timer.
-	if cauldron_passed and home_menu.progression.cooking_bonus_pending:
-		home_menu.progression.apply_cooking_bonus_to_current_meal()
-	var completed_recipe_id: String = home_menu.progression.finish_current_crafting_now()
-	if not completed_recipe_id.is_empty():
-		home_menu.refresh("Grandma finished %s!" % CookingConfig.recipe_name(completed_recipe_id))
-	stage = Stage.MEAL_READY
-	home_menu.show_tab(HomeMenu.Tab.STATUS)
-	_highlight(home_menu.food_slot, MEAL_PROMPT)
-	dialogue.start(MEAL_READY_PAGES)
+	if cauldron_passed:
+		stage = Stage.BONUS_HEART
+		home_menu.show_tab(HomeMenu.Tab.KITCHEN)
+		home_menu.show_cooking_bonus_button()
+		_highlight(home_menu.cooking_bonus_button, BONUS_HEART_PROMPT)
+		dialogue.start(CAULDRON_SUCCESS_PAGES)
+	else:
+		var completed_recipe_id: String = home_menu.progression.finish_current_crafting_now()
+		if not completed_recipe_id.is_empty(): home_menu.refresh("Grandma finished %s!" % CookingConfig.recipe_name(completed_recipe_id))
+		stage = Stage.MEAL_READY
+		home_menu.show_tab(HomeMenu.Tab.STATUS)
+		_highlight(home_menu.food_slot, MEAL_PROMPT)
+		dialogue.start(MEAL_READY_PAGES)
 
 func _on_bonus_selection_started() -> void:
 	if stage != Stage.BONUS_HEART: return
@@ -271,9 +273,13 @@ func _on_bonus_selection_started() -> void:
 
 func _on_bonus_applied() -> void:
 	if stage != Stage.BONUS_MEAL: return
-	stage = Stage.WAITING_FOR_MEAL
 	_clear_highlight()
-	dialogue.start(["Perfect! Grandma will put two servings in Storage when it is ready."])
+	var completed_recipe_id: String = home_menu.progression.finish_current_crafting_now()
+	if not completed_recipe_id.is_empty(): home_menu.refresh("Grandma finished %s with 2 servings!" % CookingConfig.recipe_name(completed_recipe_id))
+	stage = Stage.MEAL_READY
+	home_menu.show_tab(HomeMenu.Tab.STATUS)
+	_highlight(home_menu.food_slot, MEAL_PROMPT)
+	dialogue.start(MEAL_READY_PAGES)
 
 
 func skip_current_step() -> void:

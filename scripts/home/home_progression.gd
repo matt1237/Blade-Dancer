@@ -62,7 +62,7 @@ func begin_grandpa_chores() -> void:
 func record_grandpa_enemy_defeat(enemy_identity: StringName) -> void:
 	if not grandpa_chores_active: return
 	if enemy_identity == &"wolf": grandpa_wolves_defeated = mini(3, grandpa_wolves_defeated + 1)
-	if enemy_identity == &"goblin": grandpa_goblins_defeated = mini(3, grandpa_goblins_defeated + 1)
+	if enemy_identity in [&"goblin", &"archer_goblin", &"sword_goblin"]: grandpa_goblins_defeated = mini(3, grandpa_goblins_defeated + 1)
 
 func grandpa_chores_complete() -> bool:
 	return grandpa_chores_active and grandpa_stone_gathered >= 20 and grandpa_wood_gathered >= 20 and grandpa_wolves_defeated >= 3 and grandpa_goblins_defeated >= 3
@@ -165,7 +165,7 @@ func set_cooking_servings(servings: int) -> void:
 	cooking_bonus_pending = false
 
 func arm_cooking_bonus() -> bool:
-	if not is_crafting(): return false
+	# One stored Heart charge. Passing again while charged simply remains full.
 	cooking_bonus_pending = true
 	return true
 
@@ -183,7 +183,6 @@ func start_crafting(recipe_id: String, now_unix: float = -1.0) -> bool:
 	var start_time: float = Time.get_unix_time_from_system() if now_unix < 0.0 else now_unix
 	crafting_recipe_id = recipe_id
 	crafting_servings = 1
-	cooking_bonus_pending = false
 	crafting_started_at_unix = start_time
 	crafting_completes_at_unix = start_time + CookingConfig.crafting_time(recipe_id)
 	return true
@@ -220,7 +219,6 @@ func _complete_current_crafting() -> String:
 	crafting_started_at_unix = 0.0
 	crafting_completes_at_unix = 0.0
 	crafting_servings = 1
-	cooking_bonus_pending = false
 	return completed_recipe_id
 
 func prepare_food(food_id: String) -> bool:
