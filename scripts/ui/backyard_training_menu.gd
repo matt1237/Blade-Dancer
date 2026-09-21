@@ -32,6 +32,7 @@ var grapple_status_label: Label = null
 var windup_step_status_label: Label = null
 var experimental_bind_section: VBoxContainer = null
 var experimental_bind_status: Label = null
+var weapon_collision_zones_button: Button = null
 
 var last_hand_key: String = ""
 var last_contact_key: String = ""
@@ -679,6 +680,14 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	combat_status = Label.new()
 	combat_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(combat_status)
+
+	weapon_collision_zones_button = Button.new()
+	weapon_collision_zones_button.name = "WeaponCollisionZones"
+	weapon_collision_zones_button.focus_mode = Control.FOCUS_NONE
+	weapon_collision_zones_button.custom_minimum_size = Vector2(0.0, 44.0)
+	weapon_collision_zones_button.tooltip_text = "Developer overlay: red pommel, yellow grip/guard, cyan cutting blade, white swept motion."
+	weapon_collision_zones_button.pressed.connect(_toggle_weapon_collision_zones)
+	box.add_child(weapon_collision_zones_button)
 
 	var action_row: HBoxContainer = HBoxContainer.new()
 	action_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1731,12 +1740,26 @@ func _sync_experimental_bind_status(player_ref: Player) -> void:
 	if player_ref == null:
 		return
 
+func _toggle_weapon_collision_zones() -> void:
+	var player: Player = _player()
+	if player == null:
+		return
+	player.debug_draw_sword_collision = not player.debug_draw_sword_collision
+	_sync_weapon_collision_zones_button(player)
+
+func _sync_weapon_collision_zones_button(player: Player) -> void:
+	if weapon_collision_zones_button == null or player == null:
+		return
+	weapon_collision_zones_button.text = "WEAPON COLLISION ZONES: ON" if player.debug_draw_sword_collision else "WEAPON COLLISION ZONES: OFF"
+
 func open() -> void:
 	_bind_forest_visual_settings()
 	visible = true
 	_apply_training_layout()
 	_set_gameplay_input_locked(panel.visible)
 	_sync_bonus_rows()
+	var live_debug_player: Player = _player()
+	_sync_weapon_collision_zones_button(live_debug_player)
 	# The selector is only built once, so re-read the live equipped sword every
 	# time the menu opens -- otherwise it silently keeps showing whatever sword
 	# was equipped at boot instead of what the player is actually holding.

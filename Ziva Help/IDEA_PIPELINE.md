@@ -227,7 +227,30 @@ Depth should come from combining a small number of understandable verbs, not fro
 
 ---
 
-## 5. Combat Economy and First-Time Combat Teaching
+## 5. Weapon Collision Zone Audit
+
+**Status:** Shaped / Next Focus
+
+### Purpose
+
+Before returning to the playable tutorial route, verify every weapon's collision geometry against its rendered art. A developer-only overlay will show the live gameplay polyline using provisional colors: red for pommel, yellow for grip/guard, cyan for the cutting blade, white for the swept motion. This is an audit tool, not a second collision authority.
+
+### Acceptance
+
+- [ ] Audit every sword/weapon profile in the Backyard.
+- [ ] Confirm the actual blade begins at the guard and ends at the visible tip.
+- [ ] Confirm hilt/guard/pommel contact is separated from normal blade damage and Hilt Bash behavior.
+- [ ] Replace provisional boundaries with profile-owned values where visual evidence requires it.
+- [ ] Confirm curved weapons use whole-blade position for base-to-tip damage quality.
+- [ ] Disable the overlay by default after the audit while retaining the developer switch.
+
+### Resume Doorway
+
+Once the collision zones are visually trustworthy, return immediately to the tutorial route: centered invincible training dummy, guide chat, soundwave portrait, task widget, passive sword contacts, and player-authored sword contacts.
+
+---
+
+## 6. Combat Economy and First-Time Combat Teaching
 
 **Status:** Spark / Needs Playable Prototype
 

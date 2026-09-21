@@ -11,6 +11,7 @@ const BOSS_DIALOGUE_BOX_SCRIPT: Script = preload("res://scripts/ui/boss_dialogue
 const PAUSE_MENU_SCRIPT: Script = preload("res://scripts/ui/pause_menu.gd")
 const BACKYARD_TRAINING_MENU_SCRIPT: Script = preload("res://scripts/ui/backyard_training_menu.gd")
 const COMBAT_DEBUG_TRACKER_SCRIPT: Script = preload("res://scripts/ui/combat_debug_tracker.gd")
+const TUTORIAL_OVERLAY_SCRIPT: Script = preload("res://scripts/ui/tutorial_overlay.gd")
 const GLOBAL_PRESET_CONFIG_SCRIPT: Script = preload("res://scripts/global_preset_config.gd")
 const SPAWN_WARNING_SCENE: PackedScene = preload("res://scenes/spawn_warning.tscn")
 const TRAINING_DUMMY_SCENE: PackedScene = preload("res://scenes/training_dummy.tscn")
@@ -188,6 +189,7 @@ var training_dummy: TrainingDummy = null
 var test_turkey: Turkey = null
 var test_turkey_enabled: bool = false
 var combat_debug_tracker: CombatDebugTracker = null
+var tutorial_overlay: TutorialOverlay = null
 var forest_visual_settings: ForestVisualSettings = ForestVisualSettings.new()
 var forest_visual_settings_persistence_enabled: bool = false
 var active_forest_time_phase: String = "Morning"
@@ -305,6 +307,7 @@ func _ready() -> void:
 	spawner.boss_wave_started.connect(_on_boss_wave_started)
 	spawner.boss_wave_cleared.connect(_on_boss_wave_cleared)
 	spawner.enemy_defeated.connect(_on_enemy_defeated)
+	spawner.enemy_defeated_with_identity.connect(_on_enemy_defeated_with_identity)
 	player.health_changed.connect(_on_health_changed)
 	player.flow_changed.connect(_on_flow_changed)
 	player.style_changed.connect(_on_style_changed)
@@ -334,6 +337,7 @@ func _ready() -> void:
 	end_run_hub.connect("load_requested", Callable(self, "_load_from_hub"))
 	home_menu.connect("progression_changed", Callable(self, "_on_home_progression_changed"))
 	home_menu.connect("adventure_requested", Callable(self, "_return_to_adventure_from_home"))
+	home_menu.connect("tutorial_requested", Callable(self, "_start_tutorial"))
 	home_menu.connect("dev_wave_requested", Callable(self, "_set_dev_start_wave"))
 	home_menu.connect("dev_unlock_all_requested", Callable(self, "_unlock_all_for_dev"))
 	home_menu.connect("input_mode_changed", Callable(self, "_on_input_mode_changed"))
@@ -441,7 +445,7 @@ func _set_world_visible(world_visible: bool) -> void:
 	wave_timer_label.visible = world_visible
 	health_label.visible = world_visible
 	status_label.visible = world_visible
-	style_label.visible = world_visible
+	style_label.visible = false
 	flow_bar.visible = world_visible
 	$CanvasLayer/FlowTrack.visible = world_visible
 	flow_fill.visible = world_visible
@@ -1350,6 +1354,11 @@ func _on_flow_changed(current: float, _maximum: float) -> void:
 	dash_label.text = "Dash: %d / %d" % [player.dash_charges, player.max_dash_charges]
 	deflect_label.text = "Deflect: %d / %d" % [player.deflect_charges, BonusConfig.deflect_max_charges(player.deflect_rank)] if player.deflect_rank > 0 else "Deflect: -"
 
+func _on_enemy_defeated_with_identity(enemy_identity: StringName, _points: int) -> void:
+	if home_progression != null:
+		home_progression.record_grandpa_enemy_defeat(enemy_identity)
+		if is_instance_valid(home_menu): home_menu.call("refresh")
+
 func _on_enemy_defeated(points: int) -> void:
 	player.heal_from_kill()
 	var multiplier: float = 1.0
@@ -1360,9 +1369,10 @@ func _on_enemy_defeated(points: int) -> void:
 	score += int(roundi(float(points) * multiplier))
 	score_label.text = "Score: %d" % score
 
-func _on_style_changed(style_name: String) -> void:
-	var controls_hint: String = "D-Pad Left / Right" if input_mode == "controller" else "Z / X"
-	style_label.text = "Sword: %s | %s to change" % [style_name, controls_hint]
+func _on_style_changed(_style_name: String) -> void:
+	# Sword form is an internal development identity, not player-facing HUD.
+	style_label.text = ""
+	style_label.visible = false
 func _on_player_died() -> void:
 	_finish_run(true)
 
@@ -1923,7 +1933,10 @@ func spawn_terrain_drop(drop_position: Vector2, item_name: String, quantity: int
 
 func collect_drop(item_name: String, quantity: int) -> void:
 	home_progression.add_material(item_name, quantity)
+	if is_instance_valid(home_menu): home_menu.call("refresh")
 	pickup_feed.show_pickup(item_name, quantity, ItemConfig.rarity(item_name))
+	if tutorial_overlay != null and is_instance_valid(tutorial_overlay):
+		tutorial_overlay.register_material(item_name, quantity)
 	save_game()
 
 func _on_home_progression_changed(_message: String) -> void:
@@ -2196,17 +2209,40 @@ func _on_resonance_rush_closed() -> void:
 
 func _on_cauldron_catch_requested() -> void:
 	if is_instance_valid(cauldron_catch_instance): return
+	if is_instance_valid(home_menu):
+		home_menu.hide_cooking_bonus_button()
+		if home_menu.home_tutorial_guide != null:
+			home_menu.home_tutorial_guide.on_cauldron_started()
 	cauldron_catch_instance = CAULDRON_CATCH_SCENE.instantiate() as CauldronCatchGame
 	$CanvasLayer.add_child(cauldron_catch_instance)
 	cauldron_catch_instance.set_high_score(cauldron_catch_high_score)
+	cauldron_catch_instance.round_finished.connect(_on_cauldron_round_finished)
 	cauldron_catch_instance.closed.connect(_on_cauldron_catch_closed)
+	cauldron_catch_instance.quality_result.connect(_on_cauldron_quality_result)
 
-func _on_cauldron_catch_closed(final_score: int, _is_new_high_score: bool) -> void:
+func _on_cauldron_quality_result(passed: bool, _catch_rate: float) -> void:
+	if passed and home_progression != null:
+		home_progression.arm_cooking_bonus()
+	if not is_instance_valid(home_menu): return
+	if passed: home_menu.show_cooking_bonus_button()
+	var tutorial_handled: bool = false
+	if home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
+		tutorial_handled = home_menu.home_tutorial_guide.on_cauldron_result(passed)
+	if not tutorial_handled:
+		home_menu.show_cauldron_result(passed)
+
+func _on_cauldron_round_finished(final_score: int, _is_new_high_score: bool) -> void:
 	if final_score > cauldron_catch_high_score:
 		cauldron_catch_high_score = final_score
 		if is_instance_valid(home_menu): home_menu.call("set_cauldron_catch_high_score", cauldron_catch_high_score)
-		save_game()
+	save_game()
+
+func _on_cauldron_catch_closed(final_score: int, _is_new_high_score: bool) -> void:
+	_on_cauldron_round_finished(final_score, false)
 	cauldron_catch_instance = null
+	if is_instance_valid(home_menu) and home_menu.home_tutorial_guide != null:
+		home_menu.home_tutorial_guide.on_cauldron_closed()
+	save_game()
 	_advance_forest_time_phase()
 
 func _begin_prepared_expedition() -> void:
@@ -2223,13 +2259,108 @@ func _travel_home() -> void:
 	home_menu.call("open_home")
 	music_director.enter_home()
 
+func _start_tutorial() -> void:
+	home_menu.visible = false
+	end_run_hub.visible = false
+	get_tree().paused = false
+	_start_backyard_run()
+	# The tutorial lives in the forest presentation, but begins before arena
+	# modules, hazards, harvestables, and population props are introduced.
+	backyard_training_layout = "forest"
+	$ForestFloor.visible = true
+	$ForestRoad.visible = true
+	forest_ambient_fx.visible = true
+	arena_generator.visible = true
+	arena_generator.set_forest_content_enabled(false)
+	spawner.set_process(false)
+	_clear_runtime_entities()
+	set_training_dummy_enabled(true)
+	if is_instance_valid(training_dummy):
+		training_dummy.global_position = Vector2(640.0, 360.0)
+		training_dummy.lock_world_position()
+		training_dummy.hit_registered.connect(_on_tutorial_dummy_hit)
+	player.global_position = Vector2(430.0, 360.0)
+	if tutorial_overlay != null:
+		tutorial_overlay.queue_free()
+	tutorial_overlay = TUTORIAL_OVERLAY_SCRIPT.new() as TutorialOverlay
+	add_child(tutorial_overlay)
+	if not player.tutorial_action.is_connected(_on_tutorial_action):
+		player.tutorial_action.connect(_on_tutorial_action)
+	tutorial_overlay.gathering_started.connect(_on_tutorial_gathering_started)
+	tutorial_overlay.turkey_goal_completed.connect(_on_tutorial_turkey_goal_completed)
+	tutorial_overlay.tutorial_completed.connect(_on_tutorial_completed)
+
+func _on_tutorial_gathering_started() -> void:
+	var population: ArenaPopulation = get_arena_population()
+	if population != null:
+		population.populate_tutorial_gathering()
+	refresh_population_navigation()
+	spawner.begin_tutorial_turkeys()
+
+func _on_tutorial_turkey_goal_completed() -> void:
+	spawner.end_tutorial_turkeys()
+
+func _on_tutorial_completed() -> void:
+	# Let the player move in the completed clearing for a final beat before Home.
+	var completed_overlay: TutorialOverlay = tutorial_overlay
+	await get_tree().create_timer(5.0).timeout
+	if completed_overlay != tutorial_overlay or not is_instance_valid(completed_overlay):
+		return
+	# Never tear physics bodies down from the same callback/frame that may still
+	# be resolving a sword, Chakram, or pickup contact.
+	call_deferred("_return_home_after_tutorial")
+
+func _return_home_after_tutorial() -> void:
+	# Presentation changes first: stop simulation and cover the world before any
+	# physics-bearing tutorial content is queued for deletion.
+	player.set_physics_process(false)
+	player.grapple_controller.release_tether()
+	spawner.end_tutorial_turkeys()
+	run_over = true
+	end_run_hub.visible = false
+	_set_world_visible(false)
+	home_menu.call("configure", home_progression)
+	home_menu.visible = true
+	home_menu.call("open_home")
+	home_menu.call("start_post_field_tutorial")
+	music_director.enter_home()
+	save_game()
+	# Wait until both physics and process callbacks that observed the old world
+	# have retired. Cleanup uses queue_free exclusively after this point.
+	await get_tree().physics_frame
+	await get_tree().process_frame
+	var population: ArenaPopulation = get_arena_population()
+	if population != null:
+		population.stop_tutorial_gathering()
+	arena_generator.set_forest_content_enabled(false)
+	_clear_runtime_entities()
+	if tutorial_overlay != null and is_instance_valid(tutorial_overlay):
+		tutorial_overlay.queue_free()
+	tutorial_overlay = null
+	get_tree().paused = true
+
+func _on_tutorial_action(event_type: String, target: Node) -> void:
+	if tutorial_overlay == null or not is_instance_valid(tutorial_overlay):
+		return
+	var target_is_dummy: bool = target != null and target.is_in_group("training_dummy")
+	tutorial_overlay.register_action(event_type, target_is_dummy)
+
+func _on_tutorial_dummy_hit(_amount: float) -> void:
+	if tutorial_overlay == null or not is_instance_valid(tutorial_overlay):
+		return
+	tutorial_overlay.register_hit(_amount)
+
 func _return_to_adventure_from_home() -> void:
 	home_menu.visible = false
 	end_run_hub.visible = true
 	end_run_hub.call("show_tab", 3)
+	if home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
+		home_menu.home_tutorial_guide.on_adventure_opened(end_run_hub)
 	music_director.enter_adventure()
 
 func _on_adventure_zone_requested(zone_id: String) -> void:
+	if is_instance_valid(home_menu) and home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
+		home_menu.home_tutorial_guide.on_run_started()
 	if zone_id == "forest": _start_forest_run()
 	elif zone_id == "chasm": _start_chasm_run()
 	elif zone_id == "backyard": _start_backyard_run()

@@ -2,8 +2,8 @@ class_name SwordInteractionResolver extends RefCounted
 
 const SWEEP_SAMPLES: int = 6
 const QUALITY_SPEED_REFERENCE: float = 900.0
-const QUALITY_GUARD_WEIGHT: float = 0.6
-const QUALITY_TIP_WEIGHT: float = 0.4
+const QUALITY_HILT_WEIGHT: float = 0.4
+const QUALITY_TIP_CURVE_EXPONENT: float = 2.0
 
 static func swept_contact(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, target: Vector2, target_radius: float, delta: float, player_velocity: Vector2 = Vector2.ZERO, movement_contribution: float = 0.25, movement_speed_cap: float = 250.0) -> SwordContactData:
 	var contact: SwordContactData = SwordContactData.new()
@@ -34,7 +34,9 @@ static func swept_contact(previous_start: Vector2, previous_end: Vector2, curren
 	var movement_speed: float = minf(player_velocity.length(), maxf(0.0, movement_speed_cap))
 	var movement_credit: float = movement_speed * clampf(movement_contribution, 0.0, 1.0)
 	contact.impact_speed = contact.relative_velocity.length() + movement_credit
-	contact.impact_quality = clampf(contact.impact_speed / QUALITY_SPEED_REFERENCE * (QUALITY_GUARD_WEIGHT + best_blade_position * QUALITY_TIP_WEIGHT), 0.0, 1.0)
+	var curved_blade_position: float = pow(clampf(best_blade_position, 0.0, 1.0), QUALITY_TIP_CURVE_EXPONENT)
+	var blade_position_weight: float = lerpf(QUALITY_HILT_WEIGHT, 1.0, curved_blade_position)
+	contact.impact_quality = clampf(contact.impact_speed / QUALITY_SPEED_REFERENCE * blade_position_weight, 0.0, 1.0)
 	contact.impact_normal = target.direction_to(best_point) if target.distance_to(best_point) > 0.01 else -contact.blade_direction
 	return contact
 

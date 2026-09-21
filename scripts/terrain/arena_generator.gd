@@ -180,9 +180,16 @@ func _module_footprint(module: Node2D) -> Rect2:
 	return Rect2(module.global_position - Vector2.ONE * 24.0, Vector2.ONE * 48.0)
 
 func _clear_generated_modules() -> void:
-	for child: Node in get_children(): child.free()
+	# Terrain can be disabled while the sword, Chakram, or navigation server still
+	# references a generated physics body. Detach it immediately so gameplay no
+	# longer sees it, then let Godot destroy it at the safe end-of-frame boundary.
+	for child: Node in get_children():
+		remove_child(child)
+		child.queue_free()
 	if trap_overlay != null:
-		for trap_child: Node in trap_overlay.get_children(): trap_child.free()
+		for trap_child: Node in trap_overlay.get_children():
+			trap_overlay.remove_child(trap_child)
+			trap_child.queue_free()
 	placed_bounds.clear()
 	blocking_bounds.clear()
 	wall_collision_bounds.clear()

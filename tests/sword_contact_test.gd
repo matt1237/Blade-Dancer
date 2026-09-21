@@ -6,6 +6,14 @@ const ENEMY_SCENE: PackedScene = preload("res://scenes/enemy.tscn")
 ## Body overlap alone cannot deal sword damage because the sword-hit loop first
 ## requires swept weapon geometry. No extra player-center exclusion should
 ## cancel a valid weapon hit once that geometric contact exists.
+func test_sword_damage_rewards_authored_relative_blade_speed_without_zeroing_passive_play() -> void:
+	var passive: float = Player.calculate_engaged_sword_damage_multiplier(0.0, 0.30, 1.0, 700.0)
+	var composed: float = Player.calculate_engaged_sword_damage_multiplier(350.0, 0.30, 1.0, 700.0)
+	var committed: float = Player.calculate_engaged_sword_damage_multiplier(700.0, 0.30, 1.0, 700.0)
+	assert(is_equal_approx(passive, 0.30), "Passive metronome contact must retain a meaningful baseline.")
+	assert(composed > passive and composed < committed, "Intermediate authored movement must receive smoothly increasing damage.")
+	assert(is_equal_approx(committed, 1.0), "A fully authored relative blade speed must reach the engaged damage ceiling.")
+
 func test_sword_contact_has_no_player_center_exclusion() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)

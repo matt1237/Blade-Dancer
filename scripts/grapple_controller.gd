@@ -43,8 +43,8 @@ const TUNING_DEFAULTS: Dictionary = {
 	"yoyo_soft_tension_zone": 72.0, "yoyo_radial_damping": 18.0,
 	"yoyo_orbit_drag": 0.35, "yoyo_orbit_slack_recovery_speed": 180.0,
 	"yoyo_min_orbit_time": 1.25, "yoyo_recall_speed_threshold": 120.0,
-	"yoyo_static_pivot_enabled": false,
-	"yoyo_boundary_wrap_enabled": false,
+	"yoyo_static_pivot_enabled": true,
+	"yoyo_boundary_wrap_enabled": true,
 	"yoyo_wrap_commit_turns": 0.45, "yoyo_coil_revolutions": 1.5,
 	"yoyo_coil_tangential_speed": 760.0, "yoyo_coil_radial_speed": 220.0,
 	"yoyo_coil_speed_gain": 0.35, "yoyo_coil_hold_duration": 1.0, "yoyo_unwind_speed": 420.0
@@ -134,12 +134,10 @@ var mastery_range_multiplier: float = 1.0
 @export var yoyo_min_orbit_time: float = 1.25
 ## Tangential speed above this value sustains the orbit after the hang window.
 @export var yoyo_recall_speed_threshold: float = 120.0
-## Enables the retained one-point static obstruction pivot.
-## Disabled by default while the direct Chakram yo-yo is the active mechanic.
-@export var yoyo_static_pivot_enabled: bool = false
-## Enables the retained experimental enemy and collision-boundary wrap solver.
-## Disabled by default; direct Chakram yo-yo remains the normal path.
-@export var yoyo_boundary_wrap_enabled: bool = false
+## Enables the one-point static obstruction pivot.
+@export var yoyo_static_pivot_enabled: bool = true
+## Enables enemy and collision-boundary wrap and committed coil behavior.
+@export var yoyo_boundary_wrap_enabled: bool = true
 ## Player-authored winding required before the rest of the coil commits.
 @export_range(0.1, 1.0, 0.05) var yoyo_wrap_commit_turns: float = 0.45
 ## Full target-relative turns completed after player-authored commitment.
@@ -202,6 +200,15 @@ var yoyo_enemy_previous_exit_angle: float = 0.0
 var yoyo_enemy_arc_initialized: bool = false
 var yoyo_enemy_minimum_arc: float = 0.0
 var yoyo_enemy_winding_delta: float = 0.0
+## Capsule-specific boundary state. The capsule path is measured on its actual
+## segment-plus-semicircles boundary; it is never reduced to a circle.
+var yoyo_enemy_capsule_active: bool = false
+var yoyo_enemy_capsule_a: Vector2 = Vector2.ZERO
+var yoyo_enemy_capsule_b: Vector2 = Vector2.ZERO
+var yoyo_enemy_capsule_radius: float = 0.0
+var yoyo_enemy_capsule_entry_parameter: float = 0.0
+var yoyo_enemy_capsule_previous_exit_parameter: float = 0.0
+var yoyo_enemy_capsule_arc_length: float = 0.0
 var yoyo_coil_hit_consumed: bool = false
 var yoyo_coil_phase: YoyoCoilPhase = YoyoCoilPhase.NONE
 var yoyo_coil_progress: float = 0.0
@@ -312,14 +319,16 @@ static func yoyo_local_rope_length(total_rope_length: float, hand: Vector2, wrap
 
 func _yoyo_live_path_length(hand: Vector2, chakram_position: Vector2) -> float:
 	if yoyo_wrap_active and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
-		return hand.distance_to(yoyo_enemy_entry_point) + yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius + yoyo_enemy_exit_point.distance_to(chakram_position)
+		var boundary_length: float = yoyo_enemy_capsule_arc_length if yoyo_enemy_capsule_active else yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius
+		return hand.distance_to(yoyo_enemy_entry_point) + boundary_length + yoyo_enemy_exit_point.distance_to(chakram_position)
 	if yoyo_wrap_active and not yoyo_wrap_bounds.size.is_zero_approx():
 		return hand.distance_to(yoyo_rect_entry_point) + yoyo_rect_arc_length + yoyo_rect_exit_point.distance_to(chakram_position)
 	return yoyo_path_length(hand, chakram_position, yoyo_wrap_active, yoyo_wrap_position)
 
 func _yoyo_consumed_prefix(hand: Vector2) -> float:
 	if yoyo_wrap_active and is_instance_valid(yoyo_wrap_object) and yoyo_wrap_object is Enemy:
-		return hand.distance_to(yoyo_enemy_entry_point) + yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius
+		var boundary_length: float = yoyo_enemy_capsule_arc_length if yoyo_enemy_capsule_active else yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius
+		return hand.distance_to(yoyo_enemy_entry_point) + boundary_length
 	if yoyo_wrap_active and not yoyo_wrap_bounds.size.is_zero_approx():
 		return hand.distance_to(yoyo_rect_entry_point) + yoyo_rect_arc_length
 	return hand.distance_to(yoyo_wrap_position) if yoyo_wrap_active else 0.0
@@ -465,22 +474,173 @@ static func enemy_collision_circle(enemy: Enemy) -> Dictionary:
 		return {"supported": false, "center": Vector2.ZERO, "radius": 0.0}
 	var shape_node: CollisionShape2D = enemy.get_node_or_null("CollisionShape2D") as CollisionShape2D
 	if shape_node == null or shape_node.shape == null or shape_node.disabled or not shape_node.shape is CircleShape2D:
-		# Do not invent a radius for an unsupported enemy collider. A wrap that
-		# cannot name its real boundary must refuse acquisition.
 		return {"supported": false, "center": enemy.global_position, "radius": 0.0}
 	var shape_scale: Vector2 = shape_node.global_transform.get_scale().abs()
 	var circle: CircleShape2D = shape_node.shape as CircleShape2D
 	var radius: float = circle.radius * maxf(shape_scale.x, shape_scale.y)
 	return {"supported": radius > 0.0, "center": shape_node.global_position, "radius": maxf(1.0, radius)}
 
+## Exact capsule helpers. `a` and `b` are the world-space endpoints of the
+## capsule's medial segment (not its full bounding-box endpoints).
+static func yoyo_capsule_surface_point(point: Vector2, a: Vector2, b: Vector2, radius: float) -> Vector2:
+	var axis: Vector2 = b - a
+	var axis_len_sq: float = axis.length_squared()
+	var t: float = clampf((point - a).dot(axis) / axis_len_sq, 0.0, 1.0) if axis_len_sq > 0.000001 else 0.0
+	var spine: Vector2 = a.lerp(b, t)
+	var normal: Vector2 = spine.direction_to(point)
+	if normal.length_squared() < 0.000001:
+		normal = Vector2(-axis.y, axis.x).normalized() if axis_len_sq > 0.000001 else Vector2.RIGHT
+	return spine + normal * maxf(0.001, radius)
+
+static func yoyo_point_inside_capsule(point: Vector2, a: Vector2, b: Vector2, radius: float) -> bool:
+	var spine: Vector2 = b - a
+	var spine_length_squared: float = spine.length_squared()
+	var along: float = clampf((point - a).dot(spine) / spine_length_squared, 0.0, 1.0) if spine_length_squared > 0.000001 else 0.0
+	return point.distance_squared_to(a.lerp(b, along)) <= radius * radius
+
+static func yoyo_capsule_segment_overlaps(start: Vector2, end: Vector2, a: Vector2, b: Vector2, radius: float) -> bool:
+	# Projectile sweeps must still count when a frame begins or ends inside the
+	# capsule. Wrap acquisition intentionally rejects those endpoints, so it uses
+	# the stricter yoyo_capsule_segment_hit helper below.
+	if yoyo_point_inside_capsule(start, a, b, radius) or yoyo_point_inside_capsule(end, a, b, radius):
+		return true
+	return yoyo_capsule_segment_hit(start, end, a, b, radius) != Vector2.INF
+
+static func yoyo_capsule_segment_hit(start: Vector2, end: Vector2, a: Vector2, b: Vector2, radius: float) -> Vector2:
+	# Exact closest points of two finite segments. A capsule is the radius
+	# offset of its medial segment, so this is an exact capsule sweep test.
+	var r: Vector2 = end - start
+	var s: Vector2 = b - a
+	var candidates: Array[Vector2] = [start, end]
+	if r.length_squared() > 0.000001:
+		candidates.append(start + r * clampf((a - start).dot(r) / r.length_squared(), 0.0, 1.0))
+		candidates.append(start + r * clampf((b - start).dot(r) / r.length_squared(), 0.0, 1.0))
+	if s.length_squared() > 0.000001:
+		candidates.append(start + r * clampf((a - start).dot(r) / r.length_squared(), 0.0, 1.0))
+		candidates.append(start + r * clampf((b - start).dot(r) / r.length_squared(), 0.0, 1.0))
+	var cross_rs: float = r.cross(s)
+	if absf(cross_rs) > 0.000001:
+		var q: Vector2 = a - start
+		var t: float = q.cross(s) / cross_rs
+		var u: float = q.cross(r) / cross_rs
+		if t >= 0.0 and t <= 1.0 and u >= 0.0 and u <= 1.0:
+			candidates.append(start + r * t)
+	var best: Vector2 = start
+	var best_d2: float = INF
+	for rope_point: Vector2 in candidates:
+		var spine_t: float = clampf((rope_point - a).dot(s) / s.length_squared(), 0.0, 1.0) if s.length_squared() > 0.000001 else 0.0
+		var distance_sq: float = rope_point.distance_squared_to(a.lerp(b, spine_t))
+		if distance_sq < best_d2:
+			best_d2 = distance_sq
+			best = rope_point
+	var safe_radius: float = maxf(0.001, radius)
+	if best_d2 > safe_radius * safe_radius:
+		return Vector2.INF
+	if start.distance_squared_to(a.lerp(b, clampf((start - a).dot(s) / s.length_squared(), 0.0, 1.0) if s.length_squared() > 0.000001 else 0.0)) <= safe_radius * safe_radius or end.distance_squared_to(a.lerp(b, clampf((end - a).dot(s) / s.length_squared(), 0.0, 1.0) if s.length_squared() > 0.000001 else 0.0)) <= safe_radius * safe_radius:
+		return Vector2.INF
+	return best
+
+static func yoyo_capsule_tangent(a: Vector2, b: Vector2, radius: float, endpoint: Vector2, side: float) -> Vector2:
+	var axis: Vector2 = b - a
+	var length: float = axis.length()
+	if length < 0.001:
+		return yoyo_circle_tangent(a, endpoint, radius, side)
+	var unit: Vector2 = axis / length
+	var normal: Vector2 = Vector2(-unit.y, unit.x) * signf(side)
+	var candidates: Array[Vector2] = []
+	var projection: float = (endpoint - a).dot(unit)
+	if projection >= 0.0 and projection <= length:
+		candidates.append(a + unit * projection + normal * radius)
+	for cap: Vector2 in [a, b]:
+		var delta: Vector2 = endpoint - cap
+		var distance: float = delta.length()
+		if distance <= radius + 0.001:
+			continue
+		var tangent_offset: float = acos(clampf(radius / distance, -1.0, 1.0))
+		var candidate: Vector2 = cap + Vector2.RIGHT.rotated(delta.angle() + signf(side) * tangent_offset) * radius
+		var cap_direction: float = 1.0 if cap == b else -1.0
+		if (candidate - cap).dot(unit) * cap_direction >= -0.001:
+			candidates.append(candidate)
+	if candidates.is_empty():
+		return yoyo_capsule_surface_point(endpoint, a, b, radius)
+	var selected: Vector2 = candidates[0]
+	for candidate: Vector2 in candidates:
+		if endpoint.distance_squared_to(candidate) < endpoint.distance_squared_to(selected):
+			selected = candidate
+	return selected
+
+static func yoyo_capsule_perimeter_length(a: Vector2, b: Vector2, radius: float) -> float:
+	return 2.0 * a.distance_to(b) + TAU * maxf(0.001, radius)
+
+static func yoyo_capsule_perimeter_parameter(point: Vector2, a: Vector2, b: Vector2, radius: float) -> float:
+	var axis: Vector2 = b - a
+	var length: float = axis.length()
+	var r: float = maxf(0.001, radius)
+	if length < 0.001:
+		return fposmod((point - a).angle() * r, TAU * r)
+	var unit: Vector2 = axis / length
+	var normal: Vector2 = Vector2(-unit.y, unit.x)
+	var local: Vector2 = Vector2((point - a).dot(unit), (point - a).dot(normal))
+	if local.x <= 0.0:
+		var a_angle: float = fposmod(atan2(local.y, local.x), TAU)
+		return 2.0 * length + PI * r + (a_angle - PI * 0.5) * r
+	if local.x >= length:
+		var b_angle: float = atan2(local.y, local.x - length)
+		return length + (b_angle + PI * 0.5) * r
+	return local.x if local.y < 0.0 else length + PI * r + (length - local.x)
+
+static func yoyo_capsule_perimeter_point(a: Vector2, b: Vector2, radius: float, parameter: float) -> Vector2:
+	var axis: Vector2 = b - a
+	var length: float = axis.length()
+	var r: float = maxf(0.001, radius)
+	if length < 0.001:
+		return a + Vector2.from_angle(parameter / r) * r
+	var unit: Vector2 = axis / length
+	var normal: Vector2 = Vector2(-unit.y, unit.x)
+	var perimeter: float = yoyo_capsule_perimeter_length(a, b, r)
+	var p: float = fposmod(parameter, perimeter)
+	if p <= length:
+		return a + unit * p - normal * r
+	if p <= length + PI * r:
+		var b_angle: float = -PI * 0.5 + (p - length) / r
+		return b + unit * (cos(b_angle) * r) + normal * (sin(b_angle) * r)
+	if p <= 2.0 * length + PI * r:
+		return b - unit * (p - length - PI * r) + normal * r
+	var a_angle: float = PI * 0.5 + (p - 2.0 * length - PI * r) / r
+	return a + unit * (cos(a_angle) * r) + normal * (sin(a_angle) * r)
+
+static func yoyo_capsule_directed_distance(from_parameter: float, to_parameter: float, winding_sign: float, perimeter: float) -> float:
+	return fposmod(to_parameter - from_parameter if winding_sign >= 0.0 else from_parameter - to_parameter, perimeter)
+
+static func enemy_collision_boundary(enemy: Enemy) -> Dictionary:
+	if enemy == null:
+		return {"supported": false}
+	var shape_node: CollisionShape2D = enemy.get_node_or_null("CollisionShape2D") as CollisionShape2D
+	if shape_node == null or shape_node.shape == null or shape_node.disabled:
+		return {"supported": false}
+	var shape_scale: Vector2 = shape_node.global_transform.get_scale().abs()
+	if shape_node.shape is CircleShape2D:
+		var circle: CircleShape2D = shape_node.shape as CircleShape2D
+		return {"supported": circle.radius > 0.0, "kind": "circle", "center": shape_node.global_position, "radius": maxf(1.0, circle.radius * maxf(shape_scale.x, shape_scale.y))}
+	if shape_node.shape is CapsuleShape2D and is_equal_approx(shape_scale.x, shape_scale.y):
+		var capsule: CapsuleShape2D = shape_node.shape as CapsuleShape2D
+		var radius: float = capsule.radius * shape_scale.x
+		var half_segment: float = maxf(0.0, capsule.height * 0.5 - capsule.radius) * shape_scale.x
+		var axis: Vector2 = shape_node.global_transform.y.normalized()
+		return {"supported": radius > 0.0, "kind": "capsule", "center": shape_node.global_position, "radius": radius, "a": shape_node.global_position - axis * half_segment, "b": shape_node.global_position + axis * half_segment}
+	return {"supported": false}
+
+static func _enemy_collision_boundary(enemy: Enemy) -> Dictionary:
+	return enemy_collision_boundary(enemy)
+
 func _enemy_wrap_radius(enemy: Enemy) -> float:
-	return enemy_collision_circle(enemy).get("radius", 0.0) as float
+	return float(enemy_collision_boundary(enemy).get("radius", 0.0))
 
 func _enemy_wrap_supported(enemy: Enemy) -> bool:
-	return bool(enemy_collision_circle(enemy).get("supported", false))
+	return bool(enemy_collision_boundary(enemy).get("supported", false))
 
 func _enemy_wrap_center(enemy: Enemy) -> Vector2:
-	return enemy_collision_circle(enemy).get("center", enemy.global_position) as Vector2
+	return enemy_collision_boundary(enemy).get("center", enemy.global_position) as Vector2
 
 func _yoyo_enemy_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D = null) -> Dictionary:
 	if player == null or not player.is_inside_tree():
@@ -489,14 +649,23 @@ func _yoyo_enemy_obstruction_hit(start: Vector2, end: Vector2, excluded: Node2D 
 		var enemy: Enemy = node as Enemy
 		if enemy == null or enemy == excluded or not is_instance_valid(enemy) or enemy.health <= 0.0 or not _enemy_wrap_supported(enemy):
 			continue
-		var center: Vector2 = _enemy_wrap_center(enemy)
-		var hit: Vector2 = yoyo_enemy_segment_hit(start, end, center, _enemy_wrap_radius(enemy))
+		var boundary: Dictionary = _enemy_collision_boundary(enemy)
+		var hit: Vector2
+		var surface: Vector2
+		if boundary.get("kind", "") == "capsule":
+			hit = yoyo_capsule_segment_hit(start, end, boundary["a"], boundary["b"], boundary["radius"])
+			if hit != Vector2.INF:
+				surface = yoyo_capsule_surface_point(hit, boundary["a"], boundary["b"], boundary["radius"])
+		else:
+			var center: Vector2 = boundary.get("center", enemy.global_position)
+			hit = yoyo_enemy_segment_hit(start, end, center, boundary.get("radius", 0.0))
+			if hit != Vector2.INF:
+				var outward: Vector2 = center.direction_to(hit)
+				if outward == Vector2.ZERO:
+					outward = start.direction_to(end)
+				surface = center + outward * boundary.get("radius", 0.0)
 		if hit == Vector2.INF:
 			continue
-		var outward: Vector2 = center.direction_to(hit)
-		if outward == Vector2.ZERO:
-			outward = start.direction_to(end)
-		var surface: Vector2 = center + outward * _enemy_wrap_radius(enemy)
 		return {"position": surface, "object": enemy}
 	return {}
 
@@ -564,6 +733,13 @@ func _clear_yoyo_wrap(reacquire_blocked_object: Node2D = null) -> void:
 	yoyo_enemy_arc_initialized = false
 	yoyo_enemy_minimum_arc = 0.0
 	yoyo_enemy_winding_delta = 0.0
+	yoyo_enemy_capsule_active = false
+	yoyo_enemy_capsule_a = Vector2.ZERO
+	yoyo_enemy_capsule_b = Vector2.ZERO
+	yoyo_enemy_capsule_radius = 0.0
+	yoyo_enemy_capsule_entry_parameter = 0.0
+	yoyo_enemy_capsule_previous_exit_parameter = 0.0
+	yoyo_enemy_capsule_arc_length = 0.0
 	yoyo_coil_hit_consumed = false
 	yoyo_coil_phase = YoyoCoilPhase.NONE
 	yoyo_coil_progress = 0.0
@@ -601,6 +777,37 @@ func _update_rect_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 	yoyo_wrap_position = yoyo_rect_exit_point
 	if yoyo_rect_arc_length <= 0.03 and not yoyo_segment_crosses_rect(hand_position, chakram_position, bounds.grow(2.0)):
 		_clear_yoyo_wrap(yoyo_wrap_object)
+
+func _update_capsule_contacts(hand: Vector2, endpoint: Vector2, boundary: Dictionary, enemy: Enemy) -> void:
+	var a: Vector2 = boundary["a"]
+	var b: Vector2 = boundary["b"]
+	var radius: float = boundary["radius"]
+	yoyo_enemy_entry_point = yoyo_capsule_tangent(a, b, radius, hand, yoyo_enemy_wrap_sign)
+	yoyo_enemy_exit_point = yoyo_capsule_tangent(a, b, radius, endpoint, -yoyo_enemy_wrap_sign)
+	var perimeter: float = yoyo_capsule_perimeter_length(a, b, radius)
+	var entry: float = yoyo_capsule_perimeter_parameter(yoyo_enemy_entry_point, a, b, radius)
+	var exit: float = yoyo_capsule_perimeter_parameter(yoyo_enemy_exit_point, a, b, radius)
+	if not yoyo_enemy_capsule_active:
+		yoyo_enemy_capsule_arc_length = yoyo_capsule_directed_distance(entry, exit, yoyo_enemy_wrap_sign, perimeter)
+		yoyo_enemy_capsule_active = true
+	else:
+		var entry_delta: float = wrapf(entry - yoyo_enemy_capsule_entry_parameter, -perimeter * 0.5, perimeter * 0.5)
+		var exit_delta: float = wrapf(exit - yoyo_enemy_capsule_previous_exit_parameter, -perimeter * 0.5, perimeter * 0.5)
+		yoyo_enemy_capsule_arc_length = maxf(0.0, yoyo_enemy_capsule_arc_length + (exit_delta - entry_delta) * yoyo_enemy_wrap_sign)
+	yoyo_enemy_capsule_a = a
+	yoyo_enemy_capsule_b = b
+	yoyo_enemy_capsule_radius = radius
+	yoyo_enemy_capsule_entry_parameter = entry
+	yoyo_enemy_capsule_previous_exit_parameter = exit
+	yoyo_enemy_entry_angle = 0.0
+	yoyo_enemy_winding_delta = 0.0
+	yoyo_wrap_position = yoyo_enemy_exit_point
+	if yoyo_coil_phase == YoyoCoilPhase.NONE:
+		yoyo_coil_phase = YoyoCoilPhase.TRACKING
+	if yoyo_coil_phase == YoyoCoilPhase.TRACKING and yoyo_enemy_capsule_arc_length >= perimeter * clampf(yoyo_wrap_commit_turns, 0.1, 1.0):
+		yoyo_coil_phase = YoyoCoilPhase.COMMITTED
+		yoyo_coil_committed_enemy_id = enemy.get_instance_id()
+		yoyo_coil_progress = 0.0
 
 func _update_circle_contacts(hand: Vector2, endpoint: Vector2, center: Vector2, radius: float, enemy: Enemy) -> void:
 	yoyo_enemy_entry_point = yoyo_circle_tangent(center, hand, radius, yoyo_enemy_wrap_sign)
@@ -735,10 +942,15 @@ func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 			if wrapped_enemy.health <= 0.0 or not _enemy_wrap_supported(wrapped_enemy):
 				_clear_yoyo_wrap()
 				return
-			var center: Vector2 = _enemy_wrap_center(wrapped_enemy)
-			var radius: float = _enemy_wrap_radius(wrapped_enemy)
+			var boundary: Dictionary = enemy_collision_boundary(wrapped_enemy)
+			var center: Vector2 = boundary.get("center", wrapped_enemy.global_position)
+			var radius: float = boundary.get("radius", 0.0)
 			yoyo_enemy_wrap_radius = radius
-			_update_circle_contacts(hand_position, chakram_position, center, radius, wrapped_enemy)
+			if boundary.get("kind", "") == "capsule":
+				_update_capsule_contacts(hand_position, chakram_position, boundary, wrapped_enemy)
+			else:
+				yoyo_enemy_capsule_active = false
+				_update_circle_contacts(hand_position, chakram_position, center, radius, wrapped_enemy)
 			return
 		# Rectangle adapters use the active collision boundary itself. The entry
 		# parameter stays fixed while the exit parameter advances along the live
@@ -795,7 +1007,18 @@ func _update_yoyo_wrap(hand_position: Vector2, chakram_position: Vector2, _delta
 		yoyo_rect_exit_point = exit_surface
 	if yoyo_wrap_object is Enemy:
 		var enemy: Enemy = yoyo_wrap_object as Enemy
-		yoyo_enemy_wrap_sign = yoyo_shortest_wrap_sign(_enemy_wrap_center(enemy), hand_position, chakram_position, _enemy_wrap_radius(enemy))
+		var boundary: Dictionary = _enemy_collision_boundary(enemy)
+		if boundary.get("kind", "") == "capsule":
+			var positive_entry: Vector2 = yoyo_capsule_tangent(boundary["a"], boundary["b"], boundary["radius"], hand_position, 1.0)
+			var positive_exit: Vector2 = yoyo_capsule_tangent(boundary["a"], boundary["b"], boundary["radius"], chakram_position, -1.0)
+			var negative_entry: Vector2 = yoyo_capsule_tangent(boundary["a"], boundary["b"], boundary["radius"], hand_position, -1.0)
+			var negative_exit: Vector2 = yoyo_capsule_tangent(boundary["a"], boundary["b"], boundary["radius"], chakram_position, 1.0)
+			var perimeter: float = yoyo_capsule_perimeter_length(boundary["a"], boundary["b"], boundary["radius"])
+			var positive_arc: float = yoyo_capsule_directed_distance(yoyo_capsule_perimeter_parameter(positive_entry, boundary["a"], boundary["b"], boundary["radius"]), yoyo_capsule_perimeter_parameter(positive_exit, boundary["a"], boundary["b"], boundary["radius"]), 1.0, perimeter)
+			var negative_arc: float = yoyo_capsule_directed_distance(yoyo_capsule_perimeter_parameter(negative_entry, boundary["a"], boundary["b"], boundary["radius"]), yoyo_capsule_perimeter_parameter(negative_exit, boundary["a"], boundary["b"], boundary["radius"]), -1.0, perimeter)
+			yoyo_enemy_wrap_sign = 1.0 if hand_position.distance_to(positive_entry) + positive_arc + positive_exit.distance_to(chakram_position) <= hand_position.distance_to(negative_entry) + negative_arc + negative_exit.distance_to(chakram_position) else -1.0
+		else:
+			yoyo_enemy_wrap_sign = yoyo_shortest_wrap_sign(_enemy_wrap_center(enemy), hand_position, chakram_position, _enemy_wrap_radius(enemy))
 		_update_yoyo_wrap(hand_position, chakram_position, 0.0)
 
 func _coil_motion_is_clear(moving_target: Node2D, wrapped_enemy: Enemy, from_position: Vector2, to_position: Vector2, moving_radius: float) -> bool:
@@ -808,8 +1031,11 @@ func _coil_motion_is_clear(moving_target: Node2D, wrapped_enemy: Enemy, from_pos
 		var obstacle: Enemy = node as Enemy
 		if obstacle == null or obstacle == moving_target or obstacle == wrapped_enemy or obstacle.health <= 0.0:
 			continue
-		var boundary: Dictionary = enemy_collision_circle(obstacle)
-		if bool(boundary.get("supported", false)) and Chakram.swept_circle_contact(from_position, to_position, boundary.get("center") as Vector2, moving_radius + float(boundary.get("radius", 0.0))):
+		var boundary: Dictionary = enemy_collision_boundary(obstacle)
+		if boundary.get("kind", "") == "capsule":
+			if yoyo_capsule_segment_hit(from_position, to_position, boundary["a"], boundary["b"], moving_radius + boundary["radius"]) != Vector2.INF:
+				return false
+		elif bool(boundary.get("supported", false)) and Chakram.swept_circle_contact(from_position, to_position, boundary.get("center") as Vector2, moving_radius + float(boundary.get("radius", 0.0))):
 			return false
 	return true
 
@@ -824,7 +1050,58 @@ func _place_committed_target(moving_target: Node2D, next_position: Vector2, _del
 		moving_enemy.velocity = Vector2.ZERO
 		moving_enemy.knockback = Vector2.ZERO
 
+func _update_committed_capsule_coil(moving_target: Node2D, moving_radius: float, enemy: Enemy, delta: float) -> void:
+	var boundary: Dictionary = _enemy_collision_boundary(enemy)
+	if boundary.get("kind", "") != "capsule":
+		return
+	var a: Vector2 = boundary["a"]
+	var b: Vector2 = boundary["b"]
+	var path_radius: float = float(boundary["radius"]) + moving_radius + 0.5
+	var perimeter: float = yoyo_capsule_perimeter_length(a, b, path_radius)
+	var revolutions: float = clampf(yoyo_coil_revolutions, 1.0, 2.0)
+	if yoyo_coil_path_length <= 0.0:
+		yoyo_coil_start_angle = yoyo_capsule_perimeter_parameter(yoyo_capsule_surface_point(moving_target.global_position, a, b, path_radius), a, b, path_radius)
+		yoyo_coil_path_length = maxf(1.0, perimeter * revolutions)
+		yoyo_coil_progress = 0.0
+	if yoyo_coil_phase == YoyoCoilPhase.HOLDING:
+		yoyo_coil_hold_left = maxf(0.0, yoyo_coil_hold_left - maxf(0.0, delta))
+		yoyo_coil_progress = coil_progress(yoyo_coil_progress, yoyo_unwind_speed, delta, yoyo_coil_path_length, true)
+		var hold_parameter: float = yoyo_coil_start_angle + yoyo_enemy_wrap_sign * yoyo_coil_path_length * yoyo_coil_progress
+		_place_committed_target(moving_target, yoyo_capsule_perimeter_point(a, b, path_radius, hold_parameter), delta)
+		if yoyo_coil_hold_left <= 0.0 and yoyo_coil_progress <= 0.0:
+			yoyo_state = YoyoState.REELING
+			_clear_yoyo_wrap(enemy)
+		return
+	if yoyo_coil_phase == YoyoCoilPhase.UNWINDING:
+		yoyo_coil_progress = coil_progress(yoyo_coil_progress, yoyo_unwind_speed, delta, yoyo_coil_path_length, true)
+		var unwind_parameter: float = yoyo_coil_start_angle + yoyo_enemy_wrap_sign * yoyo_coil_path_length * yoyo_coil_progress
+		_place_committed_target(moving_target, yoyo_capsule_perimeter_point(a, b, path_radius, unwind_parameter), delta)
+		if yoyo_coil_progress <= 0.0:
+			_clear_yoyo_wrap(enemy)
+		return
+	if yoyo_coil_phase != YoyoCoilPhase.COMMITTED:
+		return
+	var traversal_speed: float = maxf(1.0, yoyo_coil_tangential_speed * (1.0 + maxf(0.0, yoyo_coil_speed_gain)))
+	yoyo_coil_progress = minf(1.0, yoyo_coil_progress + traversal_speed * maxf(0.0, delta) / yoyo_coil_path_length)
+	var parameter: float = yoyo_coil_start_angle + yoyo_enemy_wrap_sign * yoyo_coil_path_length * yoyo_coil_progress
+	var next_position: Vector2 = yoyo_capsule_perimeter_point(a, b, path_radius, parameter)
+	if not _coil_motion_is_clear(moving_target, enemy, moving_target.global_position, next_position, moving_radius):
+		yoyo_coil_phase = YoyoCoilPhase.UNWINDING
+		return
+	_place_committed_target(moving_target, next_position, delta)
+	if yoyo_coil_progress >= 1.0:
+		yoyo_coil_phase = YoyoCoilPhase.DAMAGE_ARMED
+		if moving_target is Chakram:
+			var impact_point: Vector2 = yoyo_capsule_surface_point(moving_target.global_position, a, b, float(boundary["radius"]))
+			(moving_target as Chakram).velocity = moving_target.global_position.direction_to(impact_point) * maxf(120.0, yoyo_coil_radial_speed)
+		else:
+			_complete_grappled_enemy_coil(enemy)
+
 func _update_committed_coil(moving_target: Node2D, moving_radius: float, enemy: Enemy, delta: float) -> void:
+	var boundary: Dictionary = _enemy_collision_boundary(enemy)
+	if boundary.get("kind", "") == "capsule":
+		_update_committed_capsule_coil(moving_target, moving_radius, enemy, delta)
+		return
 	var center: Vector2 = _enemy_wrap_center(enemy)
 	var capture_radius: float = _enemy_wrap_radius(enemy) + moving_radius + 0.5
 	var total_angle: float = TAU * clampf(yoyo_coil_revolutions, 1.0, 2.0)
@@ -1124,6 +1401,8 @@ func notify_yoyo_coil_hit(enemy: Enemy) -> void:
 	if yoyo_coil_phase != YoyoCoilPhase.DAMAGE_ARMED or yoyo_coil_hit_consumed or enemy.get_instance_id() != yoyo_coil_committed_enemy_id:
 		return
 	yoyo_coil_hit_consumed = true
+	if player != null:
+		player.report_tutorial_action("chakram_wrapped_enemy", enemy)
 	yoyo_coil_phase = YoyoCoilPhase.HOLDING
 	yoyo_coil_hold_left = maxf(0.0, yoyo_coil_hold_duration)
 	yoyo_wrapped_hold_rope_length = maxf(MIN_ROPE_LENGTH, player.get_grapple_hand_position().distance_to(enemy.global_position))
@@ -1257,24 +1536,21 @@ func _update_hook_flight(delta: float) -> void:
 	if hook_position.distance_squared_to(shot_target_position) <= 1.0:
 		firing = false
 		if shot_target_type == TargetType.CHAKRAM and shot_target_node is Chakram and (shot_target_node as Chakram).grounded:
-			# Downed retrieval is a separate verb: launch the disc straight home and
-			# end the hook. It must never enter flying Yo-yo attachment/orbit state.
-			(shot_target_node as Chakram).begin_grapple_retrieval()
-			active = false
-			target_type = TargetType.NONE
-			target_node = null
-			shot_target_type = TargetType.NONE
-			shot_target_node = null
-			tension_ratio = 0.0
-			rope_taut = false
-			_reset_yoyo_state()
-			queue_redraw()
-			return
+			# Relaunch in place, then continue through the ordinary Chakram attach.
+			# The grapple hand—not an automatic return—supplies the next throw.
+			(shot_target_node as Chakram).become_airborne_for_grapple()
 		active = true
 		target_type = shot_target_type
 		target_node = shot_target_node
 		anchor_position = shot_target_position
 		hook_position = anchor_position
+		if player != null:
+			var grapple_event: String = "grapple_connected"
+			if target_type == TargetType.CHAKRAM:
+				grapple_event = "grapple_connected_chakram"
+			elif target_type == TargetType.ENEMY:
+				grapple_event = "grapple_connected_enemy"
+			player.report_tutorial_action(grapple_event, target_node)
 		if target_type == TargetType.CHAKRAM and is_instance_valid(target_node) and target_node.has_method("on_grapple_attached"):
 			target_node.call("on_grapple_attached")
 		if yoyo_enabled and target_type == TargetType.CHAKRAM:
@@ -1402,13 +1678,20 @@ func _enemy_wrap_rope_points(hand_local: Vector2, end_local: Vector2, amplitude:
 	var enemy: Enemy = yoyo_wrap_object as Enemy
 	if enemy == null:
 		return points
-	var center: Vector2 = _enemy_wrap_center(enemy)
-	var entry_angle: float = (yoyo_enemy_entry_point - center).angle()
-	var arc_segments: int = maxi(4, ceili(yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius / 6.0))
-	for index: int in range(1, arc_segments + 1):
-		var ratio: float = float(index) / float(arc_segments)
-		var angle: float = entry_angle + yoyo_enemy_wrap_sign * yoyo_enemy_arc_angle * ratio
-		points.append(to_local(center + Vector2.RIGHT.rotated(angle) * yoyo_enemy_wrap_radius))
+	if yoyo_enemy_capsule_active:
+		var capsule_segments: int = maxi(4, ceili(yoyo_enemy_capsule_arc_length / 6.0))
+		for index: int in range(1, capsule_segments + 1):
+			var distance: float = yoyo_enemy_capsule_arc_length * float(index) / float(capsule_segments)
+			var parameter: float = yoyo_enemy_capsule_entry_parameter + yoyo_enemy_wrap_sign * distance
+			points.append(to_local(yoyo_capsule_perimeter_point(yoyo_enemy_capsule_a, yoyo_enemy_capsule_b, yoyo_enemy_capsule_radius, parameter)))
+	else:
+		var center: Vector2 = _enemy_wrap_center(enemy)
+		var entry_angle: float = (yoyo_enemy_entry_point - center).angle()
+		var arc_segments: int = maxi(4, ceili(yoyo_enemy_arc_angle * yoyo_enemy_wrap_radius / 6.0))
+		for index: int in range(1, arc_segments + 1):
+			var ratio: float = float(index) / float(arc_segments)
+			var angle: float = entry_angle + yoyo_enemy_wrap_sign * yoyo_enemy_arc_angle * ratio
+			points.append(to_local(center + Vector2.RIGHT.rotated(angle) * yoyo_enemy_wrap_radius))
 	var outer_points: PackedVector2Array = _rope_points(to_local(yoyo_enemy_exit_point), end_local, amplitude)
 	for index: int in range(1, outer_points.size()):
 		points.append(outer_points[index])

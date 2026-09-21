@@ -8,6 +8,9 @@ const TUNING_PATH: String = "user://arena_population_tuning.cfg"
 @export var spawn_clearance: float = 105.0
 @export_range(0.0, 1.0, 0.05) var farmable_density: float = 0.3
 @export_range(0.0, 1.0, 0.05) var big_things_density: float = 0.75
+@export var tutorial_farmable_respawn_seconds: float = 4.0
+
+var tutorial_gathering_active: bool = false
 
 var current_time_phase: String = "Noon"
 var blocking_bounds: Array[Rect2] = []
@@ -56,6 +59,42 @@ func populate() -> void:
 	_add_farmable_set(ArenaObject.ObjectKind.SHRUB, shrub_positions)
 	_set_time_phase_visibility()
 
+func populate_tutorial_gathering() -> void:
+	enabled = true
+	visible = true
+	tutorial_gathering_active = true
+	_clear()
+	# Keep the center lane readable while introducing the existing forest
+	# harvestables. Herbs and mushrooms replenish until Grandma's quest ends.
+	for entry: Dictionary in [
+		{"kind": ArenaObject.ObjectKind.ROCK, "position": Vector2(220, 170), "size": Vector2(112, 80)},
+		{"kind": ArenaObject.ObjectKind.TREE, "position": Vector2(1050, 170), "size": Vector2(112, 80)},
+		{"kind": ArenaObject.ObjectKind.ROCK, "position": Vector2(1030, 560), "size": Vector2(112, 80)},
+		{"kind": ArenaObject.ObjectKind.TREE, "position": Vector2(210, 555), "size": Vector2(112, 80)},
+	]:
+		_add_object(entry["kind"], entry["position"], entry["size"], true, true, false)
+	for farmable_position: Vector2 in [Vector2(360, 150), Vector2(470, 570), Vector2(810, 145), Vector2(900, 555), Vector2(300, 360), Vector2(980, 350)]:
+		_add_tutorial_respawning_farmable(ArenaObject.ObjectKind.HERB, farmable_position)
+	for farmable_position: Vector2 in [Vector2(325, 475), Vector2(555, 155), Vector2(720, 560), Vector2(920, 245), Vector2(470, 275), Vector2(840, 430)]:
+		_add_tutorial_respawning_farmable(ArenaObject.ObjectKind.MUSHROOM, farmable_position)
+	for shrub_position: Vector2 in [Vector2(145, 320), Vector2(1120, 360), Vector2(620, 120), Vector2(620, 620)]:
+		_add_object(ArenaObject.ObjectKind.SHRUB, shrub_position, Vector2.ZERO, false, false, true)
+
+func stop_tutorial_gathering() -> void:
+	tutorial_gathering_active = false
+
+func _add_tutorial_respawning_farmable(kind: ArenaObject.ObjectKind, object_position: Vector2) -> void:
+	var object: ArenaObject = _add_object(kind, object_position, Vector2.ZERO, false, false, true)
+	object.object_broken.connect(_on_tutorial_farmable_broken.bind(kind, object_position))
+
+func _on_tutorial_farmable_broken(_object: ArenaObject, kind: ArenaObject.ObjectKind, object_position: Vector2) -> void:
+	if not tutorial_gathering_active:
+		return
+	var timer: SceneTreeTimer = get_tree().create_timer(maxf(0.1, tutorial_farmable_respawn_seconds))
+	await timer.timeout
+	if tutorial_gathering_active and is_inside_tree():
+		_add_tutorial_respawning_farmable(kind, object_position)
+
 func _add_farmable_set(kind: ArenaObject.ObjectKind, positions: Array[Vector2]) -> void:
 	var count: int = clampi(roundi(float(positions.size()) * farmable_density), 0, positions.size())
 	for index: int in range(count):
@@ -83,7 +122,7 @@ func _set_time_phase_visibility() -> void:
 			object.set_phase_visible(moon_visible)
 
 
-func _add_object(kind: ArenaObject.ObjectKind, object_position: Vector2, size: Vector2, blocks: bool, chakram_breakable: bool, sword_harvestable: bool) -> void:
+func _add_object(kind: ArenaObject.ObjectKind, object_position: Vector2, size: Vector2, blocks: bool, chakram_breakable: bool, sword_harvestable: bool) -> ArenaObject:
 	var object: ArenaObject = ArenaObjectScript.new() as ArenaObject
 	object.object_kind = kind
 	object.position = object_position
@@ -95,10 +134,13 @@ func _add_object(kind: ArenaObject.ObjectKind, object_position: Vector2, size: V
 	add_child(object)
 	if blocks:
 		blocking_bounds.append(object.world_footprint())
+	return object
 
 func _clear() -> void:
 	for child: Node in get_children():
-		child.free()
+		# Population can be cleared while sword/Chakram physics still holds a
+		# collider reference. Queue deletion for the safe end-of-frame boundary.
+		child.queue_free()
 	blocking_bounds.clear()
 
 func get_blocking_bounds() -> Array[Rect2]:

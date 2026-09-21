@@ -1,6 +1,7 @@
 class_name Player extends CharacterBody2D
 
 signal combat_debug_event(event_type: String, details: Dictionary)
+signal tutorial_action(event_type: String, target: Node)
 
 # New values are appended so persisted integer IDs for every existing form remain stable.
 enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
@@ -196,7 +197,17 @@ const CONTROLLER_STYLE_NEXT_BUTTON = JOY_BUTTON_DPAD_RIGHT
 @export var minimum_meaningful_swing_speed: float = 180.0
 ## Blade speed that counts as a full-power swing for damage and knockback scaling.
 @export var full_swing_speed_reference: float = 1400.0
-@export var sword_damage: float = 18.0
+@export var sword_damage: float = 15.0
+## Passive metronome contact remains useful, but is deliberately a weak baseline.
+@export_range(0.1, 1.0, 0.05) var passive_sword_damage_multiplier: float = 0.30
+## Maximum damage multiplier for a clearly authored sword phrase.
+@export_range(1.0, 1.5, 0.05) var engaged_sword_damage_multiplier: float = 1.0
+## Relative blade speed needed to reach the engaged damage ceiling.
+@export var engaged_sword_speed_reference: float = 700.0
+## Player-authored aim speed needed to fully engage sword damage; metronome motion is excluded.
+@export var authored_engagement_speed_reference: float = 900.0
+## How quickly authored engagement fades after the player stops conducting the blade.
+@export var authored_engagement_memory: float = 0.45
 
 @export_category("Boss Fire Sword")
 ## Seconds the sword remains ignited after crossing a boss campfire.
@@ -217,6 +228,10 @@ const CONTROLLER_STYLE_NEXT_BUTTON = JOY_BUTTON_DPAD_RIGHT
 @export_range(0.0, 1.0, 0.05) var sword_movement_damage_contribution: float = 0.25
 ## Movement speed used for a modest lunge contribution; dash/grapple speed above this is ignored.
 @export var sword_movement_speed_cap: float = 250.0
+
+static func calculate_engaged_sword_damage_multiplier(relative_blade_speed: float, passive_multiplier: float, engaged_multiplier: float, speed_reference: float) -> float:
+	var emphasis: float = clampf(maxf(0.0, relative_blade_speed) / maxf(1.0, speed_reference), 0.0, 1.0)
+	return lerpf(clampf(passive_multiplier, 0.0, engaged_multiplier), maxf(passive_multiplier, engaged_multiplier), emphasis)
 
 @export_category("Successful Sword Hit Feedback")
 ## Freeze duration for a weak flesh hit, in seconds.
@@ -333,8 +348,18 @@ const CONTROLLER_STYLE_NEXT_BUTTON = JOY_BUTTON_DPAD_RIGHT
 @export var chakram_aim_trail_dot_radius: float = 2.0
 
 @export_category("Debug Displays")
-## Draws the actual custom sword collision segment in red during gameplay.
+## Draws weapon-zone colors and the live swept collision geometry during development.
 @export var debug_draw_sword_collision: bool = false
+## Pommel share of the hilt-side weapon geometry for the zone audit.
+@export_range(0.0, 0.2, 0.01) var debug_weapon_pommel_fraction: float = 0.10
+## Pommel plus grip/guard share; the remaining geometry is the blade.
+@export_range(0.1, 0.5, 0.01) var debug_weapon_grip_guard_end_fraction: float = 0.25
+## Forte begins at the blade base and occupies the lower 40% of the blade.
+@export_range(0.0, 1.0, 0.01) var forte_zone_start_fraction: float = 0.25
+## Forte ends after 40% of the blade; the remaining blade is foible/point.
+@export_range(0.0, 1.0, 0.01) var forte_zone_end_fraction: float = 0.55
+## Forte contacts transfer 15% more knockback than foible contacts.
+@export_range(1.0, 1.5, 0.05) var forte_knockback_multiplier: float = 1.15
 ## Shows a live count above the player and prints every detected sword slide.
 @export var debug_show_slide_counter: bool = true
 ## Shows the most recent sword interaction reason above the player.
@@ -366,6 +391,7 @@ var virtual_aim_point: Vector2 = Vector2.ZERO
 var previous_virtual_aim_point: Vector2 = Vector2.ZERO
 var has_virtual_aim_sample: bool = false
 var player_aim_turn_sign: float = 0.0
+var authored_sword_engagement: float = 0.0
 var swing_commitment_left: float = 0.0
 var swing_commitment_direction: float = 0.0
 var windup_forward_step_fired: bool = false
@@ -956,6 +982,7 @@ func _physics_process(delta: float) -> void:
 		queue_redraw()
 		return
 	flow_idle_time += delta
+	authored_sword_engagement = move_toward(authored_sword_engagement, 0.0, delta / maxf(0.05, authored_engagement_memory))
 	var total_regeneration: float = BonusConfig.regeneration_per_second(regeneration_rank) + expedition_food_regeneration
 	if total_regeneration > 0.0 and health < max_health:
 		restore_health(delta * total_regeneration)
@@ -970,7 +997,8 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(Vector2.ZERO, movement_deceleration * delta)
 		move_and_slide()
 	else:
-		_handle_style_input()
+		# Bind is the sole player-facing sword form. Other profiles remain internal
+		# for development comparisons and persisted-ID compatibility only.
 		_handle_windup_step_input()
 		_handle_dash_input()
 		_handle_chakram_input()
@@ -1142,6 +1170,8 @@ func _update_virtual_aim_point(delta: float) -> void:
 	if has_virtual_aim_sample:
 		var aim_radius: Vector2 = virtual_aim_point - global_position
 		var aim_point_delta: Vector2 = virtual_aim_point - old_virtual_aim_point
+		var authored_aim_speed: float = aim_point_delta.length() / maxf(delta, 0.0001)
+		authored_sword_engagement = maxf(authored_sword_engagement, clampf(authored_aim_speed / maxf(1.0, authored_engagement_speed_reference), 0.0, 1.0))
 		if aim_radius.length_squared() > 1.0 and aim_point_delta.length_squared() > 0.0001:
 			# World-space aim-point movement is immune to player translation. A
 			# stationary mouse therefore cannot create a fake reversal event.
@@ -1298,6 +1328,7 @@ func _fire_dash(direction: Vector2) -> void:
 	if grapple_controller.active:
 		grapple_controller.notify_tethered_dash()
 	dash_charges -= 1
+	report_tutorial_action("dash_performed")
 	if dash_timer.is_stopped(): dash_timer.start(dash_cooldown * BonusConfig.dash_cooldown_multiplier(dash_bonus_rank))
 	var main_scene: Node = get_tree().current_scene
 	if void_dash_level > 0:
@@ -1336,6 +1367,7 @@ func _throw_chakram() -> void:
 	get_parent().add_child(thrown)
 	thrown.global_position = global_position + direction * 34.0
 	thrown.launch(direction, self)
+	report_tutorial_action("chakram_thrown", thrown)
 	chakram_charges -= 1
 	thrown.tree_exited.connect(_on_chakram_exited.bind(thrown))
 	active_chakrams.append(thrown)
@@ -2913,23 +2945,23 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			if burning_rank > 0 and enemy.has_method("apply_burn"):
 				var burn_chance: float = BonusConfig.burn_chance(burning_rank)
 				if randf() < burn_chance: enemy.apply_burn(burning_rank)
-			var swing_speed_factor: float = clampf((contact.impact_speed - minimum_meaningful_swing_speed) / maxf(1.0, full_swing_speed_reference - minimum_meaningful_swing_speed), 0.0, 1.0)
 			var commitment_req: float = get_combat_hand_setting("strike_commitment")
 			var commitment_factor: float = 1.0
 			if commitment_req > 0.0:
 				var stroke_phase_speed: float = absf(cos(sword_phase))
 				# Map commitment requirement to stroke velocity: flailing at turnaround/reversal scales damage down
 				commitment_factor = lerpf(1.0, stroke_phase_speed, clampf(commitment_req, 0.0, 1.0))
-			var speed_bonus: float = swing_speed_factor * sword_speed_damage_bonus
+			var authored_damage_multiplier: float = lerpf(passive_sword_damage_multiplier, engaged_sword_damage_multiplier, authored_sword_engagement)
 			var impact_direction: Vector2 = contact.impact_normal
+			var forte_knockback: float = forte_knockback_multiplier if whole_blade_fraction >= forte_zone_start_fraction and whole_blade_fraction < forte_zone_end_fraction else 1.0
 			var reentry_stagger_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_stagger")), reentry_quality)
 			var reentry_damage_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_damage")), reentry_quality)
 			var stagger_duration: float = lerpf(get_combat_contact_setting("flesh_stagger_min"), get_combat_contact_setting("flesh_stagger_max"), contact.impact_quality) * (0.6 + commitment_factor * 0.4) * reentry_stagger_multiplier
-			var dealt_damage: float = sword_damage * contact.damage_multiplier() * (0.8 + swing_speed_factor * 0.4 + speed_bonus) * commitment_factor * reentry_damage_multiplier
+			var dealt_damage: float = sword_damage * contact.damage_multiplier() * authored_damage_multiplier * commitment_factor * reentry_damage_multiplier
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
-				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0), stagger_duration, contact.impact_quality)
+				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
 			else:
-				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0), stagger_duration, contact.impact_quality)
+				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
 			var typed_enemy: Enemy = enemy as Enemy
 			var current_main: Node = get_tree().current_scene
 			if typed_enemy != null and current_main.has_method("spawn_enemy_hit_presentation"):
@@ -3673,6 +3705,7 @@ func _trigger_clash(point: Vector2) -> void:
 		blade_freeze_left = freeze_dur
 
 func _trigger_chakram_bat(batted_chakram: Chakram, point: Vector2) -> void:
+	report_tutorial_action("chakram_batted", batted_chakram)
 	var main_scene: Node = get_tree().current_scene
 	var bat_quality: float = clampf((blade_velocity.length() - min_chakram_bat_speed) / maxf(1.0, max_chakram_bat_speed - min_chakram_bat_speed), 0.0, 1.0)
 	if main_scene.has_method("request_hitstop"): main_scene.request_hitstop(chakram_bat_hit_stop)
@@ -3690,11 +3723,12 @@ func _distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float
 	return point.distance_to(start + segment * factor)
 
 func get_flow_enemy_speed_multiplier() -> float:
-	var flow_speed_multiplier: float = 1.0 - floorf(flow / 25.0) * 0.05
+	# Ordinary Flow no longer slows the world. Only the explicit Adrenaline
+	# bonus grants enemy/projectile slowdown, preserving Flow as a reward without
+	# making sustained successful play passively reduce the game's difficulty.
 	if adrenaline_rank <= 0 or flow < BonusConfig.adrenaline_threshold(adrenaline_rank):
-		return flow_speed_multiplier
-	var adrenaline_multiplier: float = 1.0 - BonusConfig.adrenaline_slow(adrenaline_rank, flow)
-	return flow_speed_multiplier * adrenaline_multiplier
+		return 1.0
+	return 1.0 - BonusConfig.adrenaline_slow(adrenaline_rank, flow)
 
 func gain_flow(amount: float) -> void:
 	flow = clampf(flow + amount, 0.0, 100.0)
@@ -3890,6 +3924,9 @@ func _emit_frost_nova(attacker: Node2D = null) -> void:
 		frozen_target.call("stun_for", BonusConfig.frost_nova_stun(frost_nova_rank))
 	if main_scene != null and main_scene.has_method("play_sfx"): main_scene.play_sfx("clash", 0.45)
 	if main_scene != null and main_scene.has_method("spawn_impact_fx"): main_scene.spawn_impact_fx(global_position, 1.25)
+
+func report_tutorial_action(event_type: String, target: Node = null) -> void:
+	tutorial_action.emit(event_type, target)
 
 func _on_chakram_exited(exited_chakram: Chakram) -> void:
 	active_chakrams.erase(exited_chakram)
@@ -4145,26 +4182,35 @@ func _draw() -> void:
 				draw_line(first_local, second_local, Color(0.4, 0.8, 1.0, lightning_alpha * 0.45), 8.0, true)
 				draw_line(first_local, second_local, Color(0.75, 0.95, 1.0, lightning_alpha), 3.0, true)
 	if debug_draw_sword_collision:
-		var debug_data: Dictionary = _sword_transform()
-		var debug_anchor: Vector2 = (debug_data["start"] as Vector2) - global_position
-		var debug_angle: float = float(debug_data["angle"])
-		var debug_direction: Vector2 = Vector2.RIGHT.rotated(debug_angle)
-		var debug_start: Vector2 = debug_anchor - debug_direction * BLADE_HILT_INSET
-		var debug_end: Vector2 = debug_start + debug_direction * BLADE_LENGTH
-		# Translucent blue capsule is the sword-to-enemy body contact volume.
-		draw_line(debug_start, debug_end, Color(0.2, 0.55, 1.0, 0.22), enemy_body_contact_radius * 2.0, true)
-		draw_line(debug_start, debug_end, Color(1.0, 0.1, 0.1, 0.8), 3.0, true)
-		# Yellow marker shows the blade start used by the swept contact check.
-		draw_circle(debug_start, 5.0, Color(1.0, 0.8, 0.1, 0.9))
-		# Bright lime polyline is the TRUE per-sword hit shape (hilt->mid->tip,
-		# see _blade_polyline_samples()) -- for a curved blade this visibly
-		# diverges from the red straight line above, so it's the one to trust
-		# when comparing hit geometry against the rendered blade art.
+		# Developer zone audit: show only the live collision polyline, with no
+		# obsolete straight capsule or swept-volume approximation. Yellow is the
+		# pommel zone, green is grip-to-guard, and blue is blade base to tip.
+		var zone_length_total: float = 0.0
 		for index: int in range(current_blade_samples.size() - 1):
-			var poly_start: Vector2 = current_blade_samples[index] - global_position
-			var poly_end: Vector2 = current_blade_samples[index + 1] - global_position
-			draw_line(poly_start, poly_end, Color(0.4, 1.0, 0.2, 0.95), 2.0, true)
-			draw_circle(poly_end, 3.5, Color(0.4, 1.0, 0.2, 0.95))
+			zone_length_total += current_blade_samples[index].distance_to(current_blade_samples[index + 1])
+		var zone_length_travelled: float = 0.0
+		for index: int in range(current_blade_samples.size() - 1):
+			var segment_start: Vector2 = current_blade_samples[index] - global_position
+			var segment_end: Vector2 = current_blade_samples[index + 1] - global_position
+			var segment_length: float = segment_start.distance_to(segment_end)
+			var subsegment_count: int = 12
+			for sub_index: int in range(subsegment_count):
+				var local_start_ratio: float = float(sub_index) / float(subsegment_count)
+				var local_end_ratio: float = float(sub_index + 1) / float(subsegment_count)
+				var poly_start: Vector2 = segment_start.lerp(segment_end, local_start_ratio)
+				var poly_end: Vector2 = segment_start.lerp(segment_end, local_end_ratio)
+				var zone_fraction: float = (zone_length_travelled + segment_length * (local_start_ratio + local_end_ratio) * 0.5) / maxf(zone_length_total, 0.001)
+				var zone_color: Color = Color(0.18, 0.55, 1.0, 0.98)
+				if zone_fraction < debug_weapon_pommel_fraction:
+					zone_color = Color(1.0, 0.85, 0.08, 0.98)
+				elif zone_fraction < debug_weapon_grip_guard_end_fraction:
+					zone_color = Color(0.20, 0.95, 0.35, 0.98)
+				elif zone_fraction < forte_zone_end_fraction:
+					zone_color = Color(0.95, 0.18, 0.85, 0.98)
+				draw_line(poly_start, poly_end, zone_color, 5.0, true)
+				if sub_index == subsegment_count - 1:
+					draw_circle(poly_end, 4.0, zone_color)
+			zone_length_travelled += segment_length
 	if flash_step_flash > 0.0:
 		var flash_alpha: float = clampf(flash_step_flash / flash_step_visual_duration, 0.0, 1.0)
 		var origin_local: Vector2 = flash_step_origin - global_position

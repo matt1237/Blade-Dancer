@@ -7,6 +7,8 @@ class_name CauldronCatchGame extends Control
 ## screen's game tree is paused, matching the PauseMenu pattern.
 
 signal closed(final_score: int, is_new_high_score: bool)
+signal round_finished(final_score: int, is_new_high_score: bool)
+signal quality_result(passed: bool, catch_rate: float)
 
 enum FoodKind { TURKEY, MUSHROOM, BAD_FRUIT, CLOCK_SLOW, CLOCK_FAST, ANGEL_SHIELD }
 
@@ -101,6 +103,9 @@ var is_playing: bool = false
 var score: int = 0
 var streak: int = 0
 var bad_catches: int = 0
+var good_food_spawned: int = 0
+var good_food_caught: int = 0
+var quality_reported: bool = false
 var time_left: float = 0.0
 var spawn_timer_left: float = 0.0
 ## Drives the power-up spawner — entirely independent of spawn_timer_left.
@@ -151,10 +156,10 @@ var cauldron_bubble_timer: float = 0.0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	start_button.pressed.connect(start_game)
-	play_again_button.pressed.connect(start_game)
-	close_button_end.pressed.connect(_close)
-	close_button_top.pressed.connect(_close)
+	if not start_button.pressed.is_connected(start_game): start_button.pressed.connect(start_game)
+	if not play_again_button.pressed.is_connected(start_game): play_again_button.pressed.connect(start_game)
+	if not close_button_end.pressed.is_connected(_close): close_button_end.pressed.connect(_close)
+	if not close_button_top.pressed.is_connected(_close): close_button_top.pressed.connect(_close)
 	cauldron_sprite.size = Vector2(cauldron_half_width * 2.4, cauldron_half_width * 1.7)
 	# Pivot at the base so the idle "simmering" squash breathes from the
 	# bottom instead of visibly shifting the whole pot up and down.
@@ -173,6 +178,9 @@ func start_game() -> void:
 	score = 0
 	streak = 0
 	bad_catches = 0
+	good_food_spawned = 0
+	good_food_caught = 0
+	quality_reported = false
 	time_left = run_duration
 	spawn_timer_left = spawn_interval_min
 	powerup_spawn_timer_left = randf_range(powerup_spawn_interval_min, powerup_spawn_interval_max)
@@ -285,6 +293,7 @@ func _update_spawning(delta: float) -> void:
 	if spawn_timer_left <= 0.0:
 		var kind: FoodKind = FoodKind.BAD_FRUIT if randf() < bad_food_chance else (FoodKind.TURKEY if randf() < 0.5 else FoodKind.MUSHROOM)
 		_spawn_specific_food(kind)
+		if kind == FoodKind.TURKEY or kind == FoodKind.MUSHROOM: good_food_spawned += 1
 		spawn_timer_left = randf_range(spawn_interval_min, spawn_interval_max)
 
 func _update_powerup_spawning(delta: float) -> void:
@@ -474,6 +483,7 @@ func _catch_food(kind: FoodKind, world_position: Vector2) -> void:
 	# +10 on the 3rd, +15 on the 4th, and so on — using the streak value from
 	# BEFORE this catch, since that's how many unbroken catches preceded it.
 	var points: int = catch_points + streak_bonus_increment * streak
+	good_food_caught += 1
 	score += points
 	streak += 1
 	_spawn_feedback("+%d" % points, Color(0.6, 1.0, 0.5), world_position)
@@ -551,12 +561,17 @@ func _end_game(completed: bool) -> void:
 	active_foods.clear()
 	var is_new_high_score: bool = score > high_score
 	if is_new_high_score: high_score = score
-	end_title.text = "TIME'S UP!" if completed else "TOO MANY BAD CATCHES!"
-	end_title.add_theme_color_override("font_color", Color(0.6, 1.0, 0.5) if completed else Color(1.0, 0.4, 0.4))
+	var catch_rate: float = float(good_food_caught) / float(maxi(1, good_food_spawned))
+	var passed: bool = completed and catch_rate >= 0.60
+	if not quality_reported:
+		quality_reported = true
+		quality_result.emit(passed, catch_rate)
+	end_title.text = "Oh, that is lovely, thank you!" if passed else "Oh dear!"
+	end_title.add_theme_color_override("font_color", Color(0.6, 1.0, 0.5) if passed else Color(1.0, 0.4, 0.4))
 	var high_score_text: String = "\nNEW HIGH SCORE!" if is_new_high_score else "\nHigh Score: %d" % high_score
-	end_score_label.text = "Final Score: %d%s" % [score, high_score_text]
+	end_score_label.text = "Final Score: %d%s\nGood ingredients: %d%% (%d/%d)" % [score, high_score_text, roundi(catch_rate * 100.0), good_food_caught, good_food_spawned]
 	end_overlay.visible = true
-	closed.emit(score, is_new_high_score)
+	round_finished.emit(score, is_new_high_score)
 
 func _close() -> void:
 	is_playing = false

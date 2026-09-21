@@ -2,14 +2,14 @@
 
 ## Yo-yo scope cut and cleanup handoff — 2026-09-15
 
-The user has shelved enemy/obstacle tetherball wrapping. The active mechanic is the direct Chakram yo-yo: grapple the flying Chakram, establish a taut line, preserve tangential motion, steer/redirect it, enjoy the hang/whip, and reel it home. Full Boundary Wrap and Static Tether Point are disabled in GP2 and by default. The retained wrap code is dormant for possible future work; it is not part of current acceptance.
+Dynamic enemy/obstacle tetherball wrapping is active and tuned. The active Grapple system includes direct Chakram yo-yo control, static pivots, live boundary wrapping, committed coils, collision-validated unwind, and weight-based wrapped targeting.
 
 Authority/lifecycle: hook flight -> attachment length from current distance + `initial_slack` -> Extending -> Orbiting -> Reeling. Controller owns rope length and hand/tension forces; Chakram owns velocity and its direct radial/tangential constraint. No live gameplay run was performed by Astra; the user owns playtesting.
 
 Audit findings:
-- The current branch contained no active hardcoded `false` gate overriding the wrap tuner.
-- GP2 actually still contained both wrap switches as `true`, despite the user having disabled tetherball in the tuner. The canonical GlobalPresetConfig slot was corrected so both are now `false`.
-- The recent wrap repair added wrap-only enemy coil contact coupling and boundary bookkeeping, but those paths are unreachable with both GP2 switches disabled. They were left dormant rather than deleted to avoid broad recovery risk.
+- The wrap switches are now enabled by default and are part of current gameplay acceptance.
+- Static pivot and boundary wrapping consume the canonical Grapple tuner authority.
+- Enemy coil contact coupling, boundary bookkeeping, unwind, and weight-based wrapped targeting are active gameplay paths.
 - The direct yo-yo path still contains the recent slack take-up and state-transition changes. They are gameplay behavior, not confirmed dead baggage, so they were not guessed away in this cleanup.
 
 Verification: focused helper tests remain available for the parked solver; no live gameplay run. This audit does not claim that the direct yo-yo feel is solved. User should judge catch tightness, tangential control, hang, and reel behavior before any further change.
@@ -30,9 +30,9 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 6. `Yo-yo Hang Time` blocks automatic recall. Afterward, `Yo-yo Reel Energy Threshold` recalls only an orbit whose tangential speed has fallen below the configured threshold; energetic player-controlled motion remains in orbit.
 7. `Taut-Catch Hand Burst` changes velocity once at first tension and never changes rope length.
 8. `Body Movement Transfer` controls how much ordinary player movement enters the shared hand signal used by the Chakram and dynamic targets. Relative hand motion remains fully expressive.
-9. Obstacle pivots and boundary wrapping are parked and disabled; the active rope is the direct hand-to-Chakram path.
+9. Obstacle pivots and boundary wrapping are active parts of the shared hand-to-Chakram rope path.
 10. The rope renders from hand to Chakram, and Training Tools status identifies Extending, Orbiting, and Reeling states.
-11. A grapple may target a grounded Chakram. On hook arrival it enters a dedicated direct retrieval at `1100 px/s`, ends the tether immediately, and collects on reaching the player. Ground retrieval never enters Yo-yo extension, orbit, wrapping, or combat collision logic.
+11. A grapple may target a grounded Chakram. On hook arrival the disc becomes airborne in place and continues through ordinary Chakram grapple attachment. It no longer auto-returns: the grapple hand can throw it into extension, orbit, wrapping, or recall.
 12. Enemy wrap now separates player-authored entry from deterministic completion: rope intersection tracks real circle contacts until `Wrap Commit Point`, then the grappled dynamic object (Chakram or enemy) follows an exact, collision-validated target-relative inward spiral for `Automated Coil Revolutions` (default `1.5`) using independent `Tangential Coil Speed` and `Radial Cinch Speed` authorities while retaining swept collision checks.
 13. A committed coil collision uses the real impact bounce, then `Obstruction Unwind Speed` reverses the authored path until free. A completed coil damages once, shows `Wrapped!`, stuns the enemy with its existing stunned visual for `Completed Coil Hold` (default `1.0 s`), and immediately starts retracing the spiral outward. During that window the wrapped enemy becomes a true second grapple endpoint: it reels with the exact same Light/Medium/Heavy force authority as a direct grapple while the original grappled Chakram/enemy keeps its own behavior. Light targets reel toward the player, Medium splits response, and Heavy pulls the player toward the wrapped target. `Tightening Speed Gain` accelerates tangential travel as the radius closes.
 
@@ -49,7 +49,7 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 - Chakram velocity remains capped by `Player.max_chakram_bat_speed` (700 in the current player tuning).
 - The constraint is unilateral: inward velocity is never blocked.
 - Tangential motion is not converted into a canned path.
-- No wrap topology is active in the direct yo-yo path; disabling the two wrap switches clears any retained wrap state.
+- Wrap topology uses live collision boundaries and clears safely when either wrap authority is intentionally disabled.
 
 ## Collision-shape contract and warning
 
@@ -60,7 +60,7 @@ Sword, Chakram, and Grapple remain useful individual toys. Grappling a flying Ch
 
 ## Retained boundary-wrap experiment
 
-The enemy/terrain boundary-wrap implementation remains in the source behind `yoyo_boundary_wrap_enabled`, but it is shelved and disabled by default. Static pivot mode is also disabled by default. Do not treat the parked solver or its helper tests as part of current gameplay acceptance.
+The enemy/terrain boundary-wrap implementation is active behind the canonical `yoyo_boundary_wrap_enabled` authority. Static pivot mode is active through `yoyo_static_pivot_enabled`. The solver and its focused helper tests are part of current gameplay acceptance.
 
 ## Historical enemy-wrap prototype
 

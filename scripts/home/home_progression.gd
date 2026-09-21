@@ -32,6 +32,15 @@ var forge_purchased: bool = false
 var crafting_recipe_id: String = ""
 var crafting_started_at_unix: float = 0.0
 var crafting_completes_at_unix: float = 0.0
+## One cooking slot may hold one meal stack; Cauldron Catch can make it two servings.
+var crafting_servings: int = 1
+var cooking_bonus_pending: bool = false
+## Grandpa's first chore quest begins after the cooking tutorial.
+var grandpa_chores_active: bool = false
+var grandpa_stone_gathered: int = 0
+var grandpa_wood_gathered: int = 0
+var grandpa_wolves_defeated: int = 0
+var grandpa_goblins_defeated: int = 0
 
 func _init() -> void:
 	for material_name: String in MATERIAL_NAMES: materials[material_name] = 0
@@ -43,6 +52,20 @@ func material_count(material_name: String) -> int:
 func add_material(material_name: String, quantity: int) -> void:
 	if quantity <= 0: return
 	materials[material_name] = material_count(material_name) + quantity
+	if not grandpa_chores_active: return
+	if material_name == "Stone": grandpa_stone_gathered = mini(20, grandpa_stone_gathered + quantity)
+	if material_name == "Wood": grandpa_wood_gathered = mini(20, grandpa_wood_gathered + quantity)
+
+func begin_grandpa_chores() -> void:
+	grandpa_chores_active = true
+
+func record_grandpa_enemy_defeat(enemy_identity: StringName) -> void:
+	if not grandpa_chores_active: return
+	if enemy_identity == &"wolf": grandpa_wolves_defeated = mini(3, grandpa_wolves_defeated + 1)
+	if enemy_identity == &"goblin": grandpa_goblins_defeated = mini(3, grandpa_goblins_defeated + 1)
+
+func grandpa_chores_complete() -> bool:
+	return grandpa_chores_active and grandpa_stone_gathered >= 20 and grandpa_wood_gathered >= 20 and grandpa_wolves_defeated >= 3 and grandpa_goblins_defeated >= 3
 
 func generate_gear_id() -> String:
 	next_gear_item_id += 1
@@ -132,7 +155,25 @@ func has_recipe_ingredients(recipe_id: String) -> bool:
 	return true
 
 func can_craft(recipe_id: String) -> bool:
+	# Storage quantity does not block a new cooking job; each completed job adds
+	# one or two servings to the existing meal inventory.
 	return not is_crafting() and has_recipe_ingredients(recipe_id)
+
+func set_cooking_servings(servings: int) -> void:
+	if not is_crafting(): return
+	crafting_servings = clampi(servings, 1, 2)
+	cooking_bonus_pending = false
+
+func arm_cooking_bonus() -> bool:
+	if not is_crafting(): return false
+	cooking_bonus_pending = true
+	return true
+
+func apply_cooking_bonus_to_current_meal() -> bool:
+	if not is_crafting() or not cooking_bonus_pending: return false
+	crafting_servings = 2
+	cooking_bonus_pending = false
+	return true
 
 func start_crafting(recipe_id: String, now_unix: float = -1.0) -> bool:
 	if not can_craft(recipe_id): return false
@@ -141,6 +182,8 @@ func start_crafting(recipe_id: String, now_unix: float = -1.0) -> bool:
 		materials[material_name] = material_count(material_name) - int(ingredients[material_name])
 	var start_time: float = Time.get_unix_time_from_system() if now_unix < 0.0 else now_unix
 	crafting_recipe_id = recipe_id
+	crafting_servings = 1
+	cooking_bonus_pending = false
 	crafting_started_at_unix = start_time
 	crafting_completes_at_unix = start_time + CookingConfig.crafting_time(recipe_id)
 	return true
@@ -162,13 +205,22 @@ func crafting_progress(now_unix: float = -1.0) -> float:
 	var total_time: float = maxf(0.001, crafting_completes_at_unix - crafting_started_at_unix)
 	return clampf(1.0 - crafting_remaining_seconds(now_unix) / total_time, 0.0, 1.0)
 
+func finish_current_crafting_now() -> String:
+	if not is_crafting(): return ""
+	return _complete_current_crafting()
+
 func update_crafting(now_unix: float = -1.0) -> String:
 	if not is_crafting() or crafting_remaining_seconds(now_unix) > 0.0: return ""
+	return _complete_current_crafting()
+
+func _complete_current_crafting() -> String:
 	var completed_recipe_id: String = crafting_recipe_id
-	food_inventory[completed_recipe_id] = food_count(completed_recipe_id) + 1
+	food_inventory[completed_recipe_id] = food_count(completed_recipe_id) + crafting_servings
 	crafting_recipe_id = ""
 	crafting_started_at_unix = 0.0
 	crafting_completes_at_unix = 0.0
+	crafting_servings = 1
+	cooking_bonus_pending = false
 	return completed_recipe_id
 
 func prepare_food(food_id: String) -> bool:
@@ -255,6 +307,13 @@ func to_save_data() -> Dictionary:
 		"crafting_recipe_id": crafting_recipe_id,
 		"crafting_started_at_unix": crafting_started_at_unix,
 		"crafting_completes_at_unix": crafting_completes_at_unix,
+		"crafting_servings": crafting_servings,
+		"cooking_bonus_pending": cooking_bonus_pending,
+		"grandpa_chores_active": grandpa_chores_active,
+		"grandpa_stone_gathered": grandpa_stone_gathered,
+		"grandpa_wood_gathered": grandpa_wood_gathered,
+		"grandpa_wolves_defeated": grandpa_wolves_defeated,
+		"grandpa_goblins_defeated": grandpa_goblins_defeated,
 	}
 
 func load_save_data(data: Dictionary) -> void:
@@ -292,8 +351,16 @@ func load_save_data(data: Dictionary) -> void:
 	crafting_recipe_id = str(data.get("crafting_recipe_id", ""))
 	crafting_started_at_unix = float(data.get("crafting_started_at_unix", 0.0))
 	crafting_completes_at_unix = float(data.get("crafting_completes_at_unix", 0.0))
+	crafting_servings = clampi(int(data.get("crafting_servings", 1)), 1, 2)
+	cooking_bonus_pending = bool(data.get("cooking_bonus_pending", false))
+	grandpa_chores_active = bool(data.get("grandpa_chores_active", false))
+	grandpa_stone_gathered = clampi(int(data.get("grandpa_stone_gathered", 0)), 0, 20)
+	grandpa_wood_gathered = clampi(int(data.get("grandpa_wood_gathered", 0)), 0, 20)
+	grandpa_wolves_defeated = clampi(int(data.get("grandpa_wolves_defeated", 0)), 0, 3)
+	grandpa_goblins_defeated = clampi(int(data.get("grandpa_goblins_defeated", 0)), 0, 3)
 	if not CookingConfig.recipe_ids().has(crafting_recipe_id) or crafting_completes_at_unix <= crafting_started_at_unix:
 		crafting_recipe_id = ""
 		crafting_started_at_unix = 0.0
 		crafting_completes_at_unix = 0.0
+		crafting_servings = 1
 	end_expedition()

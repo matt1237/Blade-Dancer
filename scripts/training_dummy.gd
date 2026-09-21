@@ -6,14 +6,21 @@ class_name TrainingDummy extends Enemy
 const REGEN_RATE: float = 10.0
 const MIN_HEALTH: float = 1.0
 
+signal hit_registered(amount: float)
+
 var hit_flash_left: float = 0.0
+var anchored_position: Vector2 = Vector2.ZERO
+var position_locked: bool = false
 
 func _ready() -> void:
 	spawn_identity = &"training_dummy"
 	participates_in_melee_engagement = false
 	shield_enabled = false
-	max_health = 1000.0
+	max_health = 100.0
 	contact_damage = 0.0
+	# The dummy is an anchored heavy enemy: direct grapples pull the player to it
+	# while the dummy itself remains immovable.
+	grapple_weight = GrappleWeight.HEAVY
 	score_value = 0
 	health = max_health
 	health_bar.max_value = max_health
@@ -22,12 +29,18 @@ func _ready() -> void:
 	add_to_group("enemies")
 	add_to_group("training_dummy")
 
+func lock_world_position() -> void:
+	anchored_position = global_position
+	position_locked = true
+
 func _physics_process(delta: float) -> void:
-	# The practice target ignores combat knockback, but consumes the same
-	# additive grapple-force channel as every other non-boss enemy.
-	velocity = knockback
-	knockback = knockback.move_toward(Vector2.ZERO, delta * 600.0)
-	move_and_slide()
+	# The tutorial target is world-anchored. It accepts every normal contact and
+	# wrap event, but no damage, grapple, void, collision, or knockback channel is
+	# allowed to translate it.
+	velocity = Vector2.ZERO
+	knockback = Vector2.ZERO
+	if position_locked:
+		global_position = anchored_position
 	hit_flash_left = maxf(0.0, hit_flash_left - delta)
 	# Regenerate health.
 	if health < max_health and health > 0.0:
@@ -35,12 +48,24 @@ func _physics_process(delta: float) -> void:
 		health_bar.value = health
 	queue_redraw()
 
-func take_damage(amount: float, _force: Vector2 = Vector2.ZERO, _stagger_duration: float = 0.0, _impact_quality: float = 0.0) -> void:
+func apply_grapple_force(_acceleration: Vector2, _delta: float, _speed_cap: float = INF, _slide_fraction: float = 0.0) -> void:
+	velocity = Vector2.ZERO
+	knockback = Vector2.ZERO
+
+func apply_void_pull(_direction: Vector2, _amount: float) -> void:
+	velocity = Vector2.ZERO
+	knockback = Vector2.ZERO
+
+func take_damage(amount: float, _force: Vector2 = Vector2.ZERO, _stagger_duration: float = 0.0, impact_quality: float = 0.0) -> void:
 	if health <= 0.0: return
 	health -= amount
 	if health < MIN_HEALTH:
 		health = MIN_HEALTH
 	health_bar.value = health
+	var main_scene: Node = get_tree().current_scene
+	if main_scene != null and main_scene.has_method("spawn_damage_number"):
+		main_scene.spawn_damage_number(global_position, maxf(0.0, amount), false, impact_quality)
+	hit_registered.emit(maxf(0.0, amount))
 	# Visual feedback — brief flash.
 	hit_flash_left = 0.12
 

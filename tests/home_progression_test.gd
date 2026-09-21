@@ -42,6 +42,34 @@ func test_wild_turkey_stew_craft_prepare_and_ten_wave_duration() -> void:
 	progression.complete_wave()
 	assert(progression.active_food_id.is_empty() and progression.active_food_waves_remaining == 0)
 
+func test_cauldron_catch_can_double_one_cooking_stack() -> void:
+	var progression: HomeProgression = HomeProgression.new()
+	progression.add_material(CookingConfig.TURKEY_MATERIAL, 2)
+	progression.add_material(CookingConfig.MUSHROOM_MATERIAL, 1)
+	assert(progression.start_crafting(CookingConfig.WILD_TURKEY_STEW_ID, 1000.0))
+	progression.set_cooking_servings(2)
+	assert(progression.update_crafting(1050.0) == CookingConfig.WILD_TURKEY_STEW_ID)
+	assert(progression.food_count(CookingConfig.WILD_TURKEY_STEW_ID) == 2)
+	progression.add_material(CookingConfig.TURKEY_MATERIAL, 2)
+	progression.add_material(CookingConfig.MUSHROOM_MATERIAL, 1)
+	assert(progression.can_craft(CookingConfig.WILD_TURKEY_STEW_ID), "Stored meals must not block cooking another batch.")
+
+func test_grandpa_chores_track_and_persist_progress() -> void:
+	var progression: HomeProgression = HomeProgression.new()
+	progression.begin_grandpa_chores()
+	progression.add_material("Stone", 22)
+	progression.add_material("Wood", 20)
+	progression.record_grandpa_enemy_defeat(&"wolf")
+	progression.record_grandpa_enemy_defeat(&"wolf")
+	progression.record_grandpa_enemy_defeat(&"wolf")
+	progression.record_grandpa_enemy_defeat(&"goblin")
+	assert(progression.grandpa_stone_gathered == 20 and progression.grandpa_wood_gathered == 20)
+	assert(progression.grandpa_wolves_defeated == 3 and progression.grandpa_goblins_defeated == 1)
+	assert(not progression.grandpa_chores_complete())
+	var restored: HomeProgression = HomeProgression.new()
+	restored.load_save_data(progression.to_save_data())
+	assert(restored.grandpa_chores_active and restored.grandpa_stone_gathered == 20)
+
 func test_home_progression_save_round_trip() -> void:
 	var original: HomeProgression = HomeProgression.new()
 	original.add_material("Turkey", 7)

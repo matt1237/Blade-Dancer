@@ -1,7 +1,13 @@
 class_name HomeMenu extends Control
 
+const HOME_TUTORIAL_GUIDE_SCRIPT: Script = preload("res://scripts/ui/home_tutorial_guide.gd")
+const TUTORIAL_GLOW_SCRIPT: Script = preload("res://scripts/ui/tutorial_button_glow.gd")
+
 signal progression_changed(message: String)
+signal recipe_list_opened
+signal food_list_opened
 signal adventure_requested()
+signal tutorial_requested()
 signal dev_wave_requested(wave_number: int)
 signal dev_unlock_all_requested()
 signal input_mode_changed(mode: String)
@@ -13,8 +19,11 @@ signal cauldron_catch_requested()
 signal forge_requested()
 signal grindstone_requested()
 signal gem_jam_requested()
+signal cooking_bonus_selection_started
+signal cooking_bonus_applied
+signal tab_changed(tab: int)
 
-enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMORY }
+enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMORY, TUTORIAL }
 
 @onready var previous_tab_button: Button = $TopBar/PreviousTab
 @onready var next_tab_button: Button = $TopBar/NextTab
@@ -24,6 +33,8 @@ enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMO
 @onready var kitchen_tab: Button = $TopBar/KitchenTab
 @onready var options_tab: Button = $TopBar/OptionsTab
 @onready var adventure_button: Button = $TopBar/AdventureButton
+@onready var tutorial_button: Button = $TutorialButton
+@onready var tutorial_page: Control = $TutorialPage
 @onready var status_page: Control = $StatusPage
 @onready var storage_page: Control = $StoragePage
 @onready var kitchen_page: Control = $KitchenPage
@@ -90,6 +101,12 @@ var armory_selected_item_id: String = ""
 var time_of_day_icon: TextureRect = null
 var time_of_day_label: Label = null
 var current_time_of_day: String = "Morning"
+var home_tutorial_guide: HomeTutorialGuide = null
+var quest_tracker_panel: Panel = null
+var quest_tracker_label: Label = null
+var cooking_bonus_button: Button = null
+var cooking_bonus_selection_armed: bool = false
+var tutorial_star_glow: TutorialButtonGlow = null
 
 ## Paths are resolved lazily (ResourceLoader.exists check) so the Home Menu
 ## keeps working even before/without the art existing yet.
@@ -99,6 +116,87 @@ const TIME_OF_DAY_ICON_PATHS: Dictionary = {
 	"Dusk": "res://assets/generated/day_cycle_icon_dusk_frame_0.png",
 	"Night": "res://assets/generated/day_cycle_icon_night_frame_0.png",
 }
+
+func _create_quest_tracker() -> void:
+	quest_tracker_panel = Panel.new()
+	quest_tracker_panel.name = "GrandpaQuestTracker"
+	quest_tracker_panel.position = Vector2(24.0, 18.0)
+	quest_tracker_panel.size = Vector2(320.0, 210.0)
+	quest_tracker_panel.visible = false
+	status_page.add_child(quest_tracker_panel)
+	quest_tracker_label = Label.new()
+	quest_tracker_label.position = Vector2(16.0, 12.0)
+	quest_tracker_label.size = Vector2(288.0, 186.0)
+	quest_tracker_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	quest_tracker_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	quest_tracker_label.add_theme_font_size_override("font_size", 17)
+	quest_tracker_label.add_theme_color_override("font_color", Color("d7eab5"))
+	quest_tracker_panel.add_child(quest_tracker_label)
+
+func _update_quest_tracker() -> void:
+	if quest_tracker_panel == null or progression == null: return
+	quest_tracker_panel.visible = progression.grandpa_chores_active
+	if not progression.grandpa_chores_active: return
+	quest_tracker_label.text = "GRANDPA'S CHORES\n\nStone      %d / 20\nWood       %d / 20\nWolves     %d / 3\nGoblins    %d / 3" % [progression.grandpa_stone_gathered, progression.grandpa_wood_gathered, progression.grandpa_wolves_defeated, progression.grandpa_goblins_defeated]
+
+func _create_cooking_bonus_button() -> void:
+	cooking_bonus_button = Button.new()
+	cooking_bonus_button.name = "CookingBonusHeartButton"
+	cooking_bonus_button.position = Vector2(481.0, 398.0)
+	cooking_bonus_button.size = Vector2(320.0, 48.0)
+	cooking_bonus_button.text = "♥ GIVE THIS MEAL EXTRA LOVE"
+	cooking_bonus_button.add_theme_font_size_override("font_size", 17)
+	cooking_bonus_button.modulate = Color(1.0, 0.82, 0.55, 1.0)
+	cooking_bonus_button.visible = false
+	cooking_bonus_button.pressed.connect(_arm_cooking_bonus_selection)
+	kitchen_page.add_child(cooking_bonus_button)
+
+func hide_cooking_bonus_button() -> void:
+	if cooking_bonus_button == null: return
+	cooking_bonus_button.visible = false
+	cooking_bonus_selection_armed = false
+	_update_crafting_slot()
+
+func show_cooking_bonus_button() -> void:
+	if cooking_bonus_button == null: return
+	cooking_bonus_button.visible = progression != null and progression.is_crafting()
+	cooking_bonus_selection_armed = false
+	_update_crafting_slot()
+
+func _arm_cooking_bonus_selection() -> void:
+	if progression == null or not progression.is_crafting() or not progression.cooking_bonus_pending: return
+	cooking_bonus_selection_armed = true
+	cooking_bonus_button.text = "♥ NOW CLICK THE COOKING MEAL"
+	feedback_label.text = "Choose the meal currently being cooked."
+	_update_crafting_slot()
+	cooking_bonus_selection_started.emit()
+
+func _on_crafting_slot_pressed() -> void:
+	if cooking_bonus_selection_armed:
+		if progression != null and progression.apply_cooking_bonus_to_current_meal():
+			cooking_bonus_selection_armed = false
+			cooking_bonus_button.visible = false
+			cooking_bonus_button.text = "♥ GIVE THIS MEAL EXTRA LOVE"
+			feedback_label.text = "Grandma added extra love to this meal."
+			_update_crafting_slot()
+			cooking_bonus_applied.emit()
+		return
+	_open_recipe_list()
+
+func _create_tutorial_star_glow() -> void:
+	tutorial_star_glow = TUTORIAL_GLOW_SCRIPT.new() as TutorialButtonGlow
+	tutorial_star_glow.name = "TutorialStarGlow"
+	add_child(tutorial_star_glow)
+	tutorial_star_glow.highlight(tutorial_button, "")
+	if tutorial_star_glow.prompt_label != null: tutorial_star_glow.prompt_label.visible = false
+
+func set_tutorial_star_glow(enabled: bool) -> void:
+	if tutorial_star_glow == null: return
+	if enabled:
+		tutorial_star_glow.highlight(tutorial_button, "")
+		if tutorial_star_glow.prompt_label != null: tutorial_star_glow.prompt_label.visible = false
+	else:
+		tutorial_star_glow.clear_highlight()
 
 func _create_time_of_day_indicator() -> void:
 	time_of_day_icon = TextureRect.new()
@@ -313,6 +411,9 @@ func _ready() -> void:
 	_create_dev_wave_picker()
 	_create_armory_page()
 	_create_time_of_day_indicator()
+	_create_quest_tracker()
+	_create_cooking_bonus_button()
+	_create_tutorial_star_glow()
 	armory_crafting_button.pressed.connect(show_tab.bind(Tab.ARMORY))
 	previous_tab_button.pressed.connect(_show_previous_section)
 	next_tab_button.pressed.connect(_show_next_section)
@@ -323,6 +424,7 @@ func _ready() -> void:
 	kitchen_tab.pressed.connect(show_tab.bind(Tab.KITCHEN))
 	options_tab.pressed.connect(show_tab.bind(Tab.OPTIONS))
 	settings_tab.pressed.connect(show_tab.bind(Tab.SETTINGS))
+	tutorial_button.pressed.connect(_request_tutorial)
 	music_volume_slider.value_changed.connect(_on_music_volume_changed)
 	sfx_volume_slider.value_changed.connect(_on_sfx_volume_changed)
 	metronome_color_button.pressed.connect(_cycle_metronome_color)
@@ -339,7 +441,7 @@ func _ready() -> void:
 	visual_style_button.pressed.connect(_toggle_visual_style)
 	adventure_button.pressed.connect(func() -> void: adventure_requested.emit())
 	food_slot.pressed.connect(_open_food_list)
-	crafting_slot.pressed.connect(_open_recipe_list)
+	crafting_slot.pressed.connect(_on_crafting_slot_pressed)
 	cauldron_catch_button.pressed.connect(func() -> void: cauldron_catch_requested.emit())
 	food_list_panel.visible = false
 	food_tooltip_panel.visible = false
@@ -443,10 +545,28 @@ func _toggle_visual_style() -> void:
 func set_cauldron_catch_high_score(value: int) -> void:
 	cauldron_catch_high_score_label.text = "High Score: %d" % value
 
+func show_cauldron_result(passed: bool) -> void:
+	if passed:
+		feedback_label.text = "Oh, that is lovely, thank you! This meal will make 2 servings."
+	else:
+		feedback_label.text = "Oh dear! This meal will make 1 serving."
+	_update_cauldron_catch_button()
+
 func open_home() -> void:
 	visible = true
 	show_tab(Tab.STATUS)
 	refresh()
+
+func start_post_field_tutorial() -> void:
+	set_tutorial_star_glow(false)
+	if home_tutorial_guide != null and is_instance_valid(home_tutorial_guide):
+		home_tutorial_guide.queue_free()
+	home_tutorial_guide = HOME_TUTORIAL_GUIDE_SCRIPT.new() as HomeTutorialGuide
+	add_child(home_tutorial_guide)
+	home_tutorial_guide.setup(self)
+
+func _request_tutorial() -> void:
+	tutorial_requested.emit()
 
 func show_tab(tab: Tab) -> void:
 	active_tab = tab
@@ -458,6 +578,8 @@ func show_tab(tab: Tab) -> void:
 	kitchen_page.visible = tab == Tab.KITCHEN
 	options_page.visible = tab == Tab.OPTIONS
 	settings_page.visible = tab == Tab.SETTINGS
+	if tutorial_page != null:
+		tutorial_page.visible = tab == Tab.TUTORIAL
 	if dev_wave_panel != null: dev_wave_panel.visible = tab == Tab.DEV_WAVE
 	if armory_page != null:
 		armory_page.visible = tab == Tab.ARMORY
@@ -468,6 +590,7 @@ func show_tab(tab: Tab) -> void:
 	if options_tab != null: options_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if tab == Tab.OPTIONS else Color.WHITE
 	if settings_tab != null: settings_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if tab == Tab.SETTINGS else Color.WHITE
 	if dev_wave_tab != null: dev_wave_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if tab == Tab.DEV_WAVE else Color.WHITE
+	tab_changed.emit(int(tab))
 
 func _home_sections() -> Array[Tab]:
 	return [Tab.STATUS, Tab.CRAFTING, Tab.OPTIONS, Tab.SETTINGS]
@@ -504,6 +627,7 @@ func _cooking_summary_bbcode() -> String:
 
 func refresh(message: String = "") -> void:
 	if progression == null: return
+	_update_quest_tracker()
 	feedback_label.text = message
 	status_feedback.text = message
 	equipment_text.text = "[font_size=25][color=#f1cf78]EQUIPPED GEAR[/color][/font_size]\n\nSword: %s\nChakram: %s\nArmor: %s\nRing: %s" % [str(progression.equipment["Sword"]), str(progression.equipment["Chakram"]), str(progression.equipment["Armor"]), str(progression.equipment["Ring"])]
@@ -522,6 +646,7 @@ func refresh(message: String = "") -> void:
 	storage_text.text = storage_lines
 	cooking_text.text = _cooking_summary_bbcode()
 	_update_crafting_slot()
+	_update_cauldron_catch_button()
 	_update_forge_button()
 	if food_list_panel.visible: _rebuild_food_list()
 	if recipe_list_panel.visible: _rebuild_recipe_list()
@@ -536,6 +661,14 @@ func _open_food_list() -> void:
 	food_tooltip_panel.visible = false
 	equipment_text.visible = false
 	_rebuild_food_list()
+	food_list_opened.emit()
+
+func highlight_food(food_id: String) -> Button:
+	if not food_list_panel.visible: return null
+	for child: Node in food_buttons.get_children():
+		if child is Button and (child as Button).text.begins_with(CookingConfig.recipe_name(food_id)):
+			return child as Button
+	return null
 
 func _close_food_list() -> void:
 	if food_list_panel == null: return
@@ -590,6 +723,14 @@ func _open_recipe_list() -> void:
 	recipe_tooltip_panel.visible = false
 	cooking_text.visible = false
 	_rebuild_recipe_list()
+	recipe_list_opened.emit()
+
+func highlight_recipe(recipe_id: String) -> Button:
+	if not recipe_list_panel.visible: return null
+	for child: Node in recipe_buttons.get_children():
+		if child is Button and (child as Button).text == CookingConfig.recipe_name(recipe_id):
+			return child as Button
+	return null
 
 func _close_recipe_list() -> void:
 	if recipe_list_panel == null: return
@@ -653,10 +794,17 @@ func _update_forge_button() -> void:
 	forge_button.disabled = not forge_unlocked
 	forge_button.text = "FORGE" if forge_unlocked else "FORGE — LOCKED"
 
+func _update_cauldron_catch_button() -> void:
+	if cauldron_catch_button == null: return
+	if progression != null and progression.is_crafting():
+		cauldron_catch_button.text = "♥ %s  •  PLAY CAULDRON CATCH" % CookingConfig.recipe_name(progression.crafting_recipe_id)
+	else:
+		cauldron_catch_button.text = "🍲 PLAY CAULDRON CATCH"
+
 func _update_crafting_slot() -> void:
 	if progression == null: return
 	var crafting_active: bool = progression.is_crafting()
-	crafting_slot.disabled = crafting_active
+	crafting_slot.disabled = crafting_active and not cooking_bonus_selection_armed
 	crafting_slot.text = CookingConfig.recipe_name(progression.crafting_recipe_id) if crafting_active else "+"
 	craft_progress.visible = crafting_active
 	craft_timer.visible = crafting_active

@@ -5,7 +5,7 @@ var chakram_texture_hd: Texture2D = null
 @export var flight_duration: float = 5.0
 @export var base_speed: float = 360.0
 @export var boosted_speed: float = 540.0
-@export var damage: float = 30.0
+@export var damage: float = 15.0
 ## Continuous visual spin in radians per second. The travel-direction marker is
 ## drawn independently, so it remains aligned with velocity while the art spins.
 @export var spin_speed: float = 14.0
@@ -24,8 +24,6 @@ var chakram_texture_hd: Texture2D = null
 @export_category("Grapple Interaction")
 ## Same one-time flight extension a successful sword bat grants.
 @export var grapple_flight_extension: float = 5.0
-## Direct return speed used only when a grapple catches a grounded Chakram.
-@export var grapple_retrieval_speed: float = 1100.0
 
 @export_category("Enemy Contact")
 ## Radius used by swept Chakram-to-enemy collision checks.
@@ -39,7 +37,6 @@ var sword_launch_grace: float = 0.0
 var sword_cooldown: float = 0.0
 var sword_contact_latched: bool = false
 var grapple_attached: bool = false
-var grapple_retrieving: bool = false
 # Grapple Yo-yo constraint data is authored by GrappleController each frame and
 # consumed here immediately before movement, so the Chakram cannot tunnel past
 # the radial limit between controller and projectile physics ticks.
@@ -93,7 +90,6 @@ func launch(direction: Vector2, player: Player) -> void:
 	explosion_level = 0
 	explosion_flash = 0.0
 	grapple_attached = false
-	grapple_retrieving = false
 	clear_yoyo_constraint()
 	pierces_remaining = player.chakram_pierce
 	hit_enemy_ids.clear()
@@ -160,34 +156,18 @@ func _apply_yoyo_constraint(delta: float) -> void:
 	velocity = yoyo_constrained_velocity(global_position, velocity, yoyo_pivot, yoyo_local_rope_length, yoyo_soft_zone, yoyo_radial_damping, yoyo_tangential_drag, delta)
 	velocity = velocity.limit_length(maxf(sword_hit_speed_ceiling, yoyo_speed_ceiling_override))
 
-static func grapple_retrieval_velocity(from_position: Vector2, owner_position: Vector2, speed: float) -> Vector2:
-	return from_position.direction_to(owner_position) * maxf(0.0, speed)
-
-func begin_grapple_retrieval() -> void:
-	if owner_player == null:
-		return
+func become_airborne_for_grapple() -> void:
+	# A grounded disc is relaunched in place. Normal grapple attachment then
+	# gives the hand full authority to throw, orbit, wrap, or reel it.
 	grounded = false
 	grapple_attached = false
-	grapple_retrieving = true
+	velocity = Vector2.ZERO
+	time_left = maxf(time_left, grapple_flight_extension)
 	clear_yoyo_constraint()
-	velocity = grapple_retrieval_velocity(global_position, owner_player.global_position, grapple_retrieval_speed)
 	trail_points.clear()
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
-	if grapple_retrieving:
-		if owner_player == null or not is_instance_valid(owner_player):
-			grapple_retrieving = false
-			grounded = true
-			velocity = Vector2.ZERO
-			return
-		velocity = grapple_retrieval_velocity(global_position, owner_player.global_position, grapple_retrieval_speed)
-		global_position += velocity * delta
-		spin_angle = fmod(spin_angle + spin_speed * delta, TAU)
-		if global_position.distance_to(owner_player.global_position) < 30.0:
-			owner_player.collect_chakram(self)
-		queue_redraw()
-		return
 	if grounded:
 		# A landed Chakram keeps its final authored orientation instead of
 		# continuing to rotate while it waits to be collected.
@@ -341,18 +321,33 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
 		var enemy: Enemy = node as Enemy
 		if enemy == null or not is_instance_valid(enemy): continue
-		var collision_circle: Dictionary = GrappleController.enemy_collision_circle(enemy)
-		var enemy_center: Vector2 = collision_circle.get("center", enemy.global_position) as Vector2
-		var enemy_radius: float = collision_circle.get("radius", enemy_hit_radius) as float
-		if not swept_circle_contact(travel_start, travel_end, enemy_center, enemy_radius + _chakram_collision_radius()): continue
+		var boundary: Dictionary = GrappleController.enemy_collision_boundary(enemy)
+		var enemy_center: Vector2 = boundary.get("center", enemy.global_position) as Vector2
+		var enemy_radius: float = float(boundary.get("radius", enemy_hit_radius))
+		var combined_radius: float = enemy_radius + _chakram_collision_radius()
+		var boundary_hit: bool = false
+		if boundary.get("kind", "") == "capsule":
+			boundary_hit = GrappleController.yoyo_capsule_segment_overlaps(travel_start, travel_end, boundary["a"], boundary["b"], combined_radius)
+		else:
+			boundary_hit = swept_circle_contact(travel_start, travel_end, enemy_center, combined_radius)
+		if not boundary_hit:
+			continue
 		var enemy_id: int = enemy.get_instance_id()
 		var is_active_coil: bool = grapple_controller != null and grapple_controller.is_yoyo_coiling_enemy(enemy)
 		# Damage suppression is not permission for the wrapped body to become
 		# intangible. Resolve its swept boundary even before/after the earned hit.
 		if is_active_coil:
-			var contact: Vector2 = swept_circle_entry(travel_start, travel_end, enemy_center, enemy_radius + _chakram_collision_radius())
-			var normal: Vector2 = enemy_center.direction_to(contact)
-			global_position = enemy_center + normal * (enemy_radius + _chakram_collision_radius() + 0.01)
+			var contact: Vector2
+			var normal: Vector2
+			if boundary.get("kind", "") == "capsule":
+				contact = GrappleController.yoyo_capsule_surface_point(global_position, boundary["a"], boundary["b"], combined_radius)
+				var near_spine: Vector2 = GrappleController.yoyo_capsule_surface_point(global_position, boundary["a"], boundary["b"], 0.001)
+				normal = near_spine.direction_to(contact)
+				global_position = contact + normal * 0.01
+			else:
+				contact = swept_circle_entry(travel_start, travel_end, enemy_center, combined_radius)
+				normal = enemy_center.direction_to(contact)
+				global_position = enemy_center + normal * (combined_radius + 0.01)
 			if velocity.dot(normal) < 0.0:
 				velocity = velocity.bounce(normal)
 		if is_active_coil and (not yoyo_coil_contact_armed or yoyo_coil_contact_enemy_id != enemy_id):
@@ -383,6 +378,8 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 			var dealt_damage: float = damage * (1.0 + speed_bonus)
 			var chakram_quality: float = clampf((incoming_velocity.length() - base_speed) / maxf(1.0, 900.0 - base_speed), 0.0, 1.0)
 			enemy.take_damage(dealt_damage, away * 180.0, 0.18, chakram_quality)
+			if owner_player != null:
+				owner_player.report_tutorial_action("chakram_hit", enemy)
 			if is_active_coil:
 				yoyo_coil_contact_armed = false
 				grapple_controller.notify_yoyo_coil_hit(enemy)
@@ -412,9 +409,7 @@ func _distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float
 	return point.distance_to(start + segment * factor)
 
 func hit_by_player_sword(hit_position: Vector2, swing_velocity: Vector2 = Vector2.ZERO, sword_weight: float = 0.8, inherited_weight: float = 0.2, minimum_speed: float = 380.0, maximum_speed: float = 900.0) -> bool:
-	# Ground retrieval is still the downed-disc lifecycle even though it clears
-	# `grounded` to animate home. Sword batting must not steal or redirect it.
-	if grounded or grapple_retrieving or sword_launch_grace > 0.0 or sword_cooldown > 0.0 or sword_contact_latched: return false
+	if grounded or sword_launch_grace > 0.0 or sword_cooldown > 0.0 or sword_contact_latched: return false
 	sword_contact_latched = true
 	var swing_direction: Vector2 = swing_velocity.normalized()
 	if swing_direction == Vector2.ZERO: swing_direction = global_position.direction_to(hit_position)

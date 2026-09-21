@@ -54,6 +54,9 @@ var awaiting_next_wave: bool = false
 var boss_active: bool = false
 ## Backyard can run this exact production spawner without granting drops or progression.
 var training_mode: bool = false
+var tutorial_turkey_mode: bool = false
+@export var tutorial_turkey_max_alive: int = 3
+@export var tutorial_turkey_spawn_interval: float = 2.0
 ## Hard gate used by boss encounters so queued warnings and ordinary wave slots cannot leak into the fight.
 var normal_spawning_suspended: bool = false
 
@@ -62,6 +65,7 @@ signal boss_wave_started(number: int)
 signal boss_wave_cleared(number: int)
 signal wave_cleared(number: int)
 signal enemy_defeated(points: int)
+signal enemy_defeated_with_identity(enemy_identity: StringName, points: int)
 
 func set_chasm_stage(stage: ChasmStage) -> void:
 	chasm_stage = stage
@@ -82,6 +86,12 @@ func _ready() -> void:
 	spawn_timer = 0.0
 
 func _process(delta: float) -> void:
+	if tutorial_turkey_mode:
+		spawn_timer -= delta
+		if spawn_timer <= 0.0 and _count_living_turkeys() < tutorial_turkey_max_alive:
+			_create_warning()
+			spawn_timer = tutorial_turkey_spawn_interval
+		return
 	if normal_spawning_suspended:
 		return
 	if wave_active:
@@ -115,6 +125,29 @@ func _process(delta: float) -> void:
 	elif not awaiting_next_wave:
 		wave_timer -= delta
 		if wave_timer <= 0.0: _start_wave()
+
+func begin_tutorial_turkeys() -> void:
+	tutorial_turkey_mode = true
+	training_mode = false
+	normal_spawning_suspended = false
+	spawn_timer = 0.0
+	set_process(true)
+
+func end_tutorial_turkeys() -> void:
+	tutorial_turkey_mode = false
+	normal_spawning_suspended = true
+	set_process(false)
+	for warning_node: Node in get_tree().get_nodes_in_group("spawn_warnings"):
+		if is_instance_valid(warning_node) and bool(warning_node.get_meta("wave_spawner_warning", false)):
+			warning_node.queue_free()
+
+func _count_living_turkeys() -> int:
+	var count: int = 0
+	for enemy_node: Node in get_tree().get_nodes_in_group("enemies"):
+		var enemy: Enemy = enemy_node as Enemy
+		if enemy != null and is_instance_valid(enemy) and not enemy.death_emitted and enemy.spawn_identity == &"turkey":
+			count += 1
+	return count
 
 func begin_training_test() -> void:
 	training_mode = true
@@ -214,15 +247,17 @@ func _spawn_enemy(spawn_position: Vector2) -> void:
 	if chasm_stage != null and not chasm_stage.is_spawn_position_valid(spawn_position, chasm_spawn_clearance):
 		push_warning("Enemy spawn cancelled because the Chasm perimeter changed before warning completion.")
 		return
-	var enemy: Enemy = instantiate_enemy(_choose_enemy_scene())
+	var selected_scene: PackedScene = TURKEY_SCENE if tutorial_turkey_mode else _choose_enemy_scene()
+	var enemy: Enemy = instantiate_enemy(selected_scene)
 	if enemy == null: return
 	enemy.wave_stat_multiplier = stat_multiplier_for_wave(current_wave)
 	enemy.global_position = spawn_position
 	if training_mode:
 		enemy.set_meta("training_no_drops", true)
 	enemy.tree_exited.connect(_enemy_died)
-	if not training_mode:
+	if not training_mode and not tutorial_turkey_mode:
 		enemy.defeated.connect(_on_enemy_defeated)
+		enemy.defeated.connect(_on_enemy_defeated_with_identity.bind(enemy.spawn_identity))
 	get_parent().add_child(enemy)
 
 func instantiate_enemy(scene: PackedScene) -> Enemy:
@@ -298,6 +333,9 @@ func _choose_enemy_scene() -> PackedScene:
 
 func _on_enemy_defeated(points: int) -> void:
 	enemy_defeated.emit(points)
+
+func _on_enemy_defeated_with_identity(points: int, enemy_identity: StringName) -> void:
+	enemy_defeated_with_identity.emit(enemy_identity, points)
 
 func _enemy_died() -> void:
 	enemies_alive = maxi(0, enemies_alive - 1)

@@ -59,6 +59,17 @@ func test_slide_clash_and_parry_controls_have_feel_guidance() -> void:
 				break
 		assert(matching_line.contains("_form_three_feel_tip("), "Missing explicit slide feel guidance for %s" % slide_key)
 
+func test_bind_is_the_only_player_facing_sword_form() -> void:
+	var player_source: String = FileAccess.get_file_as_string("res://scripts/player.gd")
+	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
+	var gameplay_start: int = player_source.find("func _physics_process")
+	var gameplay_end: int = player_source.find("func _handle_style_input", gameplay_start)
+	var gameplay_source: String = player_source.substr(gameplay_start, gameplay_end - gameplay_start)
+	assert(not gameplay_source.contains("_handle_style_input()"), "Gameplay input must not expose internal sword-form cycling.")
+	assert(main_source.contains("style_label.text = \"\""), "HUD must not display sword-form information.")
+	assert(main_source.contains("style_label.visible = false"), "Sword-form HUD label must remain hidden.")
+	assert(not main_source.contains("to change"), "No player-facing sword-form control hint should remain.")
+
 func test_backyard_layout_tab_offers_forest_and_empty_without_hiding_tools() -> void:
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")

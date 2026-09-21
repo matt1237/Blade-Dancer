@@ -1,0 +1,23 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/projectiles/goblin_arrow.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/generated/hd_goblin_arrow.png" id="2_arrow"]
+[sub_resource type="CapsuleShape2D" id="ArrowShape"]
+radius = 4.0
+height = 30.0
+
+[node name="GoblinArrow" type="Area2D"]
+collision_layer = 32
+collision_mask = 1
+script = ExtResource("1_script")
+speed = 420.0
+damage = 14.0
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture_filter = 1
+texture = ExtResource("2_arrow")
+scale = Vector2(0.75, 0.75)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+rotation = 1.5707963
+shape = SubResource("ArrowShape")

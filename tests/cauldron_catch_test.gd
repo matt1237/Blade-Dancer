@@ -178,7 +178,17 @@ func test_timer_reaching_zero_ends_the_run_as_completed() -> void:
 	game._update_timer(0.05)
 	assert(not game.is_playing)
 	assert(game.end_overlay.visible)
-	assert(game.end_title.text == "TIME'S UP!")
+	assert(game.end_title.text == "Oh dear!", "A sub-60% run should use Grandma's failure message.")
+	game.free()
+
+func test_cauldron_quality_uses_sixty_percent_good_food_rate() -> void:
+	var game: CauldronCatchGame = _make_game()
+	var results: Array[bool] = []
+	game.quality_result.connect(func(passed: bool, _rate: float) -> void: results.append(passed))
+	game.good_food_spawned = 5
+	game.good_food_caught = 3
+	game._end_game(true)
+	assert(results == [true])
 	game.free()
 
 func test_food_spawner_never_produces_a_power_up() -> void:

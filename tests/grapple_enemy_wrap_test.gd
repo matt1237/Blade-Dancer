@@ -99,6 +99,38 @@ func test_unsupported_enemy_shape_refuses_wrap_geometry() -> void:
 	assert(not bool(boundary.get("supported", true)), "Unsupported enemy shapes must refuse wrap acquisition instead of using a guessed radius.")
 	enemy.free()
 
+func test_capsule_projectile_sweep_counts_an_endpoint_inside_boundary() -> void:
+	var a: Vector2 = Vector2(0.0, -20.0)
+	var b: Vector2 = Vector2(0.0, 20.0)
+	assert(GrappleController.yoyo_capsule_segment_overlaps(Vector2(-30.0, 0.0), Vector2(5.0, 0.0), a, b, 10.0), "A Chakram frame ending inside the dummy capsule must still hit.")
+	assert(not GrappleController.yoyo_capsule_segment_overlaps(Vector2(-30.0, 25.0), Vector2(30.0, 25.0), a, b, 4.0), "A sweep outside the rounded capsule boundary must miss.")
+
+func test_capsule_segment_contact_and_surface_are_exact() -> void:
+	var a := Vector2(-20.0, 0.0)
+	var b := Vector2(20.0, 0.0)
+	var hit: Vector2 = GrappleController.yoyo_capsule_segment_hit(Vector2(0.0, -50.0), Vector2(0.0, 50.0), a, b, 10.0)
+	assert(hit.is_equal_approx(Vector2.ZERO), "A crossing rope must contact the capsule medial segment, not a circle approximation.")
+	var surface: Vector2 = GrappleController.yoyo_capsule_surface_point(hit, a, b, 10.0)
+	assert(is_equal_approx(surface.distance_to(Vector2.ZERO), 10.0), "Capsule surface helper must return the exact offset boundary.")
+	assert(GrappleController.yoyo_capsule_segment_hit(Vector2(0.0, -50.0), Vector2(0.0, 50.0), a, b, 10.0) != Vector2.INF)
+	assert(GrappleController.yoyo_capsule_segment_hit(Vector2(35.0, -50.0), Vector2(35.0, 50.0), a, b, 10.0) == Vector2.INF, "A rope beyond the capsule cap must miss.")
+
+func test_capsule_perimeter_contains_two_straight_legs_and_two_caps() -> void:
+	var a: Vector2 = Vector2(-20.0, 0.0)
+	var b: Vector2 = Vector2(20.0, 0.0)
+	var radius: float = 10.0
+	var length: float = GrappleController.yoyo_capsule_perimeter_length(a, b, radius)
+	assert(is_equal_approx(length, 80.0 + TAU * radius), "Capsule perimeter must be segment legs plus semicircular caps.")
+	for parameter: float in [0.0, 20.0, 40.0, 40.0 + PI * radius * 0.5, 40.0 + PI * radius, 80.0 + PI * radius, length - 0.1]:
+		var point: Vector2 = GrappleController.yoyo_capsule_perimeter_point(a, b, radius, parameter)
+		var recovered: float = GrappleController.yoyo_capsule_perimeter_parameter(point, a, b, radius)
+		assert(absf(wrapf(recovered - parameter, -length * 0.5, length * 0.5)) < 0.01, "Capsule perimeter parameter and point must remain exact inverses through side/cap transitions.")
+
+func test_capsule_commit_threshold_uses_full_boundary_not_circle_circumference() -> void:
+	var source: String = FileAccess.get_file_as_string("res://scripts/grapple_controller.gd")
+	assert(source.contains("yoyo_enemy_capsule_arc_length >= perimeter * clampf(yoyo_wrap_commit_turns"), "Capsule commit must require travel around its real sides and caps.")
+	assert(source.contains("_update_committed_capsule_coil"), "Committed capsule traversal must not fall back to a center-circle spiral.")
+
 func test_chakram_sweep_uses_combined_shape_boundaries() -> void:
 	assert(Chakram.swept_circle_contact(Vector2(-100.0, 30.0), Vector2(100.0, 30.0), Vector2.ZERO, 34.0), "A Chakram sweep must include both projectile and enemy collision radii.")
 	assert(not Chakram.swept_circle_contact(Vector2(-100.0, 35.0), Vector2(100.0, 35.0), Vector2.ZERO, 34.0), "A sweep outside the combined live boundary must miss.")

@@ -1,10 +1,12 @@
 # CURRENT CONTINUITY
 
-Updated: 2026-09-14
+Updated: 2026-09-16
 
 ## Where We Are
 
-The Bind A/B laboratory is consolidated. There is one visible **Bind Form**, one **SLIDE & BIND FEEL (All Weapons)** panel, one shared Slide profile, and one canonical Bind profile for Longsword and Curved Sword. Retired ID 8 remains load-safe but aliases ID 9 and is absent from the selector.
+The Bind A/B laboratory is consolidated. There is one visible **Bind Form**, one **SLIDE & BIND FEEL (All Weapons)** panel, one shared Slide profile, and one canonical Bind profile for Longsword and Curved Sword. Retired ID 8 remains load-safe but aliases ID 9 and is absent from the selector. Dynamic Tetherball is now considered complete; the direct Chakram Yo-yo remains the active playable foundation.
+
+The ordinary 0–100 Flow enemy/projectile slowdown has been removed. Adrenaline remains the sole Flow-based slowdown.
 
 Global Preset 2 is saved and is the launch package and source of truth. Its canonical Bind baseline is Capture `0.20 s`, Minimum Pressure `30 px/s`, Bound Sword Speed `0.10×`; shared Slide Speed is `0.16×`. Forest phase bundles are now synchronized on SAVE ALL and phase cycling.
 

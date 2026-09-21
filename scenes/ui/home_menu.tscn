@@ -106,6 +106,58 @@ offset_bottom = 50.0
 theme_override_font_sizes/font_size = 19
 text = "RETURN TO ADVENTURE"
 
+[node name="TutorialButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 84.0
+offset_bottom = 84.0
+theme_override_font_sizes/font_size = 30
+text = "★"
+tooltip_text = "Open the Blade Dancer tutorial"
+
+[node name="TutorialPage" type="Panel" parent="."]
+visible = false
+layout_mode = 0
+offset_left = 164.0
+offset_top = 218.0
+offset_right = 1116.0
+offset_bottom = 652.0
+
+[node name="Title" type="Label" parent="TutorialPage"]
+layout_mode = 0
+offset_left = 40.0
+offset_top = 32.0
+offset_right = 912.0
+offset_bottom = 72.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 28
+text = "THE BLADE DANCER'S PATH"
+horizontal_alignment = 1
+
+[node name="Description" type="Label" parent="TutorialPage"]
+layout_mode = 0
+offset_left = 96.0
+offset_top = 92.0
+offset_right = 856.0
+offset_bottom = 320.0
+theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
+theme_override_font_sizes/font_size = 20
+text = "A guided route through the physical toys of Blade Dancer.\n\n1. Conduct the sword\n2. Meet the enemy blade\n3. Throw and redirect the Chakram\n4. Turn the Grapple into a Yo-yo\n5. Combine the toys"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Status" type="Label" parent="TutorialPage"]
+layout_mode = 0
+offset_left = 96.0
+offset_top = 360.0
+offset_right = 856.0
+offset_bottom = 404.0
+theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
+theme_override_font_sizes/font_size = 18
+text = "TUTORIAL ROUTE — FIRST DRAFT"
+horizontal_alignment = 1
+
 [node name="OptionsPage" type="Panel" parent="."]
 visible = false
 layout_mode = 0

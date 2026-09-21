@@ -1,10 +1,13 @@
 class_name EndRunHub extends Panel
 
+const TUTORIAL_GLOW_SCRIPT: Script = preload("res://scripts/ui/tutorial_button_glow.gd")
+
 signal travel_home_requested()
 signal adventure_zone_requested(zone_id: String)
 signal save_requested(note: String)
 signal load_requested()
 signal resonance_rush_requested()
+signal tab_changed(tab: int)
 
 enum Tab { RUN_REVIEW, SCOREBOARD, HOME, ADVENTURE, SAVE_LOAD }
 
@@ -24,6 +27,7 @@ var save_load_tab: Button = null
 var save_load_panel: Panel = null
 var save_note_input: LineEdit = null
 var save_details_label: Label = null
+var tutorial_glow: TutorialButtonGlow = null
 
 func _create_save_load_tab() -> void:
 	save_load_tab = Button.new()
@@ -117,8 +121,22 @@ func _create_resonance_rush_button() -> void:
 	resonance_rush_button.pressed.connect(func() -> void: resonance_rush_requested.emit())
 	adventure_card.add_child(resonance_rush_button)
 
+func _create_tutorial_forest_glow() -> void:
+	tutorial_glow = TUTORIAL_GLOW_SCRIPT.new() as TutorialButtonGlow
+	tutorial_glow.name = "TutorialForestGlow"
+	add_child(tutorial_glow)
+	tutorial_glow.clear_highlight()
+
+func show_tutorial_forest_guidance() -> void:
+	if tutorial_glow == null: _create_tutorial_forest_glow()
+	tutorial_glow.highlight(forest_button, "Choose Forest")
+
+func clear_tutorial_guidance() -> void:
+	if tutorial_glow != null: tutorial_glow.clear_highlight()
+
 func _ready() -> void:
 	_create_save_load_tab()
+	_create_tutorial_forest_glow()
 	run_review_tab.pressed.connect(show_tab.bind(Tab.RUN_REVIEW))
 	scoreboard_tab.pressed.connect(show_tab.bind(Tab.SCOREBOARD))
 	home_tab.pressed.connect(show_tab.bind(Tab.HOME))
@@ -151,3 +169,4 @@ func show_tab(tab: Tab) -> void:
 	for index: int in range(tabs.size()):
 		tabs[index].modulate = Color(1.0, 0.86, 0.45, 1.0) if index == int(tab) else Color.WHITE
 	if save_load_tab != null: save_load_tab.modulate = Color(1.0, 0.86, 0.45, 1.0) if tab == Tab.SAVE_LOAD else Color.WHITE
+	tab_changed.emit(int(tab))
