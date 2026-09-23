@@ -42,6 +42,10 @@ const BLADE_HILT_INSET: float = 14.0
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
+const CHARGED_GUARD_NEAR_BODY_RADIUS: float = 48.0
+const CHARGED_GUARD_INWARD_SPEED_MIN: float = 65.0
+const CHARGED_GUARD_SETTLED_SPEED_MAX: float = 85.0
+const CHARGED_GUARD_POSITION_TOLERANCE_DEGREES: float = 18.0
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
@@ -409,6 +413,7 @@ var previous_virtual_aim_point: Vector2 = Vector2.ZERO
 var has_virtual_aim_sample: bool = false
 var player_aim_turn_sign: float = 0.0
 var authored_angular_travel_radians: float = 0.0
+var authored_virtual_aim_velocity: Vector2 = Vector2.ZERO
 var authored_sword_engagement: float = 0.0
 var swing_commitment_left: float = 0.0
 var swing_commitment_direction: float = 0.0
@@ -428,6 +433,7 @@ var mobile_grapple_held: bool = false
 var mobile_grapple_was_down: bool = false
 var mobile_grapple_aiming: bool = false
 var controller_aim_direction: Vector2 = Vector2.RIGHT
+var controller_aim_strength: float = 1.0
 var metronome_reversal_flash_left: float = 0.0
 var metronome_reversal_side: float = 0.0
 var tempo_assist_multiplier: float = 1.0
@@ -437,6 +443,8 @@ var authored_apex_hang_left: float = 0.0
 var authored_apex_hang_armed_drive: float = 0.0
 var charged_guard_charge: float = 0.0
 var charged_guard_locked: bool = false
+var charged_guard_candidate_active: bool = false
+var charged_guard_inward_evidence_left: float = 0.0
 var charged_guard_lock_angle: float = 0.0
 var charged_guard_flash_left: float = 0.0
 var charged_guard_candidate_angle: float = 0.0
@@ -1170,6 +1178,7 @@ func _controller_button_pressed(button: JoyButton) -> bool:
 func _update_virtual_aim_point(delta: float) -> void:
 	player_aim_turn_sign = 0.0
 	authored_angular_travel_radians = 0.0
+	authored_virtual_aim_velocity = Vector2.ZERO
 	if mobile_input_enabled:
 		var old_mobile_relative: Vector2 = virtual_aim_point - global_position
 		var mobile_magnitude: float = clampf(mobile_aim_direction.length(), 0.0, 1.0)
@@ -1189,6 +1198,8 @@ func _update_virtual_aim_point(delta: float) -> void:
 		var new_mobile_relative: Vector2 = old_mobile_relative.lerp(target_relative, clampf(mobile_drag_weight, 0.0, 1.0))
 		virtual_aim_point = global_position + new_mobile_relative
 		var authored_relative_delta: Vector2 = new_mobile_relative - old_mobile_relative
+		if has_virtual_aim_sample and delta > 0.0:
+			authored_virtual_aim_velocity = authored_relative_delta / delta
 		if has_virtual_aim_sample and authored_relative_delta.length_squared() > 0.0001:
 			var authored_aim_speed: float = authored_relative_delta.length() / maxf(delta, 0.0001)
 			authored_sword_engagement = maxf(authored_sword_engagement, clampf(authored_aim_speed / maxf(1.0, authored_engagement_speed_reference), 0.0, 1.0))
@@ -1200,15 +1211,28 @@ func _update_virtual_aim_point(delta: float) -> void:
 		has_virtual_aim_sample = true
 		return
 	if input_mode == INPUT_MODE_CONTROLLER:
+		var old_controller_relative: Vector2 = virtual_aim_point - global_position
 		var right_stick: Vector2 = _controller_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y)
-		if right_stick != Vector2.ZERO:
-			var next_controller_direction: Vector2 = right_stick.normalized()
-			var controller_turn_delta: float = angle_difference(controller_aim_direction.angle(), next_controller_direction.angle())
+		controller_aim_strength = clampf(right_stick.length(), 0.0, 1.0)
+		if controller_aim_strength > 0.01:
+			controller_aim_direction = right_stick.normalized()
+		var controller_minimum: float = get_combat_hand_setting("min")
+		var controller_maximum: float = maxf(controller_minimum, get_combat_hand_setting("max"))
+		var controller_radius: float = lerpf(controller_minimum, controller_maximum, controller_aim_strength)
+		var new_controller_relative: Vector2 = controller_aim_direction * controller_radius
+		virtual_aim_point = global_position + new_controller_relative
+		var controller_relative_delta: Vector2 = new_controller_relative - old_controller_relative
+		if has_virtual_aim_sample and delta > 0.0:
+			authored_virtual_aim_velocity = controller_relative_delta / delta
+			var controller_authored_speed: float = authored_virtual_aim_velocity.length()
+			authored_sword_engagement = maxf(authored_sword_engagement, clampf(controller_authored_speed / maxf(1.0, authored_engagement_speed_reference), 0.0, 1.0))
+		if has_virtual_aim_sample and new_controller_relative.length_squared() > 1.0 and controller_relative_delta.length_squared() > 0.0001:
+			var controller_turn_delta: float = new_controller_relative.cross(controller_relative_delta) / new_controller_relative.length_squared()
 			authored_angular_travel_radians = controller_turn_delta
 			if absf(controller_turn_delta) >= SWING_COMMITMENT_INPUT_THRESHOLD:
 				player_aim_turn_sign = signf(controller_turn_delta)
-			controller_aim_direction = next_controller_direction
-		virtual_aim_point = global_position + controller_aim_direction * 180.0
+		previous_virtual_aim_point = virtual_aim_point
+		has_virtual_aim_sample = true
 		return
 	var mouse_pos: Vector2 = get_global_mouse_position()
 	if virtual_aim_point == Vector2.ZERO:
@@ -1228,6 +1252,7 @@ func _update_virtual_aim_point(delta: float) -> void:
 		var aim_radius: Vector2 = virtual_aim_point - global_position
 		var aim_point_delta: Vector2 = virtual_aim_point - old_virtual_aim_point
 		var authored_aim_speed: float = aim_point_delta.length() / maxf(delta, 0.0001)
+		authored_virtual_aim_velocity = aim_point_delta / maxf(delta, 0.0001)
 		authored_sword_engagement = maxf(authored_sword_engagement, clampf(authored_aim_speed / maxf(1.0, authored_engagement_speed_reference), 0.0, 1.0))
 		if aim_radius.length_squared() > 1.0 and aim_point_delta.length_squared() > 0.0001:
 			# World-space aim-point movement is immune to player translation. A
@@ -2000,7 +2025,8 @@ func _mouse_controlled_hand_radius() -> float:
 	if mobile_input_enabled:
 		var geared_magnitude: float = pow(clampf(mobile_aim_direction.length(), 0.0, 1.0), reach_scale)
 		return lerpf(minimum, maximum, geared_magnitude)
-	if input_mode == INPUT_MODE_CONTROLLER: return maximum
+	if input_mode == INPUT_MODE_CONTROLLER:
+		return lerpf(minimum, maximum, clampf(controller_aim_strength, 0.0, 1.0))
 	var mouse_distance: float = global_position.distance_to(virtual_aim_point)
 	var input_maximum: float = maxf(minimum + (maximum - minimum) * reach_scale, minimum + 0.001)
 	var amount: float = clampf(inverse_lerp(minimum, input_maximum, mouse_distance), 0.0, 1.0)
@@ -2717,40 +2743,69 @@ func _begin_metronome_reversal_pulse(current_angle: float) -> void:
 	metronome_reversal_side = -1.0 if reversal_offset < 0.0 else 1.0
 	metronome_reversal_flash_left = metronome_reversal_pulse_duration
 
+static func charged_guard_acquisition_valid(authored_turn_sign: float, metronome_travel_sign: float, authored_engagement: float) -> bool:
+	return authored_turn_sign != 0.0 and authored_turn_sign == -metronome_travel_sign and authored_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
+
+static func charged_guard_charge_multiplier(hand_radius: float, has_recent_inward_motion: bool, opposing_phase: bool) -> float:
+	var multiplier: float = 1.0
+	if hand_radius <= CHARGED_GUARD_NEAR_BODY_RADIUS:
+		multiplier += 0.5
+	if has_recent_inward_motion:
+		multiplier += 0.75
+	if opposing_phase:
+		multiplier += 0.75
+	return multiplier
+
 func _update_charged_guard(delta: float) -> void:
 	charged_guard_flash_left = maxf(0.0, charged_guard_flash_left - delta)
 	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or not _is_metronome_style():
 		charged_guard_charge = 0.0
+		charged_guard_candidate_active = false
+		charged_guard_inward_evidence_left = 0.0
 		charged_guard_locked = false
 		return
 	if charged_guard_locked:
-		# A deliberate authored hand flick releases the locked blade back into its
-		# ordinary phase, carrying that motion into the next swing.
 		if absf(authored_angular_travel_radians) >= deg_to_rad(2.0) and authored_sword_engagement >= 0.30:
 			charged_guard_locked = false
+			charged_guard_candidate_active = false
 			charged_guard_charge = 0.0
+			charged_guard_inward_evidence_left = 0.0
 		return
 	var travel_sign: float = signf(cos(sword_phase))
 	var near_reversal: bool = absf(cos(sword_phase)) <= 0.45
-	var counter_input: bool = player_aim_turn_sign != 0.0 and player_aim_turn_sign == -travel_sign and authored_sword_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
 	var current_transform: Dictionary = _sword_transform()
+	var current_hand: Vector2 = current_transform["start"] as Vector2
+	var hand_offset: Vector2 = current_hand - global_position
+	var hand_radius: float = hand_offset.length()
 	var current_blade_angle: float = float(current_transform["angle"])
-	if charged_guard_charge <= 0.0:
-		if not near_reversal or not counter_input:
+	if hand_radius > 0.001:
+		var inward_speed: float = -authored_virtual_aim_velocity.dot(hand_offset / hand_radius)
+		if inward_speed >= CHARGED_GUARD_INWARD_SPEED_MIN:
+			charged_guard_inward_evidence_left = 0.16
+		else:
+			charged_guard_inward_evidence_left = maxf(0.0, charged_guard_inward_evidence_left - delta)
+	var opposing_phase: bool = player_aim_turn_sign != 0.0 and player_aim_turn_sign == -travel_sign
+	var has_recent_inward_motion: bool = charged_guard_inward_evidence_left > 0.0
+	var qualifies: bool = charged_guard_acquisition_valid(player_aim_turn_sign, travel_sign, authored_sword_engagement)
+	if not charged_guard_candidate_active:
+		if not near_reversal or not qualifies:
 			return
+		charged_guard_candidate_active = true
 		charged_guard_candidate_angle = current_blade_angle
-		charged_guard_charge = 0.0001
-	else:
-		# Hold the blade near the position acquired by the counter-swing. Aim has
-		# to compensate for the continuing metronome motion to keep charging.
-		if absf(angle_difference(charged_guard_candidate_angle, current_blade_angle)) > deg_to_rad(18.0):
-			charged_guard_charge = 0.0
-			return
-	charged_guard_charge = minf(0.4, charged_guard_charge + delta)
+		charged_guard_charge = 0.0
+	# Motion, phase, and hand position accelerate the original cycle; none is a new entry gate.
+	if absf(angle_difference(charged_guard_candidate_angle, current_blade_angle)) > deg_to_rad(CHARGED_GUARD_POSITION_TOLERANCE_DEGREES):
+		charged_guard_candidate_active = false
+		charged_guard_charge = 0.0
+		return
+	var charge_multiplier: float = charged_guard_charge_multiplier(hand_radius, has_recent_inward_motion, opposing_phase)
+	charged_guard_charge = minf(0.4, charged_guard_charge + delta * charge_multiplier)
 	if charged_guard_charge >= 0.4:
 		charged_guard_locked = true
+		charged_guard_candidate_active = false
+		charged_guard_inward_evidence_left = 0.0
 		charged_guard_lock_angle = current_blade_angle
-		charged_guard_lock_hand_offset = (current_transform["start"] as Vector2) - global_position
+		charged_guard_lock_hand_offset = hand_offset
 		charged_guard_flash_left = 0.18
 
 static func authored_stroke_drive_increment(angular_travel_radians: float, gearing_degrees: float, authored_pace: float) -> float:

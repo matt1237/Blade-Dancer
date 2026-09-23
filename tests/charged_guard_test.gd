@@ -22,17 +22,43 @@ func test_guard_is_inert_when_disabled() -> void:
 	assert(not player.charged_guard_locked, "Disabled Charged Guard must not lock or alter the sword.")
 	player.free()
 
+func test_original_counter_swing_starts_charge_without_new_hand_conditions() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.sword_phase = 1.4
+	player.player_aim_turn_sign = -1.0
+	player.authored_sword_engagement = 0.5
+	player.authored_virtual_aim_velocity = Vector2.ZERO
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_candidate_active, "Charge Guard 1 counter-swing must still start the candidate without hand-pose requirements.")
+	assert(player.charged_guard_charge >= 0.0, "A valid legacy counter-swing candidate should begin a charge cycle.")
+	player.free()
+
+func test_guard_accelerators_stack_without_becoming_entry_gates() -> void:
+	var baseline: float = Player.charged_guard_charge_multiplier(80.0, false, false)
+	var near_body: float = Player.charged_guard_charge_multiplier(36.0, false, false)
+	var inward_pull: float = Player.charged_guard_charge_multiplier(80.0, true, false)
+	var counter_phase: float = Player.charged_guard_charge_multiplier(80.0, false, true)
+	var combined: float = Player.charged_guard_charge_multiplier(36.0, true, true)
+	assert(is_equal_approx(baseline, 1.0), "The Charge Guard 1 baseline should remain available at normal charge rate.")
+	assert(near_body > baseline and inward_pull > baseline and counter_phase > baseline, "Each movement/pose cue should independently accelerate charging.")
+	assert(combined > near_body and combined > inward_pull and combined > counter_phase, "Using the cues together should charge fastest.")
+	assert(not Player.charged_guard_acquisition_valid(0.0, 1.0, 1.0), "Without counter-swing intent the baseline candidate must not start.")
+
 func test_counter_swing_guard_charges_locks_and_releases_on_authored_motion() -> void:
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	player.sword_phase = 1.4
 	player.player_aim_turn_sign = -1.0
 	player.authored_sword_engagement = 1.0
-	for _frame: int in range(6):
+	player.authored_virtual_aim_velocity = Vector2.ZERO
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_candidate_active, "The Charge Guard 1 counter-swing should start its charge cycle.")
+	for _frame: int in range(25):
 		if player.charged_guard_locked:
 			break
-		player._update_charged_guard(0.1)
-	assert(player.charged_guard_locked, "Maintained counter-swing guard should lock after 0.4 seconds.")
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked, "Maintained counter-swing guard should lock within the original 0.4 second cycle.")
 	assert(player.charged_guard_flash_left > 0.0, "Lock acquisition should trigger a brief flash.")
 	var normal_transform: Dictionary = player._sword_transform()
 	assert(is_equal_approx(float(normal_transform["angle"]), player.charged_guard_lock_angle), "Locked blade transform should remain at its guard angle.")
