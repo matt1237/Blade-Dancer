@@ -90,6 +90,7 @@ func _build_ui() -> void:
 	_build_spawn_items_tab(training_tabs)
 	_build_bonus_tab(training_tabs)
 	_build_combat_tab(training_tabs)
+	_build_charged_guard_tab(training_tabs)
 	_build_windup_tab(training_tabs)
 	_build_visualizer_tab(training_tabs)
 	_build_global_presets_tab(training_tabs)
@@ -353,7 +354,7 @@ func _build_bonus_tab(tabs: TabContainer) -> void:
 ## tuning. Profiles come from Player.BLADE_PROFILES, so future swords appear in
 ## that selector automatically. Shape remains independent of contact preset.
 func _build_blade_shape_section(parent: VBoxContainer) -> void:
-	var section: VBoxContainer = _create_section_header(parent, "BLADE SHAPE (Per Sword Type)", true)
+	var section: VBoxContainer = _create_section_header(parent, "BLADE SHAPE (Per Sword Type)")
 
 	var hint: Label = Label.new()
 	hint.text = "Hilt is always fixed at the grip (t=0, offset 0). Mid-point and tip below bow the blade's hit polyline AND its rendered art together -- this is what actually gets swept for damage, not just a cosmetic curve."
@@ -424,6 +425,27 @@ func _sync_blade_shape_controls() -> void:
 		(row["label"] as Label).text = ("%.2f%s" if suffix == "" else "%.1f%s") % [value, suffix]
 	if blade_shape_status != null:
 		blade_shape_status.text = "Editing and equipped: %s" % selected_combat_sword_id
+
+func _build_charged_guard_tab(tabs: TabContainer) -> void:
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "Charged Guard"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(scroll)
+	var box: VBoxContainer = VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 10)
+	scroll.add_child(box)
+	var title: Label = Label.new()
+	title.text = "CHARGED GUARD (OPT-IN PROTOTYPE)"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	var note: Label = Label.new()
+	note.text = "Counter-steer the moving metronome sword near its reversal, then keep it in that guard position. The hand glow fills over 0.4s; a flash marks the lock. A deliberate authored flick releases the blade. No extra button is used."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(note)
+	_create_contact_slider(box, "charged_guard_enabled", "Charged Guard Enabled", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Opt in to acquiring a counter-swing guard near a metronome reversal; off preserves normal combat exactly.", "Guard recognition and lock are completely disabled.", "A maintained guard position charges for 0.4s, flashes, and locks until an authored flick.", "Requires counter-steering near a reversal, then compensating for the metronome to hold the blade position."))
+	_create_contact_slider(box, "apex_hang_time", "Authored Apex Hang", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Strongly driven strokes earn a short committed hold at the endpoint before returning.", "No drive-earned endpoint hold.", "Stroke Drive above 50% earns the tuned endpoint hold.", "Each stroke earns its own hang; the hold cannot be extended indefinitely."))
+	_create_contact_slider(box, "apex_hang_duration", "Apex Hang Time", 0.05, 0.30, 0.01, " s", _form_three_feel_tip("Maximum endpoint dwell earned by a fully driven stroke; the existing Authored Apex Hang switch must also be on.", "Brief 0.05-second punctuation at the endpoint.", "A clear 0.30-second hold before the return stroke.", "Only Stroke Drive above 50% earns a proportional share of this duration."))
 
 func _build_windup_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()
@@ -755,7 +777,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_build_combat_sword_selector(box)
 	_build_blade_shape_section(box)
 
-	var core_section: VBoxContainer = _create_section_header(box, "CORE SWORD & REACH (Per Weapon, Preset & Style)", true)
+	var core_section: VBoxContainer = _create_section_header(box, "CORE SWORD & REACH (Per Weapon, Preset & Style)")
 	_create_hand_slider(core_section, "mouse_drag", "Overall Mouse Drag (Aim Inertia)", 3.0, 35.0, 0.5, "", "Lower is heavier; higher follows the cursor more directly.")
 	_create_hand_slider(core_section, "rotation", "Rotation Speed (Aim Turn Drag)", 2.0, 40.0, 0.5, "", "Angular response rate toward the cursor.")
 	_create_hand_slider(core_section, "max_turn_speed", "Max Turn Speed (0 = Unlimited)", 0.0, 1800.0, 90.0, "°/s", "Higher values turn faster with less resistance. Lower values impose a heavier speed cap. 0 = Unlimited.")
@@ -764,7 +786,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(core_section, "swing_commitment_duration", "Swing Commitment Duration", 0.0, 0.50, 0.01, "s", "How long opposing player input remains heavy after an intentional reversal. Default 0.16s.")
 	_create_hand_slider(core_section, "tempo_assist_enabled", "Swing Tempo Assist", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Lets deliberate hand motion accelerate the current metronome stroke when both travel in the same direction.", "Original fixed sword rhythm.", "The blade catches up with deliberate same-direction input.", "Assistance resets at every reversal, so each stroke must be physically reinforced."))
 	_create_hand_slider(core_section, "directional_arc_opening_enabled", "Directional Arc Opening", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Deliberate hand movement with the blade progressively opens the destination of the active stroke.", "Every stroke uses the normal symmetric arc.", "Driven strokes gain up to 10° of directional follow-through.", "The earned extension remains until reversal; each return stroke must earn its own opening."))
-	_create_hand_slider(core_section, "swing_gesture_gearing_degrees", "Swing Gesture Gearing", 15.0, 360.0, 1.0, "°", _form_three_feel_tip("Angular cursor travel required to fully drive one metronome stroke.", "Small wrist flicks quickly produce powerful strokes.", "Broad deliberate mouse sweeps are required for full drive.", "This changes how much gesture earns power; it does not change the sword's visible arc or radial hand reach."))
+	_create_hand_slider(core_section, "swing_gesture_gearing_degrees", "Swing Gesture Gearing", 15.0, 360.0, 1.0, "°", _form_three_feel_tip("Aligned, intentional hand travel required to fully drive one metronome stroke; faster travel counts more.", "Short, slow movements add little drive.", "Long, fast straight flicks build drive rapidly.", "Gesture pace matters too; merely tracing a long slow arc does not max the stroke."))
 	_create_hand_slider(core_section, "radial_response", "Radial Response (In/Out Drag)", 0.05, 1.0, 0.05, "", "How quickly hand reach responds to mouse distance.")
 	_create_hand_slider(core_section, "scale", "Mouse Reach Scale (Spatial Gearing)", 1.0, 10.0, 0.1, "×", "How much mouse travel is required to reach maximum hand range.")
 	_create_hand_slider(core_section, "min", "Min Hand Range", 5.0, 140.0, 1.0, " px")
@@ -851,7 +873,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(contact_section, "contact_impact", "Impact / Speed-Line Intensity", 0.0, 2.5, 0.05, "×")
 
 	# Slide is shared contact behavior, so its controls stay visible for every form.
-	var slide_section: VBoxContainer = _create_section_header(box, "SLIDE FEEL (Per Preset)", true)
+	var slide_section: VBoxContainer = _create_section_header(box, "SLIDE FEEL (Per Preset)")
 	_create_contact_slider(slide_section, "slide_contact_tolerance", "Contact Tolerance", 2.0, 30.0, 1.0, " px", _form_three_feel_tip("Maximum blade-to-blade distance that may begin a parallel slide.", "Precise contact; slides are rarer and may miss under fast motion.", "Forgiving proximity; slides are easier, but near misses may count.", "This helps achieve a slide; Form III Bind Retention Tolerance controls keeping it."))
 	_create_contact_slider(slide_section, "slide_angle", "Angle Tolerance", 5.0, 90.0, 1.0, "°", _form_three_feel_tip("How close to parallel the blades must be for a slide instead of a crossing clash.", "Only nearly parallel blades slide; clear classification but harder entry.", "More diagonal contacts may slide; easier entry but fewer contacts read as clashes.", "Try 40–45° for a forgiving Form III profile without making every crossing a slide."))
 	_create_contact_slider(slide_section, "slide_cling", "Cling Duration", 0.0, 2.5, 0.02, " s", _form_three_feel_tip("How long slide friction and sword-speed drag remain available after slide entry.", "Brief scrape that quickly returns to free motion.", "Longer weighted contact that gives Form III more time to capture.", "This is entry assistance, not guaranteed physical contact. The range is extended for longer experiments."))
@@ -955,7 +977,6 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(strike_section, "rebound_flow_boost", "Rebound Flow Boost (Go With It)", 1.0, 3.5, 0.1, "×", "When you turn your aim WITH the bounce direction during recoil, rotation speed surges into a snappy spin cut.")
 	_create_contact_slider(strike_section, "grip_authority_duration", "Grip Authority Duration", 0.0, 0.40, 0.01, " s", "Window immediately after a strike where your wrist has high authority to redirect.")
 	_create_contact_slider(strike_section, "grip_turn_speed_mult", "Grip Turn Speed Multiplier", 1.0, 4.0, 0.1, "×", "Multiplier applied to max turn speed during the Grip Authority window.")
-	_create_contact_slider(strike_section, "apex_hang_time", "Authored Apex Hang", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Strongly driven strokes earn a short committed hold at the endpoint before returning.", "No drive-earned endpoint hold.", "Stroke Drive above 50% earns up to 0.14 seconds of endpoint hang.", "Each stroke earns its own hang; the hold cannot be extended indefinitely."))
 	_create_contact_slider(strike_section, "blade_roll_speed", "Blade Roll Speed (Edge Flip)", 1.0, 20.0, 0.5, " /s", "How fast every weapon rolls to keep its edge leading actual travel. Higher = snappier flip. Symmetric weapons may show little visual change, but use the same universal rollover logic.")
 
 	var hilt_section: VBoxContainer = _create_section_header(box, "HILT BASH & POINT-BLANK (Per Preset)")

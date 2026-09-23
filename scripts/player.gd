@@ -435,6 +435,12 @@ var authored_stroke_drive: float = 0.0
 var directional_arc_extension_degrees: float = 0.0
 var authored_apex_hang_left: float = 0.0
 var authored_apex_hang_armed_drive: float = 0.0
+var charged_guard_charge: float = 0.0
+var charged_guard_locked: bool = false
+var charged_guard_lock_angle: float = 0.0
+var charged_guard_flash_left: float = 0.0
+var charged_guard_candidate_angle: float = 0.0
+var charged_guard_lock_hand_offset: Vector2 = Vector2.ZERO
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -1037,6 +1043,7 @@ func _physics_process(delta: float) -> void:
 		_handle_movement(delta, grapple_acceleration)
 	_update_aim(sword_control_delta)
 	_update_combat_hand_radius(sword_control_delta)
+	_update_charged_guard(sword_control_delta)
 	_apply_experimental_bind_retention(sword_control_delta)
 	_update_sword(sword_control_delta)
 	_finish_experimental_bind_frame(sword_control_delta)
@@ -1820,11 +1827,11 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		"parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact",
 		"blade_freeze_duration", "bite_velocity_transfer",
 		"blade_recoil_degrees", "blade_recoil_return",
-		"rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time",
+		"rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration",
 		"blade_roll_speed",
 		"hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage",
 		"p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale",
-		"p4_stage1_end", "p4_stage2_end", "form_blend_smoothing"
+		"p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"
 	]:
 		if not copied_contact.has(setting_name):
 			copied_contact[setting_name] = get_combat_contact_setting(setting_name)
@@ -1842,7 +1849,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		sword_style = style_idx as SwordStyle
 		for hand_key: String in [
 			"min", "max", "scale", "mouse_drag", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end",
-			"radial_response", "rotation", "arc", "frequency", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks",
+			"radial_response", "rotation", "arc", "frequency", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks",
 			"bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug", "bind_slide_contact_tolerance", "bind_slide_angle", "bind_slide_cling", "bind_slide_friction", "bind_slide_speed", "bind_slide_duration"
 		]:
 			if hand_key in EXPERIMENTAL_BIND_SETTING_KEYS and style_idx != int(SwordStyle.METRONOME_BIND_B):
@@ -2125,6 +2132,8 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"grip_authority_duration": result = 0.18 if distinct else 0.0
 		"grip_turn_speed_mult": result = 2.5 if distinct else 1.0
 		"apex_hang_time": result = 0.04 if distinct else 0.0
+		"apex_hang_duration": result = 0.14
+		"charged_guard_enabled": result = 0.0
 		# Roll units/sec; going from +1 to -1 is a distance of 2.0, so 8.0
 		# gives a ~0.25s flip -- snappy but visible, not a hard pop.
 		"blade_roll_speed": result = 8.0
@@ -2193,7 +2202,7 @@ func _sword_transform() -> Dictionary:
 
 		if blade_freeze_left > 0.0:
 			result_angle = frozen_blade_world_angle
-		return {"start": result_start, "angle": result_angle, "arc_degrees": arc}
+		return _apply_charged_guard_pose({"start": result_start, "angle": result_angle, "arc_degrees": arc})
 
 	# --- INDIVIDUAL FORMS (Presets 1, 2, 3) ---
 	match sword_style:
@@ -2201,42 +2210,48 @@ func _sword_transform() -> Dictionary:
 			var t_windup: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_windup["angle"] = frozen_blade_world_angle
-			return t_windup
+			return _apply_charged_guard_pose(t_windup)
 		SwordStyle.THRUST:
 			var t_thrust: Dictionary = _calculate_form_thrust(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_thrust["angle"] = frozen_blade_world_angle
-			return t_thrust
+			return _apply_charged_guard_pose(t_thrust)
 		SwordStyle.MOULINET:
 			var t_moul: Dictionary = _calculate_form_moulinet(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul["angle"] = frozen_blade_world_angle
-			return t_moul
+			return _apply_charged_guard_pose(t_moul)
 		SwordStyle.MOULINET_2:
 			var t_moul2: Dictionary = _calculate_form_moulinet_2(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul2["angle"] = frozen_blade_world_angle
-			return t_moul2
+			return _apply_charged_guard_pose(t_moul2)
 		SwordStyle.MOULINET_3:
 			var t_moul3: Dictionary = _calculate_form_moulinet_3(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul3["angle"] = frozen_blade_world_angle
-			return t_moul3
+			return _apply_charged_guard_pose(t_moul3)
 		SwordStyle.MOULINET_4:
 			var t_moul4: Dictionary = _calculate_form_moulinet_4(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul4["angle"] = frozen_blade_world_angle
-			return t_moul4
+			return _apply_charged_guard_pose(t_moul4)
 		SwordStyle.THRUST_METRONOME:
 			var t_metro_thrust: Dictionary = _calculate_form_thrust_metronome(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_metro_thrust["angle"] = frozen_blade_world_angle
-			return t_metro_thrust
+			return _apply_charged_guard_pose(t_metro_thrust)
 		_:
 			var t_metro: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_metro["angle"] = frozen_blade_world_angle
-			return t_metro
+			return _apply_charged_guard_pose(t_metro)
+
+func _apply_charged_guard_pose(transform_data: Dictionary) -> Dictionary:
+	if charged_guard_locked and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
+		transform_data["angle"] = charged_guard_lock_angle
+		transform_data["start"] = global_position + charged_guard_lock_hand_offset
+	return transform_data
 
 func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw_sine: float) -> Dictionary:
 	# Endpoint dwell is now authored in _update_sword by holding phase after a
@@ -2702,6 +2717,47 @@ func _begin_metronome_reversal_pulse(current_angle: float) -> void:
 	metronome_reversal_side = -1.0 if reversal_offset < 0.0 else 1.0
 	metronome_reversal_flash_left = metronome_reversal_pulse_duration
 
+func _update_charged_guard(delta: float) -> void:
+	charged_guard_flash_left = maxf(0.0, charged_guard_flash_left - delta)
+	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or not _is_metronome_style():
+		charged_guard_charge = 0.0
+		charged_guard_locked = false
+		return
+	if charged_guard_locked:
+		# A deliberate authored hand flick releases the locked blade back into its
+		# ordinary phase, carrying that motion into the next swing.
+		if absf(authored_angular_travel_radians) >= deg_to_rad(2.0) and authored_sword_engagement >= 0.30:
+			charged_guard_locked = false
+			charged_guard_charge = 0.0
+		return
+	var travel_sign: float = signf(cos(sword_phase))
+	var near_reversal: bool = absf(cos(sword_phase)) <= 0.45
+	var counter_input: bool = player_aim_turn_sign != 0.0 and player_aim_turn_sign == -travel_sign and authored_sword_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
+	var current_transform: Dictionary = _sword_transform()
+	var current_blade_angle: float = float(current_transform["angle"])
+	if charged_guard_charge <= 0.0:
+		if not near_reversal or not counter_input:
+			return
+		charged_guard_candidate_angle = current_blade_angle
+		charged_guard_charge = 0.0001
+	else:
+		# Hold the blade near the position acquired by the counter-swing. Aim has
+		# to compensate for the continuing metronome motion to keep charging.
+		if absf(angle_difference(charged_guard_candidate_angle, current_blade_angle)) > deg_to_rad(18.0):
+			charged_guard_charge = 0.0
+			return
+	charged_guard_charge = minf(0.4, charged_guard_charge + delta)
+	if charged_guard_charge >= 0.4:
+		charged_guard_locked = true
+		charged_guard_lock_angle = current_blade_angle
+		charged_guard_lock_hand_offset = (current_transform["start"] as Vector2) - global_position
+		charged_guard_flash_left = 0.18
+
+static func authored_stroke_drive_increment(angular_travel_radians: float, gearing_degrees: float, authored_pace: float) -> float:
+	var required_travel_radians: float = deg_to_rad(maxf(1.0, gearing_degrees))
+	var pace_weight: float = smoothstep(TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN, 1.0, clampf(authored_pace, 0.0, 1.0))
+	return absf(angular_travel_radians) / required_travel_radians * pace_weight
+
 func _update_sword(delta: float) -> void:
 	if blade_freeze_left > 0.0:
 		# Clash/parry weapon freeze only -- flesh and hilt contact no longer use this
@@ -2742,14 +2798,18 @@ func _update_sword(delta: float) -> void:
 	if authored_apex_hang_left > 0.0:
 		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
 		sword_delta = 0.0
+	if charged_guard_locked:
+		sword_delta = 0.0
 	var tempo_enabled: bool = get_combat_hand_setting("tempo_assist_enabled") >= 0.5 and _is_metronome_style()
 	var autonomous_travel_sign: float = signf(cos(sword_phase))
 	var stroke_progress_before_advance: float = metronome_stroke_progress(sword_phase)
 	var drive_feature_enabled: bool = tempo_enabled or get_combat_hand_setting("directional_arc_opening_enabled") >= 0.5 or get_combat_hand_setting("authored_step_enabled") >= 0.5 or get_combat_contact_setting("apex_hang_time") >= 0.5
 	var drive_input_aligned: bool = drive_feature_enabled and player_aim_turn_sign != 0.0 and player_aim_turn_sign == autonomous_travel_sign and authored_sword_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
 	if drive_input_aligned and stroke_progress_before_advance <= STROKE_DRIVE_BUILD_PROGRESS_LIMIT:
-		var required_travel_radians: float = deg_to_rad(maxf(1.0, get_combat_hand_setting("swing_gesture_gearing_degrees")))
-		authored_stroke_drive = clampf(authored_stroke_drive + absf(authored_angular_travel_radians) / required_travel_radians, 0.0, 1.0)
+		# Gesture gearing measures aligned hand travel, weighted by its authored pace.
+		# A slow arc or tiny twitch adds little; a long fast straight flick adds more.
+		var drive_increment: float = authored_stroke_drive_increment(authored_angular_travel_radians, get_combat_hand_setting("swing_gesture_gearing_degrees"), authored_sword_engagement)
+		authored_stroke_drive = clampf(authored_stroke_drive + drive_increment, 0.0, 1.0)
 	if tempo_enabled:
 		tempo_assist_multiplier = lerpf(1.0, TEMPO_ASSIST_MAX_MULTIPLIER, authored_stroke_drive)
 	else:
@@ -2793,7 +2853,7 @@ func _update_sword(delta: float) -> void:
 		if get_combat_contact_setting("apex_hang_time") >= 0.5 and completed_stroke_drive >= 0.5:
 			# Binary Authored Apex Hang: 50% drive begins earning dwell; full drive
 			# reaches 0.14 seconds. Contact freezes can still supersede this hold.
-			authored_apex_hang_left = lerpf(0.0, 0.14, inverse_lerp(0.5, 1.0, completed_stroke_drive))
+			authored_apex_hang_left = lerpf(0.0, get_combat_contact_setting("apex_hang_duration"), inverse_lerp(0.5, 1.0, completed_stroke_drive))
 		# Option B: every new stroke earns acceleration, opening, and drive anew.
 		tempo_assist_multiplier = 1.0
 		authored_stroke_drive = 0.0
@@ -4171,6 +4231,17 @@ func _draw() -> void:
 	_draw_metronome_indicator_base()
 	_draw_chakram_aim_trail()
 	_draw_dash_aim_preview()
+	if (charged_guard_charge > 0.0 or charged_guard_locked) and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
+		var guard_transform: Dictionary = _sword_transform()
+		var hand_local: Vector2 = (guard_transform["start"] as Vector2) - global_position
+		var charge_ratio: float = clampf(charged_guard_charge / 0.4, 0.0, 1.0)
+		var flash_ratio: float = clampf(charged_guard_flash_left / 0.18, 0.0, 1.0)
+		var pulse: float = 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.025)
+		var glow_color: Color = Color(1.0, 0.78, 0.25, (0.18 + charge_ratio * 0.35) * pulse)
+		if flash_ratio > 0.0:
+			glow_color = Color(1.0, 0.96, 0.68, flash_ratio)
+		draw_circle(hand_local, 5.0 + charge_ratio * 5.0, glow_color)
+		draw_arc(hand_local, 10.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 28, Color(1.0, 0.88, 0.38, 0.95), 2.0, true)
 	var flow_ratio: float = clampf(flow / 100.0, 0.0, 1.0)
 	if flow_ratio > 0.0 and flow_trail_points.size() > 1:
 		var trail_alpha: float = flow_ratio * flow_trail_max_alpha

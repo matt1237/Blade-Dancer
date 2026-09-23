@@ -95,7 +95,7 @@ static func built_in_hand_settings() -> Dictionary:
 
 static func built_in_contact_settings() -> Dictionary:
 	return {
-		"2": {"apex_hang_time": 0.0, "bite_duration": 0.0, "bite_target_drag": 0.0, "bite_velocity_transfer": 0.0, "blade_recoil_degrees": 5.0, "blade_recoil_return": 150.0, "clash_shake_duration": 0.1, "clash_shake_strength": 4.5, "clash_zoom": 0.01, "flesh_shake_strength": 0.0, "flesh_zoom": 0.005, "grip_authority_duration": 0.15, "grip_turn_speed_mult": 1.0, "parry_focus_duration": 0.1, "parry_shake_duration": 0.1, "parry_shake_strength": 2.0, "parry_zoom": 0.02, "parry_zoom_duration": 0.1, "rebound_flow_boost": 1.0}
+		"2": {"apex_hang_duration": 0.14, "apex_hang_time": 0.0, "charged_guard_enabled": 0.0, "bite_duration": 0.0, "bite_target_drag": 0.0, "bite_velocity_transfer": 0.0, "blade_recoil_degrees": 5.0, "blade_recoil_return": 150.0, "clash_shake_duration": 0.1, "clash_shake_strength": 4.5, "clash_zoom": 0.01, "flesh_shake_strength": 0.0, "flesh_zoom": 0.005, "grip_authority_duration": 0.15, "grip_turn_speed_mult": 1.0, "parry_focus_duration": 0.1, "parry_shake_duration": 0.1, "parry_shake_strength": 2.0, "parry_zoom": 0.02, "parry_zoom_duration": 0.1, "rebound_flow_boost": 1.0}
 	}
 
 ## Empty by default -- absence of a sword's key means "use its BLADE_PROFILES
