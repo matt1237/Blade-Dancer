@@ -16,6 +16,7 @@ signal input_mode_changed(mode: String)
 signal metronome_visualizer_changed(mode: String)
 signal visual_style_changed(mode: String)
 signal audio_settings_changed(music_volume: float, sfx_volume: float)
+signal enable_music_requested()
 signal metronome_color_changed(palette: String)
 signal camera_zoom_changed(value: float)
 signal cauldron_catch_requested()
@@ -37,6 +38,8 @@ enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMO
 @onready var options_tab: Button = $TopBar/OptionsTab
 @onready var adventure_button: Button = $TopBar/AdventureButton
 @onready var tutorial_button: Button = $TutorialButton
+@onready var enable_music_button: Button = $EnableMusicButton
+@onready var music_status: Label = $MusicStatus
 @onready var tutorial_page: Control = $TutorialPage
 @onready var status_page: Control = $StatusPage
 @onready var storage_page: Control = $StoragePage
@@ -457,6 +460,7 @@ func _ready() -> void:
 	options_tab.pressed.connect(show_tab.bind(Tab.OPTIONS))
 	settings_tab.pressed.connect(show_tab.bind(Tab.SETTINGS))
 	tutorial_button.pressed.connect(_request_tutorial)
+	enable_music_button.pressed.connect(func() -> void: enable_music_requested.emit())
 	music_volume_slider.value_changed.connect(_on_music_volume_changed)
 	sfx_volume_slider.value_changed.connect(_on_sfx_volume_changed)
 	metronome_color_button.pressed.connect(_cycle_metronome_color)
@@ -515,6 +519,9 @@ func set_input_mode(mode: String) -> void:
 func _select_input_mode(mode: String) -> void:
 	set_input_mode(mode)
 	input_mode_changed.emit(input_mode)
+
+func set_music_status(message: String) -> void:
+	music_status.text = message
 
 func set_audio_volumes(music_value: float, sfx_value: float) -> void:
 	music_volume = clampf(music_value, 0.0, 1.0)

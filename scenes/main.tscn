@@ -378,3 +378,4 @@ layer = 3
 
 [node name="AudioStreamPlayer" type="AudioStreamPlayer" parent="." unique_id=1748045528]
 stream = ExtResource("6_tefeu")
+playback_type = 1

@@ -337,6 +337,7 @@ func _ready() -> void:
 	home_menu.connect("metronome_visualizer_changed", Callable(self, "_on_metronome_visualizer_changed"))
 	home_menu.connect("visual_style_changed", Callable(self, "_on_visual_style_changed"))
 	home_menu.connect("audio_settings_changed", Callable(self, "_on_audio_settings_changed"))
+	home_menu.enable_music_requested.connect(_on_enable_music_requested)
 	home_menu.connect("metronome_color_changed", Callable(self, "_on_metronome_color_changed"))
 	home_menu.connect("camera_zoom_changed", Callable(self, "_on_camera_zoom_changed"))
 	home_menu.connect("cauldron_catch_requested", Callable(self, "_on_cauldron_catch_requested"))
@@ -559,6 +560,7 @@ func _configure_audio_buses() -> void:
 			bus_index = AudioServer.get_bus_count() - 1
 			AudioServer.set_bus_name(bus_index, bus_name)
 		AudioServer.set_bus_send(bus_index, &"Master")
+		AudioServer.set_bus_mute(bus_index, false)
 
 func _audio_volume_db(value: float) -> float:
 	return SILENT_AUDIO_DB if value <= 0.0 else linear_to_db(clampf(value, 0.0001, 1.0))
@@ -572,17 +574,23 @@ func _apply_audio_settings() -> void:
 	if sfx_bus_index >= 0: AudioServer.set_bus_volume_db(sfx_bus_index, _audio_volume_db(sfx_volume))
 	if is_instance_valid(music_director): music_director.call("set_music_volume", music_volume)
 
+func _on_enable_music_requested() -> void:
+	if not is_instance_valid(music_director):
+		home_menu.set_music_status("Music player unavailable.")
+		return
+	home_menu.set_music_status(music_director.retry_music_from_button())
+	# Playback state is not proof of audible sound, but this helps diagnose
+	# browser-only failures without restarting music on every gameplay input.
+	await get_tree().create_timer(0.4, true).timeout
+	if is_instance_valid(music_director):
+		music_director.log_music_diagnostics("0.4s after manual retry")
+
 func _configure_music_loop() -> void:
 	music_player.bus = MUSIC_BUS
 	music_director = MUSIC_DIRECTOR_SCRIPT.new() as Node
 	add_child(music_director)
 	music_director.setup(music_player)
 	music_director.call("set_forge_volume", forge_music_volume)
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventJoypadButton:
-		if is_instance_valid(music_director):
-			music_director.call("unlock_audio")
 
 func record_damage_dealt(amount: float) -> void:
 	run_damage_dealt += maxf(0.0, amount)
@@ -1019,9 +1027,10 @@ func _on_pause_return_home() -> void:
 		_finish_run(false)
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventJoypadButton:
-		if is_instance_valid(music_director):
-			music_director.call("unlock_audio")
+	if OS.has_feature("web") and event.is_pressed() and not event.is_echo():
+		if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventJoypadButton:
+			if is_instance_valid(music_director):
+				music_director.unlock_audio()
 	if event is InputEventKey and event.keycode == KEY_ESCAPE and event.pressed and not event.echo:
 		_toggle_pause()
 
@@ -1745,6 +1754,13 @@ func _load_baked_global_preset() -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary and _global_state_complete(parsed as Dictionary) else {}
 
 func _initialize_global_presets() -> void:
+	# The baked package is the game’s actual default, not merely a launch profile.
+	# Dev preset saves remain authoring data and never replace fresh-game tuning.
+	var baked_game_default: Dictionary = _load_baked_global_preset()
+	if not baked_game_default.is_empty():
+		global_preset_slot = 2
+		_apply_global_preset_state(baked_game_default)
+		return
 	# Global Preset 2 is the canonical game default. Every launch starts from it,
 	# including returning users whose saved launch slot was changed elsewhere.
 	if GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2)):

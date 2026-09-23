@@ -115,6 +115,32 @@ theme_override_font_sizes/font_size = 30
 text = "★"
 tooltip_text = "Open the Blade Dancer tutorial"
 
+[node name="EnableMusicButton" type="Button" parent="."]
+layout_mode = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -78.0
+offset_right = 204.0
+offset_bottom = -38.0
+grow_vertical = 0
+theme_override_font_sizes/font_size = 16
+text = "ENABLE MUSIC"
+tooltip_text = "If the browser is silent, click to retry the current music track."
+
+[node name="MusicStatus" type="Label" parent="."]
+layout_mode = 1
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -34.0
+offset_right = 520.0
+offset_bottom = -10.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_colors/font_color = Color(0.7, 0.82, 0.65, 1)
+theme_override_font_sizes/font_size = 13
+
 [node name="TutorialPage" type="Panel" parent="."]
 visible = false
 layout_mode = 0

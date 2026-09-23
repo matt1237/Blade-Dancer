@@ -54,6 +54,7 @@ var boss_track_index: int = -1
 var transition_serial: int = 0
 var music_volume_linear: float = 1.0
 var forge_volume_linear: float = 0.60
+var audio_unlock_attempted: bool = false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -67,12 +68,43 @@ func setup(player: AudioStreamPlayer) -> void:
 	if not music_player.playing and music_player.is_inside_tree(): music_player.play()
 
 func unlock_audio() -> void:
-	# Browsers may reject autoplay until the first user gesture. Calling play()
-	# again from that gesture resumes the already-selected track.
-	if music_player == null or not music_player.is_inside_tree():
+	# The browser's first gesture may be needed to allow autoplay. Never restart
+	# on subsequent gameplay inputs (including every touch during a swipe).
+	if audio_unlock_attempted or music_player == null or not music_player.is_inside_tree():
 		return
-	if not music_player.playing:
+	audio_unlock_attempted = true
+	log_music_diagnostics("before first Web gesture")
+	if mode != Mode.SILENT:
 		music_player.play()
+	log_music_diagnostics("after first Web gesture")
+	await get_tree().create_timer(0.4, true).timeout
+	if is_instance_valid(music_player):
+		log_music_diagnostics("0.4s after first Web gesture")
+
+func retry_music_from_button() -> String:
+	# Explicit user gesture only. Do not invoke this from gameplay input: play()
+	# restarts the track, and browser swipes must never restart music.
+	log_music_diagnostics("before manual retry")
+	if music_player == null or not music_player.is_inside_tree() or music_player.stream == null:
+		return "No music track loaded — check browser console."
+	if mode == Mode.SILENT:
+		return "Music is paused for this activity."
+	if music_volume_linear <= 0.0:
+		return "Music volume is 0% in Settings."
+	audio_unlock_attempted = true
+	music_player.stream_paused = false
+	music_player.play()
+	log_music_diagnostics("after manual retry")
+	return "Music requested. If still silent, check browser console."
+
+func log_music_diagnostics(stage: String) -> void:
+	if music_player == null:
+		print("MUSIC DIAG [%s] player missing" % stage)
+		return
+	var bus_index: int = AudioServer.get_bus_index(music_player.bus)
+	var bus_details: String = "missing" if bus_index < 0 else "mute=%s volume_db=%.1f" % [AudioServer.is_bus_mute(bus_index), AudioServer.get_bus_volume_db(bus_index)]
+	var stream_path: String = "none" if music_player.stream == null else music_player.stream.resource_path
+	print("MUSIC DIAG [%s] mode=%s stream=%s playing=%s paused=%s position=%.2f player_db=%.1f music_setting=%.2f bus=%s (%s) master_mute=%s" % [stage, Mode.keys()[mode], stream_path, music_player.playing, music_player.stream_paused, music_player.get_playback_position(), music_player.volume_db, music_volume_linear, music_player.bus, bus_details, AudioServer.is_bus_mute(0)])
 
 func set_music_volume(value: float) -> void:
 	music_volume_linear = clampf(value, 0.0, 1.0)

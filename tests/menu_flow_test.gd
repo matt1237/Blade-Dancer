@@ -4,6 +4,18 @@ const END_HUB_SCENE: PackedScene = preload("res://scenes/ui/end_run_hub.tscn")
 const HOME_MENU_SCENE: PackedScene = preload("res://scenes/ui/home_menu.tscn")
 const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
 
+func test_home_enable_music_button_is_bottom_left_and_emits_request() -> void:
+	var menu: HomeMenu = HOME_MENU_SCENE.instantiate() as HomeMenu
+	add_child(menu)
+	var button: Button = menu.get_node("EnableMusicButton") as Button
+	assert(button.anchor_top == 1.0 and button.anchor_bottom == 1.0)
+	assert(button.anchor_left == 0.0 and button.anchor_right == 0.0)
+	var requests: Array[int] = [0]
+	menu.enable_music_requested.connect(func() -> void: requests[0] += 1)
+	button.pressed.emit()
+	assert(requests[0] == 1)
+	menu.free()
+
 func test_end_run_hub_has_only_four_navigable_destinations() -> void:
 	var hub: EndRunHub = END_HUB_SCENE.instantiate() as EndRunHub
 	hub.run_review_tab = hub.get_node("RunReviewTab") as Button
