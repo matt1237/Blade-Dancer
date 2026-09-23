@@ -5,19 +5,21 @@ Work on Blade Dancer efficiently, conservatively, and with minimal unnecessary r
 Prefer targeted inspection and small patches over broad rewrites.
 
 ## Golden Rules
-1. DO NOT scan the entire project unless the task genuinely requires it.
-2. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
-3. Read PROJECT_MAP.md first for system/file locations.
-4. Start with the smallest plausible set of files. Initial inspection target: 3–6 files.
-5. Do not inspect binary art/audio/video assets unless the task explicitly concerns them.
-6. Ignore build/export/cache/import folders.
-7. Preserve working systems outside the requested scope.
-8. Prefer minimal patches. Do not refactor unrelated code during a bug fix or tuning task.
-9. For tuning tasks, change exposed/config values before rewriting behavior.
-10. If two hypotheses fail, stop broad experimentation and summarize:
-    - what was tested
-    - what was ruled out
-    - the next most likely cause
+1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules.
+2. Feel free to ask clarifying questions before implementation, especially for large requests, ambiguous prompts, or work that needs additional design detail.
+3. DO NOT scan the entire project unless the task genuinely requires it.
+4. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
+5. Read PROJECT_MAP.md first for system/file locations.
+6. Start with the smallest plausible set of files. Initial inspection target: 3–6 files.
+7. Do not inspect binary art/audio/video assets unless the task explicitly concerns them.
+8. Ignore build/export/cache/import folders.
+9. Preserve working systems outside the requested scope.
+10. Prefer minimal patches. Do not refactor unrelated code during a bug fix or tuning task.
+11. For tuning tasks, change exposed/config values before rewriting behavior.
+12. If two hypotheses fail, stop broad experimentation and summarize:
+	- what was tested
+	- what was ruled out
+	- the next most likely cause
 
 ## Efficient Investigation Protocol
 For every task:
@@ -149,7 +151,15 @@ actual visual checkpoint (screenshot or the dev's own playtest) before
 continuing. The "form one hypothesis → patch → re-test" debugging loop does
 not apply here because there is no assertion for "looks good."
 
-### 3. Test scope after a change
+### 3. Generated animation atlas hygiene
+AI-generated animation sheets must be visually inspected frame-by-frame before they are wired into gameplay. Generation can leave detached pixels, body/weapon fragments, or partial silhouettes at a frame's left/right edge; atlas slicing then makes those fragments look like Cauldron-style wraparound from the neighboring frame. For every generated atlas:
+- verify the declared frame dimensions and grid;
+- inspect every frame boundary for detached or clipped fragments;
+- clean edge-bleed artifacts without erasing intentional silhouette pixels;
+- confirm each sliced frame independently before declaring the animation complete.
+Do not dismiss boundary fragments as harmless generation noise. This issue has appeared on Duelist/Goblin sheets and the scarf-free Leather Armor pass.
+
+### 4. Test scope after a change
 After making a change, run only the test file(s) that directly cover the
 changed code first. Only broaden to a wider test sweep if there's a concrete
 reason to suspect the change has wider impact. Do not re-run every

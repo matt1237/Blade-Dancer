@@ -17,6 +17,7 @@ signal metronome_visualizer_changed(mode: String)
 signal visual_style_changed(mode: String)
 signal audio_settings_changed(music_volume: float, sfx_volume: float)
 signal metronome_color_changed(palette: String)
+signal camera_zoom_changed(value: float)
 signal cauldron_catch_requested()
 signal forge_requested()
 signal grindstone_requested()
@@ -55,6 +56,8 @@ enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMO
 @onready var music_volume_value: Label = $SettingsPage/MusicVolumeValue
 @onready var sfx_volume_value: Label = $SettingsPage/SfxVolumeValue
 @onready var metronome_color_button: Button = $SettingsPage/MetronomeColorButton
+@onready var camera_zoom_slider: HSlider = $SettingsPage/CameraZoomSlider
+@onready var camera_zoom_value: Label = $SettingsPage/CameraZoomValue
 @onready var keyboard_mouse_button: Button = $OptionsPage/KeyboardMouse
 @onready var controller_button: Button = $OptionsPage/Controller
 @onready var metronome_visualizer_button: Button = $OptionsPage/MetronomeVisualizer
@@ -457,6 +460,7 @@ func _ready() -> void:
 	music_volume_slider.value_changed.connect(_on_music_volume_changed)
 	sfx_volume_slider.value_changed.connect(_on_sfx_volume_changed)
 	metronome_color_button.pressed.connect(_cycle_metronome_color)
+	camera_zoom_slider.value_changed.connect(_on_camera_zoom_changed)
 	storage_crafting_button.pressed.connect(show_tab.bind(Tab.STORAGE))
 	kitchen_crafting_button.pressed.connect(show_tab.bind(Tab.KITCHEN))
 	_update_forge_button()
@@ -520,6 +524,17 @@ func set_audio_volumes(music_value: float, sfx_value: float) -> void:
 	if sfx_volume_slider != null:
 		sfx_volume_slider.set_value_no_signal(sfx_volume * 100.0)
 	_update_audio_volume_labels()
+
+func set_camera_zoom(value: float) -> void:
+	if camera_zoom_slider == null: return
+	var zoom_value: float = clampf(value, 1.0, 2.0)
+	camera_zoom_slider.set_value_no_signal(zoom_value)
+	camera_zoom_value.text = "%.2f×" % zoom_value
+
+func _on_camera_zoom_changed(value: float) -> void:
+	var zoom_value: float = clampf(value, 1.0, 2.0)
+	camera_zoom_value.text = "%.2f×" % zoom_value
+	camera_zoom_changed.emit(zoom_value)
 
 func _on_music_volume_changed(value: float) -> void:
 	music_volume = clampf(value / 100.0, 0.0, 1.0)

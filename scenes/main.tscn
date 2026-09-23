@@ -4,7 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://bjkk6ridxq32u" path="res://scenes/player.tscn" id="2_player"]
 [ext_resource type="Script" uid="uid://ck6hpchpuqjgm" path="res://scripts/wave_spawner.gd" id="4_spawner"]
 [ext_resource type="PackedScene" uid="uid://diqb4kj5ha7b1" path="res://scenes/arena_bounds.tscn" id="5_bounds"]
-[ext_resource type="AudioStream" uid="uid://bnal7oir7d7p0" path="res://scenes/New_Project.mp3" id="6_tefeu"]
+[ext_resource type="AudioStream" uid="uid://ip8eu36a5fsv" path="res://assets/audio/music/Combat/forest_combat_theme.mp3" id="6_tefeu"]
 [ext_resource type="Script" uid="uid://coc8ntld1rtne" path="res://scripts/forest_floor.gd" id="8_forest_floor"]
 [ext_resource type="Script" uid="uid://ch2o20nmco8b8" path="res://scripts/combat_presentation_fx.gd" id="9_presentation_fx"]
 [ext_resource type="PackedScene" path="res://scenes/terrain/arena_generator.tscn" id="10_terrain"]

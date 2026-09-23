@@ -6,7 +6,7 @@ func _make_director() -> MusicDirector:
 	var director: MusicDirector = MusicDirector.new()
 	add_child(director)
 	var player: AudioStreamPlayer = AudioStreamPlayer.new()
-	player.stream = load("res://scenes/New_Project.mp3")
+	player.stream = load("res://assets/audio/music/Combat/forest_combat_theme.mp3")
 	add_child(player)
 	_spawned_players.append(player)
 	director.setup(player)

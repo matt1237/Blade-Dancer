@@ -1,0 +1,46 @@
+{
+	"animation_name": "same_leather_armored_unhelmeted_character_subtle_breathing_idle_preserve_face_hair_armor_palette_proportions_and_silhouette_exactly_neck_wrap_stays_fixed_but_no_trailing_scarf_cloth_no_cape_no_weapon",
+	"animation_style": "",
+	"animation_type": "same leather-armored unhelmeted character subtle breathing idle, preserve face hair armor palette proportions and silhouette exactly, neck wrap stays fixed but no trailing scarf cloth no cape no weapon",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 4,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 256,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 256,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 512,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 256,
+			"x": 768,
+			"y": 0
+		}
+	],
+	"frame_width": 256,
+	"name": "leather_armor_scarfless_idle",
+	"prompt": "same leather-armored unhelmeted character subtle breathing idle, preserve face hair armor palette proportions and silhouette exactly, neck wrap stays fixed but no trailing scarf cloth no cape no weapon",
+	"rows": 1,
+	"source_image": "res://assets/generated/leather_armor_scarfless_idle_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/leather_armor_scarfless_idle.png",
+	"spritesheet_width": 1024,
+	"type": "animation"
+}

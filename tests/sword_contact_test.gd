@@ -14,6 +14,20 @@ func test_sword_damage_rewards_authored_relative_blade_speed_without_zeroing_pas
 	assert(composed > passive and composed < committed, "Intermediate authored movement must receive smoothly increasing damage.")
 	assert(is_equal_approx(committed, 1.0), "A fully authored relative blade speed must reach the engaged damage ceiling.")
 
+func test_cutting_zone_damage_lerps_from_seventy_to_one_fifteen() -> void:
+	assert(is_equal_approx(Player.cutting_zone_damage_multiplier(0.25, 0.25), 0.70))
+	assert(is_equal_approx(Player.cutting_zone_damage_multiplier(1.0, 0.25), 1.15))
+	var midpoint: float = Player.cutting_zone_damage_multiplier(0.625, 0.25)
+	assert(is_equal_approx(midpoint, 0.925), "Middle of the blue cutting zone should deal 92.5% damage.")
+
+func test_sword_damage_quality_adjustments_add_instead_of_compound() -> void:
+	var additive: float = Player.additive_sword_damage_multiplier(1.30, 1.0, 1.0, 1.15, 1.25)
+	assert(is_equal_approx(additive, 1.70), "30% contact + 15% tip + 25% re-entry should total 70%, not compound.")
+	var compounded: float = 1.30 * 1.15 * 1.25
+	assert(additive < compounded)
+	var weak_floor: float = Player.additive_sword_damage_multiplier(0.80, 0.30, 0.80, 0.70, 1.0)
+	assert(is_equal_approx(weak_floor, 0.20), "Stacked penalties must keep a small real-contact damage floor.")
+
 func test_sword_contact_has_no_player_center_exclusion() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)

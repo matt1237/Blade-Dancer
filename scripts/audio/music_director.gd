@@ -1,9 +1,12 @@
 class_name MusicDirector extends Node
 
 const HOME_TRACKS: Array[AudioStream] = [
-	preload("res://assets/audio/music/Home/Happy Home.mp3"),
-	preload("res://assets/audio/music/Home/Lanterns at Dusk.mp3"),
-	preload("res://assets/audio/music/Home/Mossy Hearth.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/Happy Home.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/Lanterns at Dusk.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/Morning Adventure.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/Mossy Hearth.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/River Catch Days.mp3"),
+	preload("res://assets/audio/music/Home & Crafting/River Catch Days (1).mp3"),
 ]
 const FORGE_TRACKS: Array[AudioStream] = [
 	preload("res://assets/audio/music/Forge/Forge of Moss and Iron.mp3"),
@@ -12,9 +15,26 @@ const FORGE_TRACKS: Array[AudioStream] = [
 ## Boss encounter theme: plays in this fixed order (not shuffled), alternating
 ## forever once started -- Rift Combo Riot first (starts the instant the boss
 ## stops talking), then Horn of the Void, then back to Rift Combo Riot, etc.
+const COMBAT_TRACKS: Array[AudioStream] = [
+	preload("res://assets/audio/music/Combat/forest_combat_theme.mp3"),
+	preload("res://assets/audio/music/Combat/Bowl of Shadow (1).mp3"),
+	preload("res://assets/audio/music/Combat/Clash of the Highlands.mp3"),
+	preload("res://assets/audio/music/Combat/Misty Pass.mp3"),
+]
+const FOREST_TRACKS: Array[AudioStream] = [
+	preload("res://assets/audio/music/Forest/forest_combat_theme.mp3"),
+	preload("res://assets/audio/music/Forest/Bowl of Shadow (1).mp3"),
+	preload("res://assets/audio/music/Forest/Clash of the Highlands.mp3"),
+	preload("res://assets/audio/music/Forest/Misty Pass.mp3"),
+	preload("res://assets/audio/music/Forest/Horn of the Void.mp3"),
+	preload("res://assets/audio/music/Forest/Rift Combo Riot.mp3"),
+]
+## Boss encounter theme: plays in this fixed order (not shuffled), alternating
+## forever once started -- Rift Combo Riot first (starts the instant the boss
+## stops talking), then Horn of the Void, then back to Rift Combo Riot, etc.
 const BOSS_TRACKS: Array[AudioStream] = [
-	preload("res://assets/audio/music/Elite&Boss Tracks/Rift Combo Riot.mp3"),
-	preload("res://assets/audio/music/Elite&Boss Tracks/Horn of the Void.mp3"),
+	preload("res://assets/audio/music/Boss Combat/Rift Combo Riot.mp3"),
+	preload("res://assets/audio/music/Boss Combat/Horn of the Void.mp3"),
 ]
 const FADE_DURATION: float = 0.35
 const SILENT_VOLUME_DB: float = -32.0
@@ -23,8 +43,10 @@ enum Mode { COMBAT, HOME, FORGE, SILENT, BOSS }
 
 var music_player: AudioStreamPlayer = null
 var combat_stream: AudioStream = null
+var active_combat_tracks: Array[AudioStream] = FOREST_TRACKS
 var mode: Mode = Mode.COMBAT
 var home_shuffle_bag: Array[int] = []
+var combat_shuffle_bag: Array[int] = []
 var forge_shuffle_bag: Array[int] = []
 var current_home_index: int = -1
 var current_forge_index: int = -1
@@ -39,9 +61,18 @@ func _ready() -> void:
 func setup(player: AudioStreamPlayer) -> void:
 	music_player = player
 	combat_stream = music_player.stream
-	_set_stream_loop(combat_stream, true)
+	# Combat tracks advance through the shuffle bag instead of looping one track.
+	_set_stream_loop(combat_stream, false)
 	if not music_player.finished.is_connected(_on_music_finished): music_player.finished.connect(_on_music_finished)
 	if not music_player.playing and music_player.is_inside_tree(): music_player.play()
+
+func unlock_audio() -> void:
+	# Browsers may reject autoplay until the first user gesture. Calling play()
+	# again from that gesture resumes the already-selected track.
+	if music_player == null or not music_player.is_inside_tree():
+		return
+	if not music_player.playing:
+		music_player.play()
 
 func set_music_volume(value: float) -> void:
 	music_volume_linear = clampf(value, 0.0, 1.0)
@@ -95,7 +126,9 @@ func enter_adventure() -> void:
 	if music_player == null or mode == Mode.COMBAT: return
 	mode = Mode.COMBAT
 	transition_serial += 1
-	_transition_to(combat_stream, true, transition_serial, _current_music_volume_db())
+	# Combat playlists advance on finished, so never loop the entry track.
+	var opening_track: AudioStream = _next_combat_track()
+	_transition_to(opening_track, false, transition_serial, _current_music_volume_db())
 
 ## Starts the boss theme: Rift Combo Riot, then Horn of the Void, then loops
 ## the pair forever (each track plays once, non-looping, and _on_music_finished
@@ -140,6 +173,17 @@ func _refill_home_shuffle_bag() -> void:
 		home_shuffle_bag[0] = home_shuffle_bag[swap_index]
 		home_shuffle_bag[swap_index] = held_index
 
+func set_adventure_zone(zone_id: String) -> void:
+	active_combat_tracks = FOREST_TRACKS if zone_id == "forest" else COMBAT_TRACKS
+	combat_shuffle_bag.clear()
+
+func _next_combat_track() -> AudioStream:
+	if combat_shuffle_bag.is_empty():
+		for index: int in range(active_combat_tracks.size()): combat_shuffle_bag.append(index)
+		combat_shuffle_bag.shuffle()
+	var index: int = combat_shuffle_bag.pop_front()
+	return active_combat_tracks[index]
+
 func _next_forge_track() -> AudioStream:
 	if forge_shuffle_bag.is_empty(): _refill_forge_shuffle_bag()
 	current_forge_index = forge_shuffle_bag.pop_front()
@@ -161,6 +205,8 @@ func _on_music_finished() -> void:
 	var target_volume_db: float = _current_music_volume_db()
 	if mode == Mode.HOME:
 		next_track = _next_home_track()
+	elif mode == Mode.COMBAT:
+		next_track = _next_combat_track()
 	elif mode == Mode.FORGE:
 		next_track = _next_forge_track()
 		target_volume_db = _forge_volume_db()

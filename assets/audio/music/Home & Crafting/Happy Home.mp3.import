@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c24578ovbo8kw"
+path="res://.godot/imported/Happy Home.mp3-4346e89c8b60857257cd0844c04f8b89.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Home & Crafting/Happy Home.mp3"
+dest_files=["res://.godot/imported/Happy Home.mp3-4346e89c8b60857257cd0844c04f8b89.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

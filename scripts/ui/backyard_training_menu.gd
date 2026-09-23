@@ -29,7 +29,6 @@ var grapple_controls: Dictionary = {}
 var visualizer_controls: Dictionary = {}
 var global_preset_rows: Dictionary = {}
 var grapple_status_label: Label = null
-var windup_step_status_label: Label = null
 var experimental_bind_section: VBoxContainer = null
 var experimental_bind_status: Label = null
 var weapon_collision_zones_button: Button = null
@@ -443,11 +442,6 @@ func _build_windup_tab(tabs: TabContainer) -> void:
 	note.text = "Currently affects Form II: Metronome Wind-up only. Form I: Metronome V remains the untouched comparison stance. Fractions choose when phases happen; relative speed sliders choose how distinct they feel while total timing stays normalized."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(note)
-	windup_step_status_label = Label.new()
-	windup_step_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	windup_step_status_label.modulate = Color(0.55, 1.0, 0.55)
-	windup_step_status_label.tooltip_text = "E cycles: Off → Always On → After Sword Contact (3s) → After Any Damage (3s)."
-	box.add_child(windup_step_status_label)
 	var timing_section: VBoxContainer = _create_section_header(box, "STROKE TIMING", true)
 	_create_hand_slider(timing_section, "windup_profile", "Wind-up Profile Strength", 0.0, 1.0, 0.05, "", "0 = linear timing. Higher values slow the opening and recovery portions while concentrating speed in the strike window.")
 	_create_hand_slider(timing_section, "windup_fraction", "Wind-up Fraction", 0.10, 0.50, 0.01, "", "Fraction of each stroke spent leaving the reversal before the fast strike window.")
@@ -456,9 +450,11 @@ func _build_windup_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(timing_section, "strike_speed", "Strike Speed (Relative)", 1.00, 4.00, 0.05, "×", "Relative speed of the central committed strike window. Higher makes the contrast clearer without changing total cycle time.")
 	_create_hand_slider(timing_section, "recovery_speed", "Recovery Speed (Relative)", 0.05, 1.00, 0.05, "×", "How slow the follow-through is relative to the base phase rate. Lower gives a longer, more visible recovery.")
 	var momentum_section: VBoxContainer = _create_section_header(box, "FORWARD STEP", true)
-	_create_hand_slider(momentum_section, "forward_impulse", "Forward Step Impulse", 0.0, 300.0, 5.0, " px/s", "One small velocity impulse per stroke. 0 = no automatic forward momentum.")
+	_create_hand_slider(momentum_section, "authored_step_enabled", "Authored Step", 0.0, 1.0, 1.0, "", _form_three_feel_tip("A hard, sustained swing-through can carry the player into the committed cut with a physical step.", "No forward step occurs.", "Only strongly driven strokes can pull the body forward behind the cut.", "The step fires at most once per stroke and requires deliberate motion with the blade before the commitment point."))
+	_create_hand_slider(momentum_section, "forward_impulse", "Forward Step Impulse", 0.0, 800.0, 10.0, " px/s", "Physical velocity toward the live aim point when an Authored Step is earned. Higher values make full-drive power swings carry the body farther.")
 	_create_hand_slider(momentum_section, "forward_impulse_timing", "Forward Step Timing", 0.05, 0.95, 0.01, "", "Where the forward step lands inside the stroke. Default 0.30 means it fires as the strike leaves wind-up.")
-	_create_hand_slider(momentum_section, "backstep_impulse", "Backstep Impulse", 0.0, 300.0, 5.0, " px/s", "Opposite movement impulse per stroke. 0 = no backstep. Shares the same E activation mode as Forward Step.")
+	_create_hand_slider(momentum_section, "backstep_enabled", "Backstep Enabled", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Allows the separately tuned opposite-direction movement impulse during a stroke.", "Backstep is fully disabled.", "Backstep can fire using its Impulse and Timing settings.", "This switch is independent from Authored Step; E no longer controls either movement."))
+	_create_hand_slider(momentum_section, "backstep_impulse", "Backstep Impulse", 0.0, 300.0, 5.0, " px/s", "Opposite cutting-tangent impulse per stroke when Backstep Enabled is on.")
 	_create_hand_slider(momentum_section, "backstep_impulse_timing", "Backstep Timing", 0.05, 0.95, 0.01, "", "Where the opposite step lands inside the stroke. Use this independently from Forward Step Timing.")
 	var action_section: VBoxContainer = _create_section_header(box, "ACTION COMMITMENT (METRONOME)", true)
 	_create_hand_slider(action_section, "action_commitment_strength", "Action Commitment Strength", 0.0, 1.0, 0.05, "", "0 = freely redirectable; 1 = no-cancel during the late-stroke action window.")
@@ -766,6 +762,9 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(core_section, "strike_commitment", "Strike Commitment (Anti-Flail)", 0.0, 1.0, 0.05, "", "Higher values reward committed peak-stroke hits and weaken rapid mouse flailing.")
 	_create_hand_slider(core_section, "swing_commitment", "Swing Commitment (Reversal Drag)", 0.0, 1.0, 0.05, "", "With-the-blade aim stays responsive; opposing the current swing becomes heavier. 0 = neutral, 1 = strongest.")
 	_create_hand_slider(core_section, "swing_commitment_duration", "Swing Commitment Duration", 0.0, 0.50, 0.01, "s", "How long opposing player input remains heavy after an intentional reversal. Default 0.16s.")
+	_create_hand_slider(core_section, "tempo_assist_enabled", "Swing Tempo Assist", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Lets deliberate hand motion accelerate the current metronome stroke when both travel in the same direction.", "Original fixed sword rhythm.", "The blade catches up with deliberate same-direction input.", "Assistance resets at every reversal, so each stroke must be physically reinforced."))
+	_create_hand_slider(core_section, "directional_arc_opening_enabled", "Directional Arc Opening", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Deliberate hand movement with the blade progressively opens the destination of the active stroke.", "Every stroke uses the normal symmetric arc.", "Driven strokes gain up to 10° of directional follow-through.", "The earned extension remains until reversal; each return stroke must earn its own opening."))
+	_create_hand_slider(core_section, "swing_gesture_gearing_degrees", "Swing Gesture Gearing", 15.0, 360.0, 1.0, "°", _form_three_feel_tip("Angular cursor travel required to fully drive one metronome stroke.", "Small wrist flicks quickly produce powerful strokes.", "Broad deliberate mouse sweeps are required for full drive.", "This changes how much gesture earns power; it does not change the sword's visible arc or radial hand reach."))
 	_create_hand_slider(core_section, "radial_response", "Radial Response (In/Out Drag)", 0.05, 1.0, 0.05, "", "How quickly hand reach responds to mouse distance.")
 	_create_hand_slider(core_section, "scale", "Mouse Reach Scale (Spatial Gearing)", 1.0, 10.0, 0.1, "×", "How much mouse travel is required to reach maximum hand range.")
 	_create_hand_slider(core_section, "min", "Min Hand Range", 5.0, 140.0, 1.0, " px")
@@ -956,7 +955,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(strike_section, "rebound_flow_boost", "Rebound Flow Boost (Go With It)", 1.0, 3.5, 0.1, "×", "When you turn your aim WITH the bounce direction during recoil, rotation speed surges into a snappy spin cut.")
 	_create_contact_slider(strike_section, "grip_authority_duration", "Grip Authority Duration", 0.0, 0.40, 0.01, " s", "Window immediately after a strike where your wrist has high authority to redirect.")
 	_create_contact_slider(strike_section, "grip_turn_speed_mult", "Grip Turn Speed Multiplier", 1.0, 4.0, 0.1, "×", "Multiplier applied to max turn speed during the Grip Authority window.")
-	_create_contact_slider(strike_section, "apex_hang_time", "Apex Hang / Dwell Time", 0.0, 0.20, 0.005, " s", "Cushions the turnaround at the outer apex of the swing arc, giving a tactile window to redirect.")
+	_create_contact_slider(strike_section, "apex_hang_time", "Authored Apex Hang", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Strongly driven strokes earn a short committed hold at the endpoint before returning.", "No drive-earned endpoint hold.", "Stroke Drive above 50% earns up to 0.14 seconds of endpoint hang.", "Each stroke earns its own hang; the hold cannot be extended indefinitely."))
 	_create_contact_slider(strike_section, "blade_roll_speed", "Blade Roll Speed (Edge Flip)", 1.0, 20.0, 0.5, " /s", "How fast every weapon rolls to keep its edge leading actual travel. Higher = snappier flip. Symmetric weapons may show little visual change, but use the same universal rollover logic.")
 
 	var hilt_section: VBoxContainer = _create_section_header(box, "HILT BASH & POINT-BLANK (Per Preset)")
@@ -1695,9 +1694,6 @@ func _sync_combat_controls() -> void:
 	if experimental_bind_section != null:
 		experimental_bind_section.visible = player.is_experimental_bind_form()
 	_sync_experimental_bind_status(player)
-	if windup_step_status_label != null:
-		windup_step_status_label.text = "Forward / Backstep Mode: %s | Press E to cycle" % player._windup_step_mode_name()
-
 	if is_instance_valid(main) and main.has_method("get_main_game_preset"):
 		main_game_preset = clampi(int(main.call("get_main_game_preset")), 1, 4)
 	else:

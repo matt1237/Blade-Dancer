@@ -1,7 +1,6 @@
 [gd_scene format=3 uid="uid://lvdg87ggupt4"]
 
 [ext_resource type="Script" uid="uid://cmr2cxo0hlf4k" path="res://scripts/ui/home_menu.gd" id="1_home"]
-[ext_resource type="Script" uid="uid://63tqmnaaabg5" path="res://scripts/ui/home_player_portrait.gd" id="2_portrait"]
 
 [node name="HomeMenu" type="Control" unique_id=1540440840]
 process_mode = 3
@@ -253,7 +252,7 @@ offset_right = 872.0
 offset_bottom = 88.0
 theme_override_colors/font_color = Color(0.95, 0.82, 0.46, 1)
 theme_override_font_sizes/font_size = 28
-text = "AUDIO SETTINGS"
+text = "GAME SETTINGS"
 horizontal_alignment = 1
 
 [node name="SettingsHint" type="Label" parent="SettingsPage"]
@@ -264,7 +263,7 @@ offset_right = 802.0
 offset_bottom = 130.0
 theme_override_colors/font_color = Color(0.7, 0.82, 0.65, 1)
 theme_override_font_sizes/font_size = 17
-text = "Adjust the mix for music and sound effects. Changes apply immediately."
+text = "Adjust audio and gameplay view. Changes apply immediately."
 horizontal_alignment = 1
 
 [node name="MusicVolumeLabel" type="Label" parent="SettingsPage"]
@@ -329,24 +328,56 @@ theme_override_font_sizes/font_size = 20
 text = "100%"
 horizontal_alignment = 2
 
+[node name="CameraZoomLabel" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 150.0
+offset_top = 310.0
+offset_right = 320.0
+offset_bottom = 344.0
+theme_override_font_sizes/font_size = 20
+text = "CAMERA ZOOM"
+
+[node name="CameraZoomSlider" type="HSlider" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 350.0
+offset_top = 310.0
+offset_right = 720.0
+offset_bottom = 344.0
+min_value = 1.0
+max_value = 2.0
+step = 0.05
+value = 1.0
+focus_mode = 2
+tooltip_text = "Zoom the gameplay camera closer. 1.4×–1.5× is recommended for smaller mobile screens."
+
+[node name="CameraZoomValue" type="Label" parent="SettingsPage"]
+layout_mode = 0
+offset_left = 740.0
+offset_top = 310.0
+offset_right = 802.0
+offset_bottom = 344.0
+theme_override_font_sizes/font_size = 20
+text = "1.0×"
+horizontal_alignment = 2
+
 [node name="MetronomeColorButton" type="Button" parent="SettingsPage"]
 layout_mode = 0
 offset_left = 250.0
-offset_top = 324.0
+offset_top = 356.0
 offset_right = 702.0
-offset_bottom = 368.0
+offset_bottom = 400.0
 theme_override_font_sizes/font_size = 18
 text = "METRONOME COLOR: SUN GOLD"
 
 [node name="SettingsFooter" type="Label" parent="SettingsPage"]
 layout_mode = 0
 offset_left = 150.0
-offset_top = 382.0
+offset_top = 404.0
 offset_right = 802.0
-offset_bottom = 416.0
+offset_bottom = 428.0
 theme_override_colors/font_color = Color(0.72, 0.82, 0.68, 1)
 theme_override_font_sizes/font_size = 16
-text = "Volume preferences are saved automatically."
+text = "Audio and camera preferences are saved automatically."
 horizontal_alignment = 1
 
 [node name="StatusPage" type="Panel" parent="." unique_id=170298948]
@@ -355,14 +386,6 @@ offset_left = 164.0
 offset_top = 218.0
 offset_right = 1116.0
 offset_bottom = 652.0
-
-[node name="Portrait" type="Control" parent="StatusPage" unique_id=865525864]
-anchors_preset = 0
-offset_left = 42.0
-offset_top = 38.0
-offset_right = 362.0
-offset_bottom = 385.0
-script = ExtResource("2_portrait")
 
 [node name="EquipmentText" type="RichTextLabel" parent="StatusPage" unique_id=774386491]
 layout_mode = 0

@@ -3,6 +3,7 @@ class_name MobileControls extends Control
 signal movement_changed(value: Vector2)
 signal aim_changed(value: Vector2)
 signal ability_changed(ability: String, held: bool)
+signal ability_aim_changed(ability: String, direction: Vector2)
 
 const ABILITIES: Array[String] = ["chakram", "dash", "grapple"]
 const MOVE_TOUCH_ROLE: String = "move"
@@ -29,6 +30,8 @@ var active_touch_roles: Dictionary = {}
 var touch_positions: Dictionary = {}
 var ability_touch_ids: Dictionary = {}
 var ability_held: Dictionary = {"chakram": false, "dash": false, "grapple": false}
+var ability_aim_values: Dictionary = {"chakram": Vector2.ZERO, "grapple": Vector2.ZERO}
+var ability_contact_positions: Dictionary = {"chakram": Vector2.ZERO, "grapple": Vector2.ZERO}
 var mouse_role: String = ""
 var mouse_position: Vector2 = Vector2.ZERO
 
@@ -114,6 +117,15 @@ func _handle_pointer(pointer_id: int, pointer_position: Vector2, pressed: bool) 
 func _handle_pointer_down(pointer_id: int, touch_position: Vector2) -> void:
 	if active_touch_roles.has(pointer_id):
 		return
+	var active_ability_aim: String = _active_ability_aim_role()
+	# One held ability owns the complete right-side cluster. Movement remains
+	# independent, but Aim and every other ability ignore overlapping touches.
+	if not active_ability_aim.is_empty():
+		if touch_position.distance_squared_to(left_stick_center) <= pow(current_stick_radius * 1.35, 2.0) and not _role_is_active(MOVE_TOUCH_ROLE):
+			active_touch_roles[pointer_id] = MOVE_TOUCH_ROLE
+			touch_positions[pointer_id] = touch_position
+			_update_move(touch_position)
+		return
 	var ability: String = _ability_at(touch_position)
 	if not ability.is_empty():
 		if ability_touch_ids.has(ability):
@@ -122,6 +134,7 @@ func _handle_pointer_down(pointer_id: int, touch_position: Vector2) -> void:
 		touch_positions[pointer_id] = touch_position
 		ability_touch_ids[ability] = pointer_id
 		_set_ability_held(ability, true)
+		if ability in ["chakram", "grapple"]: _update_ability_aim(ability, touch_position)
 		if pointer_id == MOUSE_POINTER_ID:
 			mouse_role = ability
 		return
@@ -148,6 +161,8 @@ func _handle_pointer_motion(pointer_id: int, touch_position: Vector2) -> void:
 		_update_move(touch_position)
 	elif role == AIM_TOUCH_ROLE:
 		_update_aim(touch_position)
+	elif role in ["chakram", "grapple"]:
+		_update_ability_aim(role, touch_position)
 
 func _handle_pointer_up(pointer_id: int) -> void:
 	if not active_touch_roles.has(pointer_id):
@@ -162,12 +177,20 @@ func _handle_pointer_up(pointer_id: int) -> void:
 		aim_value = Vector2.ZERO
 		queue_redraw()
 	elif ABILITIES.has(role):
+		if role in ["chakram", "grapple"]:
+			ability_aim_values[role] = Vector2.ZERO
+			ability_contact_positions[role] = Vector2.ZERO
 		if ability_touch_ids.get(role, -1) == pointer_id:
 			ability_touch_ids.erase(role)
 		_set_ability_held(role, false)
 	if pointer_id == MOUSE_POINTER_ID:
 		mouse_role = ""
 	queue_redraw()
+
+func _active_ability_aim_role() -> String:
+	for ability: String in ["chakram", "grapple"]:
+		if bool(ability_held.get(ability, false)): return ability
+	return ""
 
 func _role_is_active(role: String) -> bool:
 	return active_touch_roles.values().has(role)
@@ -179,8 +202,23 @@ func _update_move(stick_position: Vector2) -> void:
 
 func _update_aim(stick_position: Vector2) -> void:
 	aim_value = _stick_vector(right_stick_center, stick_position)
-	if aim_value.length_squared() > 0.0001:
-		aim_changed.emit(aim_value.normalized())
+	# Preserve magnitude: Player maps this virtual-stick radius through the same
+	# hand-range and spatial-gearing authority used by desktop cursor distance.
+	aim_changed.emit(aim_value)
+	queue_redraw()
+
+func _update_ability_aim(ability: String, pointer_position: Vector2) -> void:
+	var offset: Vector2 = pointer_position - _ability_center(ability)
+	var ability_reach: float = current_button_radius
+	if offset.length() > ability_reach: offset = offset.normalized() * ability_reach
+	var value: Vector2 = offset / maxf(ability_reach, 1.0)
+	# A small center deadzone allows taps to use the ability's recent fallback.
+	ability_contact_positions[ability] = pointer_position
+	if value.length() < 0.18:
+		ability_aim_values[ability] = Vector2.ZERO
+	else:
+		ability_aim_values[ability] = value
+		ability_aim_changed.emit(ability, value.normalized())
 	queue_redraw()
 
 func _stick_vector(center: Vector2, stick_position: Vector2) -> Vector2:
@@ -218,6 +256,10 @@ func _reset_all_inputs() -> void:
 	mouse_role = ""
 	move_value = Vector2.ZERO
 	aim_value = Vector2.ZERO
+	ability_aim_values["chakram"] = Vector2.ZERO
+	ability_aim_values["grapple"] = Vector2.ZERO
+	ability_contact_positions["chakram"] = Vector2.ZERO
+	ability_contact_positions["grapple"] = Vector2.ZERO
 	for ability: String in ABILITIES:
 		if bool(ability_held.get(ability, false)):
 			ability_held[ability] = false
@@ -230,7 +272,11 @@ func _draw() -> void:
 	var stick_ring: Color = Color(0.55, 0.82, 0.96, control_alpha)
 	var knob_fill: Color = Color(0.78, 0.92, 1.0, control_alpha * 0.9)
 	_draw_stick(left_stick_center, move_value, stick_fill, stick_ring, knob_fill, "MOVE")
-	_draw_stick(right_stick_center, aim_value, stick_fill, Color(0.95, 0.75, 0.35, control_alpha), knob_fill, "AIM")
+	var active_ability_aim: String = _active_ability_aim_role()
+	if active_ability_aim.is_empty():
+		_draw_stick(right_stick_center, aim_value, stick_fill, Color(0.95, 0.75, 0.35, control_alpha), knob_fill, "AIM")
+	else:
+		_draw_disabled_stick(right_stick_center, "AIM LOCKED")
 	for ability: String in ABILITIES:
 		_draw_ability_button(ability)
 
@@ -243,9 +289,16 @@ func _draw_stick(center: Vector2, value: Vector2, fill: Color, ring: Color, knob
 	draw_circle(knob_position, current_stick_radius * 0.25, knob)
 	draw_string(ThemeDB.fallback_font, center + Vector2(-28.0, current_stick_radius + 24.0), label, HORIZONTAL_ALIGNMENT_CENTER, 56.0, 14, Color(0.86, 0.94, 1.0, control_alpha))
 
+func _draw_disabled_stick(center: Vector2, label: String) -> void:
+	draw_circle(center, current_stick_radius, Color(0.04, 0.05, 0.07, control_alpha * 0.36))
+	draw_arc(center, current_stick_radius, 0.0, TAU, 40, Color(0.45, 0.48, 0.52, control_alpha * 0.42), 2.0, true)
+	draw_string(ThemeDB.fallback_font, center + Vector2(-42.0, 5.0), label, HORIZONTAL_ALIGNMENT_CENTER, 84.0, 12, Color(0.7, 0.72, 0.75, control_alpha * 0.72))
+
 func _draw_ability_button(ability: String) -> void:
 	var center: Vector2 = _ability_center(ability)
 	var held: bool = bool(ability_held.get(ability, false))
+	var active_ability_aim: String = _active_ability_aim_role()
+	var blocked: bool = not active_ability_aim.is_empty() and active_ability_aim != ability
 	var base_color: Color = Color("d76b55")
 	var label: String = "C"
 	match ability:
@@ -256,11 +309,30 @@ func _draw_ability_button(ability: String) -> void:
 			base_color = Color("c79a54")
 			label = "G"
 	var fill_color: Color = base_color.lightened(0.28) if held else base_color
+	if blocked: fill_color = Color(0.28, 0.29, 0.32)
 	draw_circle(center + Vector2(3.0, 4.0), current_button_radius + 3.0, Color(0.01, 0.02, 0.04, control_alpha * 0.8))
 	draw_circle(center, current_button_radius, Color(fill_color.r, fill_color.g, fill_color.b, control_alpha))
 	draw_arc(center, current_button_radius, 0.0, TAU, 40, Color(1.0, 0.93, 0.72, control_alpha), 2.5 if held else 1.8, true)
 	draw_string(ThemeDB.fallback_font, center + Vector2(-12.0, 8.0), label, HORIZONTAL_ALIGNMENT_CENTER, 24.0, 24, Color.WHITE)
 	draw_string(ThemeDB.fallback_font, center + Vector2(-44.0, current_button_radius + 18.0), ability.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 88.0, 12, Color(0.96, 0.94, 0.87, control_alpha))
+	if held and ability in ["chakram", "grapple"]:
+		var aim_value_for_ability: Vector2 = ability_aim_values.get(ability, Vector2.ZERO) as Vector2
+		var joystick_radius: float = current_button_radius * 1.6
+		draw_circle(center, joystick_radius, Color(0.04, 0.05, 0.08, control_alpha * 0.28))
+		draw_arc(center, joystick_radius, 0.0, TAU, 48, Color(1.0, 0.75, 0.25, control_alpha * 0.78), 2.5, true)
+		draw_arc(center, current_button_radius * 0.22, 0.0, TAU, 24, Color(1.0, 0.9, 0.55, control_alpha * 0.65), 2.0, true)
+		var raw_contact: Vector2 = ability_contact_positions.get(ability, center) as Vector2
+		if raw_contact == Vector2.ZERO: raw_contact = center
+		var contact_offset: Vector2 = raw_contact - center
+		if contact_offset.length() > joystick_radius: contact_offset = contact_offset.normalized() * joystick_radius
+		var contact_dot: Vector2 = center + contact_offset
+		draw_circle(contact_dot, 9.0, Color(1.0, 1.0, 1.0, control_alpha * 0.95))
+		draw_arc(contact_dot, 13.0, 0.0, TAU, 24, Color(1.0, 0.35, 0.28, control_alpha), 2.0, true)
+		var knob_position: Vector2 = center + aim_value_for_ability * current_button_radius * 1.25
+		draw_line(center, knob_position, Color(1.0, 0.92, 0.55, control_alpha), 4.0, true)
+		draw_circle(knob_position, current_button_radius * 0.32, Color(0.98, 0.92, 0.72, control_alpha))
+		if aim_value_for_ability.length_squared() > 0.001:
+			draw_line(center, center + aim_value_for_ability.normalized() * current_button_radius * 2.2, Color(1.0, 0.78, 0.28, control_alpha * 0.85), 3.0, true)
 	var gesture_text: String = "RELEASE" if held else "HOLD + AIM"
 	draw_string(ThemeDB.fallback_font, center + Vector2(-48.0, current_button_radius + 34.0), gesture_text, HORIZONTAL_ALIGNMENT_CENTER, 96.0, 11, Color(1.0, 0.86, 0.5, control_alpha))
 	if ability == "grapple":

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://cs116svgh4x7a"
+path="res://.godot/imported/Clash of the Highlands.mp3-a8c019a226dd6094216e6eca0815a61d.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Forest/Clash of the Highlands.mp3"
+dest_files=["res://.godot/imported/Clash of the Highlands.mp3-a8c019a226dd6094216e6eca0815a61d.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

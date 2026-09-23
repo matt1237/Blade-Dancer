@@ -5,7 +5,6 @@ signal tutorial_action(event_type: String, target: Node)
 
 # New values are appended so persisted integer IDs for every existing form remain stable.
 enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
-enum ForwardStepMode { OFF, ALWAYS, SWORD_CONTACT, ANY_DAMAGE }
 const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
@@ -43,7 +42,12 @@ const BLADE_HILT_INSET: float = 14.0
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
-const FORWARD_STEP_COMBAT_WINDOW: float = 3.0
+const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
+const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
+const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
+const STROKE_DRIVE_BUILD_PER_SECOND: float = 3.0
+const STROKE_DRIVE_BUILD_PROGRESS_LIMIT: float = 0.60
+const AUTHORED_STEP_DRIVE_THRESHOLD: float = 0.70
 const SWORD_TEXTURE: Texture2D = preload("res://assets/Blade Dancer Sword.png")
 const CURVED_SWORD_TEXTURE: Texture2D = preload("res://assets/generated/basic_curved_sword_frame_0.png")
 const SWORD_FLAME_ATLAS: Texture2D = preload("res://assets/generated/hd_weapon_flame_symmetric_atlas.png")
@@ -233,6 +237,16 @@ static func calculate_engaged_sword_damage_multiplier(relative_blade_speed: floa
 	var emphasis: float = clampf(maxf(0.0, relative_blade_speed) / maxf(1.0, speed_reference), 0.0, 1.0)
 	return lerpf(clampf(passive_multiplier, 0.0, engaged_multiplier), maxf(passive_multiplier, engaged_multiplier), emphasis)
 
+static func cutting_zone_damage_multiplier(whole_blade_fraction: float, cutting_zone_start: float, base_multiplier: float = 0.70, tip_multiplier: float = 1.15) -> float:
+	var cutting_fraction: float = clampf(inverse_lerp(cutting_zone_start, 1.0, whole_blade_fraction), 0.0, 1.0)
+	return lerpf(base_multiplier, tip_multiplier, cutting_fraction)
+
+static func additive_sword_damage_multiplier(contact_multiplier: float, authored_multiplier: float, commitment_multiplier: float, position_multiplier: float, reentry_multiplier: float, minimum_multiplier: float = 0.20) -> float:
+	var combined: float = 1.0
+	for multiplier: float in [contact_multiplier, authored_multiplier, commitment_multiplier, position_multiplier, reentry_multiplier]:
+		combined += multiplier - 1.0
+	return maxf(minimum_multiplier, combined)
+
 @export_category("Successful Sword Hit Feedback")
 ## Freeze duration for a weak flesh hit, in seconds.
 @export var flesh_hitstop_min: float = 0.05
@@ -360,6 +374,9 @@ static func calculate_engaged_sword_damage_multiplier(relative_blade_speed: floa
 @export_range(0.0, 1.0, 0.01) var forte_zone_end_fraction: float = 0.55
 ## Forte contacts transfer 15% more knockback than foible contacts.
 @export_range(1.0, 1.5, 0.05) var forte_knockback_multiplier: float = 1.15
+## Health-damage scale across the blue cutting zone: blade base to visible tip.
+@export_range(0.1, 1.0, 0.05) var cutting_zone_base_damage_multiplier: float = 0.70
+@export_range(1.0, 1.5, 0.05) var cutting_zone_tip_damage_multiplier: float = 1.15
 ## Shows a live count above the player and prints every detected sword slide.
 @export var debug_show_slide_counter: bool = true
 ## Shows the most recent sword interaction reason above the player.
@@ -391,18 +408,20 @@ var virtual_aim_point: Vector2 = Vector2.ZERO
 var previous_virtual_aim_point: Vector2 = Vector2.ZERO
 var has_virtual_aim_sample: bool = false
 var player_aim_turn_sign: float = 0.0
+var authored_angular_travel_radians: float = 0.0
 var authored_sword_engagement: float = 0.0
 var swing_commitment_left: float = 0.0
 var swing_commitment_direction: float = 0.0
 var windup_forward_step_fired: bool = false
 var windup_backstep_fired: bool = false
-var windup_step_mode: ForwardStepMode = ForwardStepMode.OFF
-var windup_step_active_left: float = 0.0
 var training_menu_input_locked: bool = false
 var input_mode: String = INPUT_MODE_KEYBOARD_MOUSE
 var mobile_input_enabled: bool = false
 var mobile_move_input: Vector2 = Vector2.ZERO
-var mobile_aim_direction: Vector2 = Vector2.RIGHT
+var mobile_aim_direction: Vector2 = Vector2.UP
+var mobile_recent_move_direction: Vector2 = Vector2.UP
+var mobile_chakram_aim_direction: Vector2 = Vector2.ZERO
+var mobile_grapple_aim_direction: Vector2 = Vector2.ZERO
 var mobile_dash_held: bool = false
 var mobile_chakram_held: bool = false
 var mobile_grapple_held: bool = false
@@ -411,6 +430,11 @@ var mobile_grapple_aiming: bool = false
 var controller_aim_direction: Vector2 = Vector2.RIGHT
 var metronome_reversal_flash_left: float = 0.0
 var metronome_reversal_side: float = 0.0
+var tempo_assist_multiplier: float = 1.0
+var authored_stroke_drive: float = 0.0
+var directional_arc_extension_degrees: float = 0.0
+var authored_apex_hang_left: float = 0.0
+var authored_apex_hang_armed_drive: float = 0.0
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -835,16 +859,26 @@ func set_mobile_controls_enabled(enabled: bool) -> void:
 
 func set_mobile_move_input(value: Vector2) -> void:
 	mobile_move_input = value.limit_length(1.0)
+	if mobile_move_input.length_squared() > 0.01: mobile_recent_move_direction = mobile_move_input.normalized()
 
 func set_mobile_aim_direction(value: Vector2) -> void:
-	if value.length_squared() > 0.0001:
-		mobile_aim_direction = value.normalized()
+	mobile_aim_direction = value.limit_length(1.0)
+
+func set_mobile_ability_aim(ability: String, direction: Vector2) -> void:
+	if direction.length_squared() <= 0.01: return
+	var normalized_direction: Vector2 = direction.normalized()
+	match ability:
+		"chakram": mobile_chakram_aim_direction = normalized_direction
+		"grapple": mobile_grapple_aim_direction = normalized_direction
 
 func set_mobile_ability_held(ability: String, held: bool) -> void:
 	match ability:
 		"dash": mobile_dash_held = held
-		"chakram": mobile_chakram_held = held
+		"chakram":
+			if held and mobile_chakram_aim_direction.length_squared() <= 0.01: mobile_chakram_aim_direction = mobile_recent_move_direction if mobile_recent_move_direction.length_squared() > 0.01 else Vector2.UP
+			mobile_chakram_held = held
 		"grapple":
+			if held and mobile_grapple_aim_direction.length_squared() <= 0.01: mobile_grapple_aim_direction = mobile_recent_move_direction if mobile_recent_move_direction.length_squared() > 0.01 else Vector2.UP
 			if held and grapple_controller != null and (grapple_controller.active or grapple_controller.firing):
 				# A tap while tethered is the mobile disengage gesture.
 				grapple_controller.release_tether()
@@ -864,7 +898,7 @@ func get_grapple_hand_position() -> Vector2:
 	return (sword_data["start"] as Vector2) - blade_direction * BLADE_HILT_INSET
 
 func get_mobile_grapple_aim_point() -> Vector2:
-	var aim_direction: Vector2 = _current_aim_direction()
+	var aim_direction: Vector2 = mobile_grapple_aim_direction if mobile_input_enabled else _current_aim_direction()
 	var grapple_range: float = grapple_controller.max_tether_length * grapple_controller.mastery_range_multiplier
 	return get_grapple_hand_position() + aim_direction * grapple_range
 
@@ -889,7 +923,6 @@ func _physics_process(delta: float) -> void:
 	wall_recoil_cooldown = maxf(0.0, wall_recoil_cooldown - delta)
 	blade_freeze_left = maxf(0.0, blade_freeze_left - delta)
 	grip_authority_left = maxf(0.0, grip_authority_left - delta)
-	windup_step_active_left = maxf(0.0, windup_step_active_left - delta)
 	if dash_timer.is_stopped() and dash_charges < max_dash_charges:
 		dash_charges += 1
 		if dash_charges < max_dash_charges:
@@ -999,7 +1032,6 @@ func _physics_process(delta: float) -> void:
 	else:
 		# Bind is the sole player-facing sword form. Other profiles remain internal
 		# for development comparisons and persisted-ID compatibility only.
-		_handle_windup_step_input()
 		_handle_dash_input()
 		_handle_chakram_input()
 		_handle_movement(delta, grapple_acceleration)
@@ -1130,16 +1162,33 @@ func _controller_button_pressed(button: JoyButton) -> bool:
 
 func _update_virtual_aim_point(delta: float) -> void:
 	player_aim_turn_sign = 0.0
+	authored_angular_travel_radians = 0.0
 	if mobile_input_enabled:
-		var old_mobile_aim_point: Vector2 = virtual_aim_point
-		virtual_aim_point = global_position + mobile_aim_direction * 180.0
-		var mobile_aim_delta: Vector2 = virtual_aim_point - old_mobile_aim_point
-		if has_virtual_aim_sample and mobile_aim_delta.length_squared() > 0.0001:
-			var mobile_aim_radius: Vector2 = virtual_aim_point - global_position
-			if mobile_aim_radius.length_squared() > 1.0:
-				var mobile_turn_delta: float = mobile_aim_radius.cross(mobile_aim_delta) / mobile_aim_radius.length_squared()
-				if absf(mobile_turn_delta) >= SWING_COMMITMENT_INPUT_THRESHOLD:
-					player_aim_turn_sign = signf(mobile_turn_delta)
+		var old_mobile_relative: Vector2 = virtual_aim_point - global_position
+		var mobile_magnitude: float = clampf(mobile_aim_direction.length(), 0.0, 1.0)
+		var mobile_direction: Vector2 = mobile_aim_direction.normalized() if mobile_magnitude > 0.01 else (old_mobile_relative.normalized() if old_mobile_relative.length_squared() > 1.0 else Vector2.RIGHT.rotated(aim_angle))
+		var minimum_range: float = get_combat_hand_setting("min")
+		var maximum_range: float = maxf(minimum_range, get_combat_hand_setting("max"))
+		var reach_scale: float = maxf(0.01, get_combat_hand_setting("scale"))
+		# Spatial gearing makes full hand reach require more stick travel when raised,
+		# just as desktop requires more cursor travel.
+		var geared_magnitude: float = pow(mobile_magnitude, reach_scale)
+		var target_relative: Vector2 = mobile_direction * lerpf(minimum_range, maximum_range, geared_magnitude)
+		var mobile_drag_rate: float = get_combat_hand_setting("mouse_drag")
+		if combat_contact_preset == 4:
+			var mobile_flow_ratio: float = clampf(flow / 100.0, 0.0, 1.0)
+			mobile_drag_rate = lerpf(8.0, mobile_drag_rate, mobile_flow_ratio)
+		var mobile_drag_weight: float = 1.0 - exp(-clampf(mobile_drag_rate, 2.0, 50.0) * delta)
+		var new_mobile_relative: Vector2 = old_mobile_relative.lerp(target_relative, clampf(mobile_drag_weight, 0.0, 1.0))
+		virtual_aim_point = global_position + new_mobile_relative
+		var authored_relative_delta: Vector2 = new_mobile_relative - old_mobile_relative
+		if has_virtual_aim_sample and authored_relative_delta.length_squared() > 0.0001:
+			var authored_aim_speed: float = authored_relative_delta.length() / maxf(delta, 0.0001)
+			authored_sword_engagement = maxf(authored_sword_engagement, clampf(authored_aim_speed / maxf(1.0, authored_engagement_speed_reference), 0.0, 1.0))
+			if new_mobile_relative.length_squared() > 1.0:
+				var mobile_turn_delta: float = new_mobile_relative.cross(authored_relative_delta) / new_mobile_relative.length_squared()
+				authored_angular_travel_radians = mobile_turn_delta
+				if absf(mobile_turn_delta) >= SWING_COMMITMENT_INPUT_THRESHOLD: player_aim_turn_sign = signf(mobile_turn_delta)
 		previous_virtual_aim_point = virtual_aim_point
 		has_virtual_aim_sample = true
 		return
@@ -1148,6 +1197,7 @@ func _update_virtual_aim_point(delta: float) -> void:
 		if right_stick != Vector2.ZERO:
 			var next_controller_direction: Vector2 = right_stick.normalized()
 			var controller_turn_delta: float = angle_difference(controller_aim_direction.angle(), next_controller_direction.angle())
+			authored_angular_travel_radians = controller_turn_delta
 			if absf(controller_turn_delta) >= SWING_COMMITMENT_INPUT_THRESHOLD:
 				player_aim_turn_sign = signf(controller_turn_delta)
 			controller_aim_direction = next_controller_direction
@@ -1176,6 +1226,7 @@ func _update_virtual_aim_point(delta: float) -> void:
 			# World-space aim-point movement is immune to player translation. A
 			# stationary mouse therefore cannot create a fake reversal event.
 			var input_angle_delta: float = aim_radius.cross(aim_point_delta) / aim_radius.length_squared()
+			authored_angular_travel_radians = input_angle_delta
 			if absf(input_angle_delta) >= SWING_COMMITMENT_INPUT_THRESHOLD:
 				player_aim_turn_sign = signf(input_angle_delta)
 	previous_virtual_aim_point = virtual_aim_point
@@ -1183,7 +1234,8 @@ func _update_virtual_aim_point(delta: float) -> void:
 
 func _current_aim_direction() -> Vector2:
 	if mobile_input_enabled:
-		return mobile_aim_direction if mobile_aim_direction.length_squared() > 0.01 else Vector2.RIGHT.rotated(aim_angle)
+		var mobile_virtual_direction: Vector2 = global_position.direction_to(virtual_aim_point)
+		return mobile_virtual_direction if mobile_virtual_direction != Vector2.ZERO else (mobile_aim_direction.normalized() if mobile_aim_direction.length_squared() > 0.01 else Vector2.RIGHT.rotated(aim_angle))
 	if input_mode == INPUT_MODE_CONTROLLER:
 		return controller_aim_direction.normalized() if controller_aim_direction.length_squared() > 0.01 else Vector2.RIGHT.rotated(aim_angle)
 	var mouse_direction: Vector2 = global_position.direction_to(virtual_aim_point)
@@ -1341,7 +1393,9 @@ func _handle_dash_input() -> void:
 	var down: bool = mobile_dash_held if mobile_input_enabled else (_controller_button_pressed(CONTROLLER_DASH_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_SPACE))
 	if mobile_input_enabled:
 		if not down and dash_key_was_down:
-			_fire_dash(_current_aim_direction())
+			var mobile_dash_direction: Vector2 = mobile_move_input.normalized() if mobile_move_input.length_squared() > 0.01 else mobile_recent_move_direction
+			if mobile_dash_direction.length_squared() <= 0.01: mobile_dash_direction = Vector2.UP
+			_fire_dash(mobile_dash_direction)
 	else:
 		if down and not dash_key_was_down:
 			var direction: Vector2 = _movement_input()
@@ -1350,7 +1404,7 @@ func _handle_dash_input() -> void:
 	dash_key_was_down = down
 
 func _preview_chakram_aim() -> void:
-	var direction: Vector2 = _current_aim_direction()
+	var direction: Vector2 = mobile_chakram_aim_direction if mobile_input_enabled else _current_aim_direction()
 	chakram_aim_trail_start = global_position
 	var displayed_distance: float = chakram_aim_trail_max_distance
 	if not mobile_input_enabled and input_mode != INPUT_MODE_CONTROLLER:
@@ -1361,7 +1415,7 @@ func _preview_chakram_aim() -> void:
 func _throw_chakram() -> void:
 	if chakram_charges <= 0:
 		return
-	var direction: Vector2 = _current_aim_direction()
+	var direction: Vector2 = mobile_chakram_aim_direction if mobile_input_enabled else _current_aim_direction()
 	_preview_chakram_aim()
 	var thrown: Chakram = CHAKRAM_SCENE.instantiate() as Chakram
 	get_parent().add_child(thrown)
@@ -1388,43 +1442,13 @@ func _handle_chakram_input() -> void:
 			_throw_chakram()
 	chakram_key_was_down = down
 
-func _windup_step_mode_name() -> String:
-	match windup_step_mode:
-		ForwardStepMode.ALWAYS: return "Always On"
-		ForwardStepMode.SWORD_CONTACT: return "After Sword Contact (3s)"
-		ForwardStepMode.ANY_DAMAGE: return "After Any Damage (3s)"
-		_: return "Off"
+## Compatibility notifications remain callable by existing damage/contact paths,
+## but forward-step eligibility is now owned solely by Authored Step.
+func notify_player_damage_dealt(_source_is_sword: bool) -> void:
+	pass
 
-func _windup_step_is_active() -> bool:
-	if windup_step_mode == ForwardStepMode.ALWAYS:
-		return true
-	return windup_step_mode in [ForwardStepMode.SWORD_CONTACT, ForwardStepMode.ANY_DAMAGE] and windup_step_active_left > 0.0
-
-func _arm_windup_step_combat_window() -> void:
-	if windup_step_mode in [ForwardStepMode.SWORD_CONTACT, ForwardStepMode.ANY_DAMAGE]:
-		windup_step_active_left = FORWARD_STEP_COMBAT_WINDOW
-
-## Called by player-owned damage sources. Any-damage mode includes remote and
-## secondary damage; sword-contact mode is intentionally narrower.
-func notify_player_damage_dealt(source_is_sword: bool) -> void:
-	if not _is_windup_metronome_style():
-		return
-	if windup_step_mode == ForwardStepMode.ANY_DAMAGE or (windup_step_mode == ForwardStepMode.SWORD_CONTACT and source_is_sword):
-		_arm_windup_step_combat_window()
-
-## Sword contact includes a damaging hit, clash, parry, or blade slide. It is
-## separate from damage so defensive interactions can keep the beat alive.
 func notify_sword_contact() -> void:
-	if _is_windup_metronome_style() and windup_step_mode == ForwardStepMode.SWORD_CONTACT:
-		_arm_windup_step_combat_window()
-
-func _handle_windup_step_input() -> void:
-	if not Input.is_action_just_pressed("toggle_windup_step"):
-		return
-	windup_step_mode = ((int(windup_step_mode) + 1) % ForwardStepMode.size()) as ForwardStepMode
-	windup_forward_step_fired = false
-	windup_backstep_fired = false
-	_set_sword_event("STEP: " + _windup_step_mode_name(), global_position, 0.55)
+	pass
 
 func _handle_style_input() -> void:
 	if sword_style == SwordStyle.METRONOME_BIND:
@@ -1889,6 +1913,11 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"strike_commitment": return float(values.get("strike_commitment", 0.0))
 		"swing_commitment": return float(values.get("swing_commitment", 0.0))
 		"swing_commitment_duration": return float(values.get("swing_commitment_duration", SWING_COMMITMENT_DURATION_DEFAULT))
+		"tempo_assist_enabled": return float(values.get("tempo_assist_enabled", 0.0))
+		"directional_arc_opening_enabled": return float(values.get("directional_arc_opening_enabled", 0.0))
+		"authored_step_enabled": return float(values.get("authored_step_enabled", 0.0))
+		"backstep_enabled": return float(values.get("backstep_enabled", 0.0))
+		"swing_gesture_gearing_degrees": return float(values.get("swing_gesture_gearing_degrees", 60.0))
 		"windup_profile": return float(values.get("windup_profile", 0.0))
 		"windup_fraction": return float(values.get("windup_fraction", 0.30))
 		"recovery_fraction": return float(values.get("recovery_fraction", 0.20))
@@ -1961,6 +1990,9 @@ func _mouse_controlled_hand_radius() -> float:
 	var minimum: float = get_combat_hand_setting("min")
 	var maximum: float = maxf(get_combat_hand_setting("max"), minimum)
 	var reach_scale: float = maxf(get_combat_hand_setting("scale"), 0.01)
+	if mobile_input_enabled:
+		var geared_magnitude: float = pow(clampf(mobile_aim_direction.length(), 0.0, 1.0), reach_scale)
+		return lerpf(minimum, maximum, geared_magnitude)
 	if input_mode == INPUT_MODE_CONTROLLER: return maximum
 	var mouse_distance: float = global_position.distance_to(virtual_aim_point)
 	var input_maximum: float = maxf(minimum + (maximum - minimum) * reach_scale, minimum + 0.001)
@@ -2207,12 +2239,14 @@ func _sword_transform() -> Dictionary:
 			return t_metro
 
 func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw_sine: float) -> Dictionary:
-	var hang_setting: float = get_combat_contact_setting("apex_hang_time")
+	# Endpoint dwell is now authored in _update_sword by holding phase after a
+	# driven reversal. Geometry itself remains an unwarped sine.
 	var shaped_sine: float = raw_sine
-	if hang_setting > 0.0:
-		var hang_factor: float = clampf(hang_setting * 5.0, 0.0, 0.75)
-		shaped_sine = sign(raw_sine) * pow(absf(raw_sine), 1.0 - hang_factor * 0.4)
 	var offset: float = shaped_sine * deg_to_rad(arc)
+	# Only the destination side of the current stroke opens. Multiplying by the
+	# shaped travel amount keeps the extension continuous from reversal to apex.
+	if directional_arc_extension_degrees > 0.0 and not is_zero_approx(shaped_sine):
+		offset += signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(directional_arc_extension_degrees)
 	var result_angle: float = base_angle + offset + sword_hit_recoil_offset
 	return {"start": global_position + Vector2.RIGHT.rotated(base_angle) * radius, "angle": result_angle, "arc_degrees": arc}
 
@@ -2705,6 +2739,26 @@ func _update_sword(delta: float) -> void:
 	# dip in swing-phase-advance rate on contact that recovers to 1.0 over time,
 	# instead of Bite's old hard freeze + pinned angle.
 	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * contact_drag_multiplier
+	if authored_apex_hang_left > 0.0:
+		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
+		sword_delta = 0.0
+	var tempo_enabled: bool = get_combat_hand_setting("tempo_assist_enabled") >= 0.5 and _is_metronome_style()
+	var autonomous_travel_sign: float = signf(cos(sword_phase))
+	var stroke_progress_before_advance: float = metronome_stroke_progress(sword_phase)
+	var drive_feature_enabled: bool = tempo_enabled or get_combat_hand_setting("directional_arc_opening_enabled") >= 0.5 or get_combat_hand_setting("authored_step_enabled") >= 0.5 or get_combat_contact_setting("apex_hang_time") >= 0.5
+	var drive_input_aligned: bool = drive_feature_enabled and player_aim_turn_sign != 0.0 and player_aim_turn_sign == autonomous_travel_sign and authored_sword_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
+	if drive_input_aligned and stroke_progress_before_advance <= STROKE_DRIVE_BUILD_PROGRESS_LIMIT:
+		var required_travel_radians: float = deg_to_rad(maxf(1.0, get_combat_hand_setting("swing_gesture_gearing_degrees")))
+		authored_stroke_drive = clampf(authored_stroke_drive + absf(authored_angular_travel_radians) / required_travel_radians, 0.0, 1.0)
+	if tempo_enabled:
+		tempo_assist_multiplier = lerpf(1.0, TEMPO_ASSIST_MAX_MULTIPLIER, authored_stroke_drive)
+	else:
+		tempo_assist_multiplier = 1.0
+	if get_combat_hand_setting("directional_arc_opening_enabled") >= 0.5:
+		directional_arc_extension_degrees = authored_stroke_drive * DIRECTIONAL_ARC_OPENING_DEGREES
+	else:
+		directional_arc_extension_degrees = 0.0
+	sword_delta *= tempo_assist_multiplier
 	var windup_profile: float = get_combat_hand_setting("windup_profile") if _is_windup_metronome_style() else 0.0
 	if windup_profile > 0.0:
 		var stroke_progress: float = metronome_stroke_progress(sword_phase)
@@ -2735,6 +2789,15 @@ func _update_sword(delta: float) -> void:
 	elif (cos(previous_phase) >= 0.0) != (cos(sword_phase) >= 0.0):
 		stroke_boundaries = 1
 	for _stroke_index: int in range(stroke_boundaries):
+		var completed_stroke_drive: float = authored_stroke_drive
+		if get_combat_contact_setting("apex_hang_time") >= 0.5 and completed_stroke_drive >= 0.5:
+			# Binary Authored Apex Hang: 50% drive begins earning dwell; full drive
+			# reaches 0.14 seconds. Contact freezes can still supersede this hold.
+			authored_apex_hang_left = lerpf(0.0, 0.14, inverse_lerp(0.5, 1.0, completed_stroke_drive))
+		# Option B: every new stroke earns acceleration, opening, and drive anew.
+		tempo_assist_multiplier = 1.0
+		authored_stroke_drive = 0.0
+		directional_arc_extension_degrees = 0.0
 		# Preserve bonuses and per-stroke hit suppression, including phase wrap.
 		hit_ids.clear()
 		swing_count += 1
@@ -2745,7 +2808,7 @@ func _update_sword(delta: float) -> void:
 		if moon_slash_rank > 0:
 			var slash_frequency: int = BonusConfig.moon_slash_swings(moon_slash_rank)
 			if swing_count % slash_frequency == 0: _spawn_moon_slash(global_position + Vector2.RIGHT.rotated(current_angle) * 45.0, current_angle)
-	if _is_windup_metronome_style() and _windup_step_is_active():
+	if _is_windup_metronome_style():
 		var previous_stroke_progress: float = metronome_stroke_progress(previous_phase)
 		var current_stroke_progress: float = metronome_stroke_progress(sword_phase)
 		var motion_sign: float = signf(cos(sword_phase))
@@ -2754,10 +2817,17 @@ func _update_sword(delta: float) -> void:
 		if not windup_forward_step_fired:
 			var forward_timing: float = clampf(get_combat_hand_setting("forward_impulse_timing"), 0.05, 0.95)
 			var forward_impulse: float = maxf(0.0, get_combat_hand_setting("forward_impulse"))
-			if forward_impulse > 0.0 and current_stroke_progress >= forward_timing and previous_stroke_progress < forward_timing:
-				velocity += travel_direction * forward_impulse
+			var authored_step_enabled: bool = get_combat_hand_setting("authored_step_enabled") >= 0.5
+			var step_is_earned: bool = authored_step_enabled and authored_stroke_drive >= AUTHORED_STEP_DRIVE_THRESHOLD
+			if forward_impulse > 0.0 and step_is_earned and current_stroke_progress >= forward_timing and previous_stroke_progress < forward_timing:
+				var step_scale: float = authored_stroke_drive
+				# Sample the live aim on the exact trigger frame. The forward step follows
+				# the player's current mouse/stick location, while Backstep keeps using
+				# the cutting tangent as its separate opposite-motion behavior.
+				var step_direction: Vector2 = _current_aim_direction()
+				velocity += step_direction * forward_impulse * step_scale
 				windup_forward_step_fired = true
-		if not windup_backstep_fired:
+		if not windup_backstep_fired and get_combat_hand_setting("backstep_enabled") >= 0.5:
 			var backstep_timing: float = clampf(get_combat_hand_setting("backstep_impulse_timing"), 0.05, 0.95)
 			var backstep_impulse: float = maxf(0.0, get_combat_hand_setting("backstep_impulse"))
 			if backstep_impulse > 0.0 and current_stroke_progress >= backstep_timing and previous_stroke_progress < backstep_timing:
@@ -2956,8 +3026,10 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			var forte_knockback: float = forte_knockback_multiplier if whole_blade_fraction >= forte_zone_start_fraction and whole_blade_fraction < forte_zone_end_fraction else 1.0
 			var reentry_stagger_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_stagger")), reentry_quality)
 			var reentry_damage_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_damage")), reentry_quality)
+			var blade_position_multiplier: float = cutting_zone_damage_multiplier(whole_blade_fraction, forte_zone_start_fraction, cutting_zone_base_damage_multiplier, cutting_zone_tip_damage_multiplier)
 			var stagger_duration: float = lerpf(get_combat_contact_setting("flesh_stagger_min"), get_combat_contact_setting("flesh_stagger_max"), contact.impact_quality) * (0.6 + commitment_factor * 0.4) * reentry_stagger_multiplier
-			var dealt_damage: float = sword_damage * contact.damage_multiplier() * authored_damage_multiplier * commitment_factor * reentry_damage_multiplier
+			var total_damage_multiplier: float = additive_sword_damage_multiplier(contact.damage_multiplier(), authored_damage_multiplier, commitment_factor, blade_position_multiplier, reentry_damage_multiplier)
+			var dealt_damage: float = sword_damage * total_damage_multiplier
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
 				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
 			else:

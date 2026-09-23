@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://eyba3iib7noo"
+path="res://.godot/imported/Misty Pass.mp3-f81720607b64e177689c67cac80b0f0d.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/music/Forest/Misty Pass.mp3"
+dest_files=["res://.godot/imported/Misty Pass.mp3-f81720607b64e177689c67cac80b0f0d.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

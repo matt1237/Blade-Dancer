@@ -139,7 +139,9 @@ var metronome_visualizer_palette: String = "gold"
 var beat_pulse_percent: float = 50.0
 var visualizer_counts: int = 2
 var beat_visualizer_size: float = 1.0
-var training_camera_zoom: float = 1.0
+## One camera zoom authority shared by Home Settings and Training Tools.
+## Smaller native mobile screens begin closer unless a saved preference exists.
+var training_camera_zoom: float = 1.45 if OS.has_feature("mobile") else 1.0
 var experimental_bind_focus_active: bool = false
 var experimental_bind_focus_point: Vector2 = Vector2.ZERO
 var experimental_bind_focus_bias: float = 0.0
@@ -212,23 +214,10 @@ func _load_forest_visual_settings() -> void:
 	if hazey_snapshot.is_empty():
 		var hazey_created: Dictionary = library.create_snapshot("Hazey", forest_visual_settings)
 		hazey_snapshot = hazey_created
-	# These snapshots are visual-only and are created once. Existing hand-tuned
-	# snapshots with the same name are never overwritten.
+	# Named visual profiles remain available to the Backyard tuner, but they are
+	# not a source for the runtime day cycle. Global Presets own every phase.
 	library.ensure_time_of_day_profiles(forest_visual_settings)
-	library.ensure_day_preset_slots(forest_visual_settings)
 	library.ensure_time_of_day_visual_upgrades()
-	var day_preset: Dictionary = library.get_day_preset(library.get_startup_day_preset_slot())
-	if not day_preset.is_empty() and day_preset.get("Noon", null) is Dictionary:
-		# Resume wherever the day-cycle world clock was left (quitting mid-cycle
-		# does not reset it); a fresh install with no stored phase starts at Morning.
-		var boot_phase: String = library.get_current_time_phase()
-		if boot_phase.is_empty() or not (day_preset.get(boot_phase, null) is Dictionary):
-			boot_phase = "Morning" if day_preset.get("Morning", null) is Dictionary else "Noon"
-		active_forest_time_phase = boot_phase
-		forest_visual_settings.apply_snapshot_values(day_preset[boot_phase] as Dictionary)
-		forest_visual_settings.save_preset()
-		library.set_current_time_phase(boot_phase)
-		return
 	var startup_snapshot_id: String = library.get_startup_snapshot_id()
 	var startup_snapshot: Dictionary = library.get_snapshot(startup_snapshot_id) if not startup_snapshot_id.is_empty() else {}
 	if startup_snapshot.is_empty():
@@ -318,6 +307,7 @@ func _ready() -> void:
 	mobile_controls.movement_changed.connect(player.set_mobile_move_input)
 	mobile_controls.aim_changed.connect(player.set_mobile_aim_direction)
 	mobile_controls.ability_changed.connect(player.set_mobile_ability_held)
+	mobile_controls.ability_aim_changed.connect(player.set_mobile_ability_aim)
 	mobile_controls.set_gameplay_visible(false)
 	player.set_mobile_controls_enabled(false)
 	_on_health_changed(player.health, player.max_health)
@@ -348,6 +338,7 @@ func _ready() -> void:
 	home_menu.connect("visual_style_changed", Callable(self, "_on_visual_style_changed"))
 	home_menu.connect("audio_settings_changed", Callable(self, "_on_audio_settings_changed"))
 	home_menu.connect("metronome_color_changed", Callable(self, "_on_metronome_color_changed"))
+	home_menu.connect("camera_zoom_changed", Callable(self, "_on_camera_zoom_changed"))
 	home_menu.connect("cauldron_catch_requested", Callable(self, "_on_cauldron_catch_requested"))
 	home_menu.connect("forge_requested", Callable(self, "_on_forge_requested"))
 	home_menu.connect("grindstone_requested", Callable(self, "_on_grindstone_requested"))
@@ -369,6 +360,7 @@ func _ready() -> void:
 	home_menu.call("set_visual_style", visual_style)
 	home_menu.call("set_audio_volumes", music_volume, sfx_volume)
 	home_menu.call("set_metronome_color", metronome_visualizer_palette)
+	home_menu.call("set_camera_zoom", training_camera_zoom)
 	home_menu.call("set_cauldron_catch_high_score", cauldron_catch_high_score)
 	home_menu.call("set_time_of_day", active_forest_time_phase)
 	_create_boss_arena_border()
@@ -587,6 +579,11 @@ func _configure_music_loop() -> void:
 	music_director.setup(music_player)
 	music_director.call("set_forge_volume", forge_music_volume)
 
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventJoypadButton:
+		if is_instance_valid(music_director):
+			music_director.call("unlock_audio")
+
 func record_damage_dealt(amount: float) -> void:
 	run_damage_dealt += maxf(0.0, amount)
 
@@ -790,8 +787,9 @@ func _advance_forest_time_phase() -> void:
 	var next_phase: String = DAY_CYCLE_ORDER[(current_index + 1) % DAY_CYCLE_ORDER.size()]
 	var day_preset: Dictionary = active_global_forest_day_presets.get(str(global_preset_slot), {}) as Dictionary
 	if day_preset.get(next_phase, null) is Dictionary:
+		# The live settings are a temporary view of the selected Global Preset
+		# phase. Do not persist them as an independent visual source of truth.
 		forest_visual_settings.apply_snapshot_values(day_preset[next_phase] as Dictionary)
-		forest_visual_settings.save_preset()
 		if is_instance_valid(backyard_training_menu) and backyard_training_menu.forest_visual_tuner != null:
 			backyard_training_menu.forest_visual_tuner.sync_external_phase(next_phase)
 	set_forest_time_phase(next_phase)
@@ -1021,6 +1019,9 @@ func _on_pause_return_home() -> void:
 		_finish_run(false)
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventKey or event is InputEventMouseButton or event is InputEventScreenTouch or event is InputEventJoypadButton:
+		if is_instance_valid(music_director):
+			music_director.call("unlock_audio")
 	if event is InputEventKey and event.keycode == KEY_ESCAPE and event.pressed and not event.echo:
 		_toggle_pause()
 
@@ -1704,12 +1705,65 @@ func _global_state_complete(state: Dictionary) -> bool:
 	var grapple: Dictionary = state.get("grapple", {}) as Dictionary
 	return int(state.get("schema", 0)) == GlobalPresetConfig.VERSION and hand_settings.size() >= Player.SwordStyle.size() * 4 and contact_settings.size() >= 4 and weapon_hand_settings.has("Basic Longsword") and weapon_hand_settings.has("Basic Curved Sword") and forest_values.size() >= ForestVisualSettings.SPECS.size() and grapple.size() >= 10 and state.has("forest_day_presets") and state.has("forest_bypass_all")
 
+func _repair_global_preset_two_day_phases(state: Dictionary) -> bool:
+	var day_presets: Dictionary = state.get("forest_day_presets", {}) as Dictionary
+	var slot_two: Dictionary = day_presets.get("2", {}) as Dictionary
+	var noon: Dictionary = slot_two.get("Noon", {}) as Dictionary
+	var night: Dictionary = slot_two.get("Night", {}) as Dictionary
+	var noon_is_night: bool = float(noon.get("night_strength", 0.0)) > 0.5 or bool(noon.get("moon_glow_enabled", false))
+	var night_is_day: bool = float(night.get("night_strength", 0.0)) <= 0.05 and not bool(night.get("moon_glow_enabled", false))
+	if not noon_is_night and not night_is_day:
+		return false
+	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
+	var repaired_slot: Dictionary = {}
+	for phase: String in DAY_CYCLE_ORDER:
+		var profile: ForestVisualSettings = ForestVisualSettings.new()
+		var snapshot_name: String = "Hazey" if phase == "Noon" else phase + " v2"
+		var snapshot: Dictionary = library.find_latest_named_snapshot(snapshot_name)
+		if not snapshot.is_empty():
+			profile.apply_snapshot_values(snapshot.get("values", {}) as Dictionary)
+		if phase == "Night":
+			profile.set_value("night_strength", 0.84)
+			profile.set_value("moon_glow_enabled", true)
+			profile.set_value("moon_beams_enabled", true)
+			profile.set_value("moon_beam_strength", 0.12)
+		else:
+			profile.set_value("night_strength", 0.0)
+			profile.set_value("moon_glow_enabled", false)
+		repaired_slot[phase] = profile.values.duplicate(true)
+	day_presets["2"] = repaired_slot
+	state["forest_day_presets"] = day_presets
+	state["forest_values"] = (repaired_slot.get("Morning", {}) as Dictionary).duplicate(true)
+	state["forest_time_phase"] = "Morning"
+	return true
+
+func _load_baked_global_preset() -> Dictionary:
+	var file: FileAccess = FileAccess.open("res://data/default_global_preset.json", FileAccess.READ)
+	if file == null:
+		return {}
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	return parsed as Dictionary if parsed is Dictionary and _global_state_complete(parsed as Dictionary) else {}
+
 func _initialize_global_presets() -> void:
+	# Global Preset 2 is the canonical game default. Every launch starts from it,
+	# including returning users whose saved launch slot was changed elsewhere.
 	if GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2)):
-		global_preset_slot = GlobalPresetConfig.launch_slot()
-		var active_state: Dictionary = GlobalPresetConfig.get_slot(global_preset_slot)
-		if not active_state.is_empty():
-			_apply_global_preset_state(active_state)
+		global_preset_slot = 2
+		GlobalPresetConfig.set_launch_slot(2)
+		var default_state: Dictionary = GlobalPresetConfig.get_slot(2)
+		if _repair_global_preset_two_day_phases(default_state):
+			GlobalPresetConfig.save_slot(2, default_state, 2)
+		if not default_state.is_empty():
+			_apply_global_preset_state(default_state)
+		return
+	var baked_default: Dictionary = _load_baked_global_preset()
+	if not baked_default.is_empty():
+		var baked_classic: Dictionary = _default_global_preset_state()
+		GlobalPresetConfig.save_slot(1, baked_classic, 2)
+		GlobalPresetConfig.save_slot(2, baked_default, 2)
+		GlobalPresetConfig.save_slot(3, _default_global_preset_state(), 2)
+		global_preset_slot = 2
+		_apply_global_preset_state(baked_default)
 		return
 	var old_library: Dictionary = GlobalPresetConfig.load_raw_library()
 	var old_slots: Dictionary = old_library.get("slots", {}) as Dictionary
@@ -1901,7 +1955,7 @@ func load_game() -> void:
 		else:
 			# Migrate the original boolean option to the player visualizer.
 			metronome_visualizer_mode = "player" if bool(settings.get("metronome_visualizer_enabled", true)) else "off"
-		training_camera_zoom = clampf(float(settings.get("training_camera_zoom", 1.0)), 1.0, 2.0)
+		training_camera_zoom = clampf(float(settings.get("training_camera_zoom", training_camera_zoom)), 1.0, 2.0)
 		var saved_visual_style: String = str(settings.get("visual_style", "classic"))
 		visual_style = saved_visual_style if saved_visual_style in ["classic", "hd"] else "classic"
 		music_volume = clampf(float(settings.get("music_volume", 1.0)), 0.0, 1.0)
@@ -2042,11 +2096,15 @@ func set_beat_visualizer_size_from_training(size_multiplier: float) -> void:
 	metronome_top_bar.set_beat_visualizer_size(beat_visualizer_size)
 	save_game()
 
+func _on_camera_zoom_changed(value: float) -> void:
+	set_training_camera_zoom_from_training(value)
+
 func get_training_camera_zoom() -> float:
 	return training_camera_zoom
 
 func set_training_camera_zoom_from_training(value: float) -> void:
 	training_camera_zoom = clampf(value, 1.0, 2.0)
+	if is_instance_valid(home_menu): home_menu.call("set_camera_zoom", training_camera_zoom)
 	if is_instance_valid(presentation_camera) and presentation_camera.enabled:
 		presentation_camera.zoom = Vector2.ONE * training_camera_zoom
 		combat_presentation_fx.camera_rest_zoom = presentation_camera.zoom
@@ -2410,6 +2468,7 @@ func _start_arena_run(zone_id: String) -> void:
 	spawner.boss_active = false
 	boss_arena_active = false
 	if is_instance_valid(backyard_training_menu): backyard_training_menu.close()
+	music_director.call("set_adventure_zone", active_adventure_zone)
 	music_director.enter_adventure()
 	get_tree().paused = false
 	_set_world_visible(true)
