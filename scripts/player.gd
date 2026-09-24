@@ -38,6 +38,7 @@ const ICE_PATCH_SCRIPT: Script = preload("res://scripts/ice_patch.gd")
 const METRONOME_VISUALIZER_SCRIPT: Script = preload("res://scripts/ui/metronome_visualizer.gd")
 const BLADE_LENGTH: float = 84.0
 const BLADE_HILT_INSET: float = 14.0
+const CHARGED_GUARD_MIN_HAND_RADIUS: float = 18.0
 ## How long a detected player reversal gets a brief commitment response penalty.
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
@@ -456,6 +457,7 @@ var charged_guard_flash_left: float = 0.0
 var charged_guard_candidate_angle: float = 0.0
 var charged_guard_lock_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_lock_radius: float = 0.0
+var charged_guard_radial_direction: Vector2 = Vector2.RIGHT
 var charged_guard_movement_suppression_left: float = 0.0
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
@@ -1778,7 +1780,9 @@ func _update_aim(delta: float) -> void:
 		var previous_hilt_offset: Vector2 = charged_guard_lock_hand_offset
 		charged_guard_lock_angle += desired_step
 		charged_guard_lock_hand_offset += authored_virtual_aim_velocity * delta * charged_reposition_scale
-		charged_guard_lock_hand_offset = charged_guard_clamp_hand_offset(charged_guard_lock_hand_offset, charged_guard_lock_radius)
+		charged_guard_lock_hand_offset = charged_guard_clamp_hand_offset(charged_guard_lock_hand_offset, charged_guard_lock_radius, CHARGED_GUARD_MIN_HAND_RADIUS, charged_guard_radial_direction)
+		if charged_guard_lock_hand_offset.length_squared() >= CHARGED_GUARD_MIN_HAND_RADIUS * CHARGED_GUARD_MIN_HAND_RADIUS:
+			charged_guard_radial_direction = charged_guard_lock_hand_offset.normalized()
 		if previous_hilt_offset.distance_to(charged_guard_lock_hand_offset) >= 1.0:
 			charged_guard_afterimages.push_front(previous_hilt_offset)
 			while charged_guard_afterimages.size() > 4:
@@ -2795,8 +2799,25 @@ static func charged_guard_slow_reposition_scale(authored_aim_speed: float, autho
 		return 1.0
 	return 0.70 if authored_aim_speed > 1.0 and authored_engagement < 0.30 else 1.0
 
-static func charged_guard_clamp_hand_offset(hand_offset: Vector2, maximum_radius: float) -> Vector2:
-	return hand_offset.limit_length(maxf(1.0, maximum_radius))
+static func charged_guard_clamp_hand_offset(hand_offset: Vector2, maximum_radius: float, minimum_radius: float = 0.0, fallback_direction: Vector2 = Vector2.RIGHT) -> Vector2:
+	var max_radius: float = maxf(1.0, maximum_radius)
+	var min_radius: float = clampf(minimum_radius, 0.0, max_radius)
+	var current_radius: float = hand_offset.length()
+	var direction: Vector2 = hand_offset.normalized() if current_radius > 0.001 else fallback_direction.normalized()
+	if direction.length_squared() < 0.001:
+		direction = Vector2.RIGHT
+	return direction * clampf(current_radius, min_radius, max_radius)
+
+static func charged_guard_safe_blade_angle(blade_angle: float, hand_offset: Vector2, fallback_radial_direction: Vector2) -> float:
+	var radial_direction: Vector2 = hand_offset.normalized() if hand_offset.length_squared() > 0.001 else fallback_radial_direction.normalized()
+	if radial_direction.length_squared() < 0.001:
+		radial_direction = Vector2.RIGHT
+	var radial_angle: float = radial_direction.angle()
+	var relative_blade_angle: float = angle_difference(radial_angle, blade_angle)
+	if absf(relative_blade_angle) <= PI * 0.5:
+		return blade_angle
+	var safe_angle: float = radial_angle + signf(relative_blade_angle) * PI * 0.5
+	return wrapf(safe_angle, -PI, PI)
 
 static func charged_guard_charge_multiplier(near_body: bool, recent_authored_motion: bool, pommel_pull: bool, near_body_bonus: float, recent_motion_bonus: float, pommel_pull_bonus: float) -> float:
 	var multiplier: float = 1.0
@@ -2844,6 +2865,10 @@ func _update_charged_guard(delta: float) -> void:
 				charged_guard_fully_charged = true
 				charged_guard_flash_left = 0.55
 				charged_guard_afterimages.clear()
+		if charged_guard_fully_charged:
+			if charged_guard_lock_hand_offset.length_squared() >= CHARGED_GUARD_MIN_HAND_RADIUS * CHARGED_GUARD_MIN_HAND_RADIUS:
+				charged_guard_radial_direction = charged_guard_lock_hand_offset.normalized()
+			charged_guard_lock_angle = charged_guard_safe_blade_angle(charged_guard_lock_angle, charged_guard_lock_hand_offset, charged_guard_radial_direction)
 		return
 	var current_transform: Dictionary = _sword_transform()
 	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
@@ -2901,6 +2926,7 @@ func _update_charged_guard(delta: float) -> void:
 		charged_guard_lock_hand_offset = current_hilt
 		charged_guard_initial_hand_offset = current_hilt
 		charged_guard_lock_radius = current_hilt.length()
+		charged_guard_radial_direction = current_hilt.normalized() if current_hilt.length_squared() > 0.001 else Vector2.RIGHT
 		charged_guard_flash_left = 0.18
 
 static func authored_stroke_drive_increment(angular_travel_radians: float, gearing_degrees: float, authored_pace: float) -> float:

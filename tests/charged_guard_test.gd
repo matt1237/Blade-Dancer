@@ -106,6 +106,19 @@ func test_charged_guard_allows_slow_reposition_but_fast_flick_breaks() -> void:
 	var bounded_offset: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2(100.0, 0.0), 30.0)
 	assert(is_equal_approx(bounded_offset.length(), 30.0), "Charged hand reposition must remain inside the original lock radius.")
 
+func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_player() -> void:
+	var outward_angle: float = Player.charged_guard_safe_blade_angle(0.0, Vector2.RIGHT * 80.0, Vector2.RIGHT)
+	assert(is_equal_approx(outward_angle, 0.0), "An outward blade at max hand reach should remain unchanged.")
+	var defense_stance_angle: float = deg_to_rad(80.0)
+	var preserved_defense_angle: float = Player.charged_guard_safe_blade_angle(defense_stance_angle, Vector2.RIGHT * 80.0, Vector2.RIGHT)
+	assert(is_equal_approx(preserved_defense_angle, defense_stance_angle), "A near-tangential defensive stance like the accepted reference should remain reachable.")
+	var max_reach_inward_angle: float = Player.charged_guard_safe_blade_angle(PI, Vector2.RIGHT * 80.0, Vector2.RIGHT)
+	assert(Vector2.RIGHT.rotated(max_reach_inward_angle).dot(Vector2.RIGHT) >= -0.001, "At max reach the blade may not point back through the player.")
+	var minimum_hand: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2.ZERO, 80.0, Player.CHARGED_GUARD_MIN_HAND_RADIUS, Vector2.DOWN)
+	assert(is_equal_approx(minimum_hand.length(), Player.CHARGED_GUARD_MIN_HAND_RADIUS), "The hand should stop at a non-singular minimum radius instead of crossing the player center.")
+	var inward_return_angle: float = Player.charged_guard_safe_blade_angle(-PI * 0.5, Vector2.DOWN * Player.CHARGED_GUARD_MIN_HAND_RADIUS, Vector2.DOWN)
+	assert(Vector2.DOWN.dot(Vector2.RIGHT.rotated(inward_return_angle)) >= -0.001, "As the hand returns inward, the blade must rotate around the safe outward side rather than impale the player.")
+
 func test_pommel_acquisition_window_reaches_further_into_the_stroke() -> void:
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
