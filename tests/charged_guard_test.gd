@@ -56,10 +56,9 @@ func test_pommel_gesture_latches_candidate_then_locks_after_guard_hold() -> void
 			break
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_locked, "A latched and maintained folded guard should lock after the short hold.")
-	player.charged_guard_authored_angular_travel = deg_to_rad(4.0)
-	player.charged_guard_authored_aim_velocity = Vector2(400.0, 0.0)
+	player.charged_guard_authored_lateral_aim_speed = player.get_combat_contact_setting("charged_guard_break_speed") + 1.0
 	player._update_charged_guard(1.0 / 60.0)
-	assert(not player.charged_guard_locked, "Deliberate authored motion should release the lock.")
+	assert(not player.charged_guard_locked, "A deliberate sideways flick should release the lock.")
 	player.free()
 
 func test_locked_guard_charges_blue_after_tunable_hold_and_persists() -> void:
@@ -155,11 +154,156 @@ func test_charged_guard_allows_slow_reposition_but_fast_flick_breaks() -> void:
 	assert(is_equal_approx(slow_scale, 0.70), "Slow authored input should reposition the charged sword at 70% response when the player is stationary.")
 	var movement_suppressed_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 270.0, true)
 	assert(is_equal_approx(movement_suppressed_scale, 1.0), "Player translation must not be misread as slow aim repositioning while charged.")
-	assert(Player.charged_guard_motion_breaks(deg_to_rad(3.0), 400.0, 270.0), "A medium/fast deliberate aim flick should still break charged Guard.")
-	assert(not Player.charged_guard_motion_breaks(deg_to_rad(1.0), 400.0, 270.0), "Low angular travel should retain Guard even at a high aim speed.")
-	assert(not Player.charged_guard_motion_breaks(deg_to_rad(3.0), 100.0, 270.0), "Player movement alone must not meet the authored aim-speed threshold.")
+	assert(Player.charged_guard_motion_breaks(400.0, 270.0), "A medium/fast deliberate sideways flick should still break charged Guard.")
+	assert(not Player.charged_guard_motion_breaks(0.0, 270.0), "A purely radial push must retain Guard however fast it is.")
+	assert(not Player.charged_guard_motion_breaks(100.0, 270.0), "Player movement alone must not meet the authored flick threshold.")
 	var bounded_offset: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2(100.0, 0.0), 30.0)
 	assert(is_equal_approx(bounded_offset.length(), 30.0), "Charged hand reposition must remain inside the original lock radius.")
+
+func test_charged_hand_keeps_following_the_cursor_while_the_player_walks() -> void:
+	# Regression: the reposition scale was doing double duty as "should the hand follow at
+	# all", so walking -- which returns the full-speed 1.0 scale -- skipped repositioning
+	# entirely and pinned the charged blade in place. Speed and following are separate.
+	var break_speed: float = 600.0
+	var step: float = 1.0 / 60.0
+	var walking_scale: float = Player.charged_guard_slow_reposition_scale(0.0, break_speed, true)
+	assert(is_equal_approx(walking_scale, 1.0), "Player translation must keep the charged hand at full reposition speed.")
+	assert(Player.charged_guard_hand_follows_cursor(true, true, 1.0), "A ramped-in charged guard must follow the cursor at full speed, which is exactly the scale walking produces.")
+	assert(Player.charged_guard_hand_follows_cursor(true, true, 0.70), "The damped band must still follow the cursor, just more slowly.")
+	assert(not Player.charged_guard_hand_follows_cursor(true, true, 0.0), "The hand holds still only while the wake-up ramp is still at zero.")
+	assert(not Player.charged_guard_hand_follows_cursor(false, true, 1.0), "The confirm hold before the charged state must stay frozen.")
+	assert(not Player.charged_guard_hand_follows_cursor(true, false, 1.0), "With the position stage off the charged hand must never reposition.")
+	var current_offset: Vector2 = Vector2.RIGHT * 20.0
+	var walked: Vector2 = Player.charged_guard_repositioned_hand_offset(current_offset, Vector2.UP * 20.0, Player.CHARGED_GUARD_REPOSITION_SPEED * walking_scale, step)
+	assert(walked.distance_to(current_offset) > 0.0, "While walking, the charged hand must still travel toward the cursor instead of freezing in place.")
+
+func test_charged_hand_ignores_player_translation_and_follows_the_cursor_itself() -> void:
+	# End-to-end through the real aim update. The camera leads, lags and clamps relative to
+	# the player, so the cursor's *world point* slides while the player walks; an earlier
+	# build drove the charged hand from it and player movement steered the guard. The hand
+	# must now read only the cursor's own motion, which is zero on a still cursor.
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_input_mode("keyboard_mouse")
+	player.has_virtual_aim_sample = true
+	player.charged_guard_locked = true
+	player.charged_guard_fully_charged = true
+	player.charged_guard_reposition_ramp = 1.0
+	player.charged_guard_lock_radius = 40.0
+	player.charged_guard_lock_hand_offset = Vector2.RIGHT * 30.0
+	player.charged_guard_radial_direction = Vector2.RIGHT
+	player.charged_guard_lock_angle = 0.0
+	player.aim_angle = 0.0
+	var offset_before: Vector2 = player.charged_guard_lock_hand_offset
+	var angle_before: float = player.charged_guard_lock_angle
+	for _frame: int in range(30):
+		# Walking hard, exactly as _physics_process detects it, with the cursor untouched.
+		player.global_position += Vector2(9.0, 4.0)
+		player.charged_guard_movement_suppression_left = 0.40
+		player._update_aim(1.0 / 60.0)
+	assert(player.charged_guard_movement_suppression_left > 0.0, "This setup must reproduce the walking suppression that used to freeze the hand.")
+	assert(player.charged_guard_cursor_motion.is_zero_approx(), "The walk phase is only meaningful with no cursor motion.")
+	assert(player.charged_guard_lock_hand_offset.is_equal_approx(offset_before), "Walking must not move the charged hand: the cursor's world point follows the camera, the cursor itself did not move.")
+	assert(is_equal_approx(player.charged_guard_lock_angle, angle_before), "Walking must not turn the charged blade either.")
+	# A real cursor move must still reposition the hand and turn the blade.
+	var motion_event: InputEventMouseMotion = InputEventMouseMotion.new()
+	motion_event.relative = Vector2(0.0, 60.0)
+	player._input(motion_event)
+	player._update_aim(1.0 / 60.0)
+	assert(player.charged_guard_cursor_motion.length() > 0.0, "A real mouse-motion event must reach the charged guard as cursor motion.")
+	assert(not player.charged_guard_lock_hand_offset.is_equal_approx(offset_before), "A real cursor move must still reposition the charged hand.")
+	assert(not is_equal_approx(player.charged_guard_lock_angle, angle_before), "A real cursor move must still turn the charged blade.")
+	assert(player.charged_guard_lock_hand_offset.length() <= player.charged_guard_lock_radius + 0.001, "Cursor-driven repositioning must still respect the lock radius.")
+	player.free()
+
+func test_charged_guard_reposition_converges_instead_of_accumulating_cursor_displacement() -> void:
+	# Regression: the locked hand used to integrate raw cursor displacement, so
+	# leaving the hand range and re-entering from a new direction snapped the
+	# blade onto a stale radial direction. The hand must converge on the bounded
+	# aim target and never move further in one step than its reposition speed.
+	var minimum_radius: float = Player.CHARGED_GUARD_MIN_HAND_RADIUS
+	var lock_radius: float = 40.0
+	var reposition_speed: float = 270.0
+	var step: float = 1.0 / 60.0
+	var offset: Vector2 = Vector2.RIGHT * lock_radius
+	var outward_target: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2.RIGHT * 500.0, lock_radius, minimum_radius, Vector2.RIGHT)
+	assert(is_equal_approx(outward_target.length(), lock_radius), "An aim flung outside the hand range must clamp to the lock radius rather than accumulate.")
+	var outward_offset: Vector2 = Player.charged_guard_repositioned_hand_offset(offset, outward_target, reposition_speed, step)
+	assert(outward_offset.length() <= lock_radius + 0.001, "Repositioning may never carry the hand beyond the lock radius.")
+	var inward_target: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2.LEFT * 500.0, lock_radius, minimum_radius, Vector2.RIGHT)
+	var swing_offset: Vector2 = Player.charged_guard_repositioned_hand_offset(outward_offset, inward_target, reposition_speed, step)
+	var travelled: float = outward_offset.distance_to(swing_offset)
+	assert(travelled > 0.0, "Re-entering from a new direction must move the hand toward the new target.")
+	assert(travelled <= reposition_speed * step + 0.001, "A single reposition step must never exceed the reposition speed, so re-entry from a new direction cannot jump.")
+	var settled: Vector2 = outward_offset
+	for _frame: int in range(60):
+		settled = Player.charged_guard_repositioned_hand_offset(settled, inward_target, reposition_speed, step)
+	assert(settled.is_equal_approx(inward_target), "Sustained repositioning must settle exactly on the bounded aim target.")
+
+func test_guard_break_speed_is_tunable_and_defaults_to_the_shipped_threshold() -> void:
+	var player: Player = _new_player()
+	var shipped_threshold: float = player.get_combat_contact_setting("charged_guard_break_speed")
+	assert(is_equal_approx(shipped_threshold, 600.0), "The Guard break threshold should default to 600 px/s of sideways aim movement.")
+	assert(Player.charged_guard_motion_breaks(shipped_threshold + 1.0, shipped_threshold), "A sideways flick just above the tuned threshold must break the guard.")
+	assert(not Player.charged_guard_motion_breaks(shipped_threshold - 1.0, shipped_threshold), "A sideways flick just below the tuned threshold must not break the guard.")
+	player.set_combat_contact_setting("charged_guard_break_speed", 1000.0)
+	var raised_threshold: float = player.get_combat_contact_setting("charged_guard_break_speed")
+	assert(is_equal_approx(raised_threshold, 1000.0), "The Guard break threshold must persist through the contact preset authority.")
+	assert(not Player.charged_guard_motion_breaks(700.0, raised_threshold), "Raising the tuner must stop the same flick from breaking the guard.")
+	assert(Player.charged_guard_motion_breaks(700.0, shipped_threshold), "The same flick must still break the guard at the shipped threshold, proving the tuner is what changed.")
+	player.free()
+
+func test_charged_guard_blade_conform_sweeps_instead_of_snapping() -> void:
+	# Regression: the guard hard-clamped the blade onto +/-90 degrees off the hand
+	# radial direction. The metronome arc swings the blade well past that limit, so
+	# the clamp could rotate the sword tens of degrees in a single frame.
+	var radial_direction: Vector2 = Vector2.RIGHT
+	var hand_offset: Vector2 = Vector2.RIGHT * 40.0
+	var conform_rate: float = 8.0
+	var step: float = 1.0 / 60.0
+	var unsafe_angle: float = deg_to_rad(140.0)
+	var safe_limit: float = deg_to_rad(90.0)
+	var first_step: float = Player.charged_guard_conformed_blade_angle(unsafe_angle, hand_offset, radial_direction, conform_rate, step)
+	var swept_degrees: float = absf(rad_to_deg(angle_difference(unsafe_angle, first_step)))
+	assert(swept_degrees > 0.0, "An out-of-cone blade must start sweeping back toward the safe angle.")
+	assert(swept_degrees < 10.0, "One frame must never rotate the blade by the whole clamp distance, which is what popped.")
+	var settled: float = unsafe_angle
+	for _frame: int in range(120):
+		settled = Player.charged_guard_conformed_blade_angle(settled, hand_offset, radial_direction, conform_rate, step)
+	assert(absf(angle_difference(safe_limit, settled)) < deg_to_rad(0.5), "Sustained conforming must settle on the 90 degree safe boundary without overshooting.")
+	var in_cone_angle: float = deg_to_rad(45.0)
+	assert(is_equal_approx(Player.charged_guard_conformed_blade_angle(in_cone_angle, hand_offset, radial_direction, conform_rate, step), in_cone_angle), "A blade already inside the safe cone must be left completely untouched.")
+
+func test_guard_break_measure_tracks_the_blade_not_the_cursor_distance() -> void:
+	# Regression, second pass. The first form divided the aim's travel by the live
+	# player-to-cursor distance, so the same flick broke the guard up close, did nothing
+	# far away, and left the tuner inert past ~130 px. Removing that division made the
+	# measure distance-free in CURSOR pixels -- but the hand's reach is clamped, so past
+	# hand range a sideways sweep of p px at distance d swings the blade only
+	# (reach / d) * p px. Raw cursor pixels therefore broke the guard on sweeps that barely
+	# moved the blade, which is the accidental break that was reported.
+	var delta: float = 1.0 / 60.0
+	var reach_limit: float = 80.0
+	var sideways_flick: Vector2 = Vector2(0.0, 4.0)
+	var inside_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(40.0, 0.0), sideways_flick, delta, reach_limit)
+	assert(is_equal_approx(inside_speed, 4.0 / delta), "Inside hand range the measure must be the cursor's own sideways speed in px/s, leaving the tuned feel untouched.")
+	var edge_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit, 0.0), sideways_flick, delta, reach_limit)
+	assert(is_equal_approx(edge_speed, inside_speed), "The gearing must begin exactly at the hand-range limit, with no step at the boundary.")
+	var far_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), sideways_flick, delta, reach_limit)
+	assert(is_equal_approx(far_speed, inside_speed / 4.0), "Past hand range the measure must fall off as reach / distance, the share of the sweep that can actually move the hand.")
+	var ungeared_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), sideways_flick, delta)
+	assert(is_equal_approx(ungeared_speed, inside_speed), "Mobile and controller aim is already in hand-space, so a zero reach limit must disable the gearing entirely.")
+	var radial_push: Vector2 = Vector2(6.0, 0.0)
+	var push_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(300.0, 0.0), radial_push, delta, reach_limit)
+	assert(is_zero_approx(push_speed), "Pushing the cursor straight out along the aim axis must measure as no sideways flick at all.")
+	var yank: Vector2 = Vector2(0.0, 10.0)
+	var near_yank: float = Player.charged_guard_lateral_aim_speed(Vector2(40.0, 0.0), yank, delta, reach_limit)
+	var far_yank: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), yank, delta, reach_limit)
+	assert(Player.charged_guard_motion_breaks(near_yank, 600.0), "A sideways yank inside hand range must still break the guard at the shipped threshold.")
+	assert(not Player.charged_guard_motion_breaks(far_yank, 600.0), "The identical cursor sweep at four times hand range must no longer break the guard; that is the accidental break that was reported.")
+	assert(Player.charged_guard_motion_breaks(far_yank, 120.0), "A deliberately lowered threshold must still let a range sweep break the guard, so the tuner is never inert.")
+	assert(not Player.charged_guard_motion_breaks(push_speed, 1.0), "A purely radial push must retain the guard even against a near-zero threshold.")
 
 func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_player() -> void:
 	var outward_angle: float = Player.charged_guard_safe_blade_angle(0.0, Vector2.RIGHT * 80.0, Vector2.RIGHT)
@@ -261,3 +405,27 @@ func test_training_ui_has_guard_tab_and_collapsed_core_section() -> void:
 		var guard_slider: HSlider = menu.contact_controls[tuning_key]["slider"] as HSlider
 		assert(guard_tab.is_ancestor_of(guard_slider), "Guard tuner %s must live inside the Charged Guard tab." % tuning_key)
 	menu.free()
+
+func test_charged_guard_shimmer_oscillates_between_blue_and_white() -> void:
+	var speed: float = FlowColorUtils.CHARGE_SHIMMER_SPEED
+	var blue_phase: Color = FlowColorUtils.charged_oscillating_color(3.0 * PI / (2.0 * speed))
+	var white_phase: Color = FlowColorUtils.charged_oscillating_color(PI / (2.0 * speed))
+	assert(not blue_phase.is_equal_approx(white_phase), "The charged shimmer must actually oscillate instead of holding one tone.")
+	assert(white_phase.r > blue_phase.r and white_phase.g > blue_phase.g, "The shimmer must lighten toward white, not darken.")
+	assert(blue_phase.b >= blue_phase.r and white_phase.b >= white_phase.r, "Both ends of the shimmer must stay blue-led so the state still reads as the blue guard.")
+	assert(is_equal_approx(blue_phase.a, 1.0) and is_equal_approx(white_phase.a, 1.0), "The shimmer tone must stay opaque; callers apply their own alpha.")
+
+func test_charged_guard_afterimages_emit_continuously_while_blue() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_locked = true
+	player.charged_guard_fully_charged = true
+	player.charged_guard_lock_hand_offset = Vector2(40.0, 0.0)
+	for _frame: int in range(30):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_afterimages.is_empty(), "A fully charged guard must trail afterimages even while the hand holds still.")
+	assert(player.charged_guard_afterimages.size() <= Player.CHARGED_GUARD_AFTERIMAGE_COUNT, "The afterimage trail must stay inside its fixed pool size.")
+	for image: Vector2 in player.charged_guard_afterimages:
+		assert(image.is_equal_approx(Vector2(40.0, 0.0)), "Each afterimage must record the hand offset it was sampled at.")
+	player.free()
