@@ -91,6 +91,7 @@ func _build_ui() -> void:
 	_build_bonus_tab(training_tabs)
 	_build_combat_tab(training_tabs)
 	_build_charged_guard_tab(training_tabs)
+	_build_authored_metronome_tab(training_tabs)
 	_build_windup_tab(training_tabs)
 	_build_visualizer_tab(training_tabs)
 	_build_global_presets_tab(training_tabs)
@@ -458,6 +459,28 @@ func _build_charged_guard_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(box, "charged_guard_pommel_rate", "Continued Pommel-Pull Charge Boost", 0.0, 3.0, 0.1, "×", _form_three_feel_tip("Extra charge rate while authored movement remains aligned with the pommel axis.", "After acquisition, continued pull adds no speed.", "Maintaining the pommel pull rapidly charges the guard.", "Strong alignment is still required to acquire the candidate."))
 	_create_contact_slider(box, "apex_hang_time", "Authored Apex Hang", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Strongly driven strokes earn a short committed hold at the endpoint before returning.", "No drive-earned endpoint hold.", "Stroke Drive above 50% earns the tuned endpoint hold.", "Each stroke earns its own hang; the hold cannot be extended indefinitely."))
 	_create_contact_slider(box, "apex_hang_duration", "Apex Hang Time", 0.05, 0.30, 0.01, " s", _form_three_feel_tip("Maximum endpoint dwell earned by a fully driven stroke; the existing Authored Apex Hang switch must also be on.", "Brief 0.05-second punctuation at the endpoint.", "A clear 0.30-second hold before the return stroke.", "Only Stroke Drive above 50% earns a proportional share of this duration."))
+
+func _build_authored_metronome_tab(tabs: TabContainer) -> void:
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "Authored Metronome"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(scroll)
+	var box: VBoxContainer = VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 10)
+	scroll.add_child(box)
+	var title: Label = Label.new()
+	title.text = "AUTHORED METRONOME (OPT-IN PROTOTYPE)"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(title)
+	var note: Label = Label.new()
+	note.text = "For metronome-based forms on Presets 1–3. Slow aim movement points and positions a ready blade; a deliberate aim-speed threshold wakes the existing metronome. After the idle grace it returns smoothly to Ready, then sheaths after a separate Ready-only delay. Preset 4's evolving form is untouched."
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(note)
+	_create_contact_slider(box, "authored_metronome_enabled", "Authored Metronome (0–1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Opt into manual metronome wake-up and ready/sheathed states; off preserves existing sword behavior.", "Existing autonomous metronome behavior stays unchanged.", "The blade waits pointed and ready for deliberate authored aim movement.", "Only metronome-based forms on Presets 1–3 use this prototype; Charged Guard and other combat tuners remain separate."))
+	_create_contact_slider(box, "authored_metronome_wake_speed", "Wake Speed Threshold", 50.0, 1200.0, 25.0, " px/s", _form_three_feel_tip("Player-authored aim speed required to start the existing metronome from Ready.", "Gentler aim movement wakes the metronome sooner.", "Only a sharper, faster movement starts the metronome.", "Slow movement below this threshold still repositions the ready blade; tune by feel for your input device."))
+	_create_contact_slider(box, "authored_metronome_idle_grace", "Authored Metronome Idle Grace", 0.5, 8.0, 0.1, " s", _form_three_feel_tip("Time without meaningful aim movement before the active metronome smoothly returns to Ready.", "It returns to Ready quickly after movement stops.", "It keeps metronoming through a longer pause.", "The Ready-only sheathe timer starts after the return transition, never during this grace period."))
+	_create_contact_slider(box, "authored_metronome_sheathe_time", "Ready Idle → Sheathe Time", 0.2, 4.0, 0.1, " s", _form_three_feel_tip("Time with no meaningful aim movement in Ready before the sword fades into its sheathed state.", "The ready blade sheathes quickly.", "The ready blade remains available longer.", "This timer runs only in Ready; any meaningful aim movement immediately brings back the pointed blade."))
 
 func _build_windup_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()

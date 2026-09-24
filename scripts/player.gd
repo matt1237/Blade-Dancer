@@ -5,6 +5,7 @@ signal tutorial_action(event_type: String, target: Node)
 
 # New values are appended so persisted integer IDs for every existing form remain stable.
 enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
+enum AuthoredMetronomeState { INACTIVE, READY, ACTIVE, RETURNING, SHEATHED }
 const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
@@ -45,6 +46,9 @@ const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
 const CHARGED_GUARD_CANDIDATE_LATCH: float = 0.30
 const CHARGED_GUARD_POSITION_TOLERANCE_DEGREES: float = 35.0
+const AUTHORED_METRONOME_ACTIVITY_SPEED: float = 25.0
+const AUTHORED_METRONOME_BLEND_RATE: float = 8.0
+const AUTHORED_METRONOME_SHEATHE_FADE_RATE: float = 8.0
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
@@ -413,6 +417,18 @@ var has_virtual_aim_sample: bool = false
 var player_aim_turn_sign: float = 0.0
 var authored_angular_travel_radians: float = 0.0
 var authored_virtual_aim_velocity: Vector2 = Vector2.ZERO
+var charged_guard_authored_aim_velocity: Vector2 = Vector2.ZERO
+var charged_guard_authored_angular_travel: float = 0.0
+var charged_guard_aim_turn_sign: float = 0.0
+var charged_guard_mouse_motion_delta: Vector2 = Vector2.ZERO
+var charged_guard_previous_control_target: Vector2 = Vector2.ZERO
+var charged_guard_previous_control_mode: String = ""
+var charged_guard_has_control_sample: bool = false
+var authored_metronome_state: AuthoredMetronomeState = AuthoredMetronomeState.INACTIVE
+var authored_metronome_active_idle_time: float = 0.0
+var authored_metronome_ready_idle_time: float = 0.0
+var authored_metronome_swing_blend: float = 1.0
+var authored_metronome_sheathe_alpha: float = 1.0
 var authored_sword_engagement: float = 0.0
 var swing_commitment_left: float = 0.0
 var swing_commitment_direction: float = 0.0
@@ -926,6 +942,16 @@ func get_mobile_grapple_aim_point() -> Vector2:
 	var grapple_range: float = grapple_controller.max_tether_length * grapple_controller.mastery_range_multiplier
 	return get_grapple_hand_position() + aim_direction * grapple_range
 
+func _input(event: InputEvent) -> void:
+	if not event is InputEventMouseMotion:
+		return
+	if training_menu_input_locked or hit_stagger_left > 0.0:
+		charged_guard_mouse_motion_delta = Vector2.ZERO
+		return
+	var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
+	var screen_to_world: Transform2D = get_viewport().get_canvas_transform().affine_inverse()
+	charged_guard_mouse_motion_delta += screen_to_world.basis_xform(mouse_motion.relative)
+
 func _physics_process(delta: float) -> void:
 	# Sustained Form III focus slows the world, but its sword/aim clock is
 	# compensated back to real-time. Brief ordinary clash hitstop remains felt.
@@ -1068,6 +1094,7 @@ func _physics_process(delta: float) -> void:
 		charged_guard_movement_suppression_left = maxf(0.0, charged_guard_movement_suppression_left - delta)
 	_update_aim(sword_control_delta)
 	_update_combat_hand_radius(sword_control_delta)
+	_update_authored_metronome_state(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
 	_apply_experimental_bind_retention(sword_control_delta)
 	_update_sword(sword_control_delta)
@@ -1192,10 +1219,29 @@ func _controller_stick(horizontal_axis: JoyAxis, vertical_axis: JoyAxis) -> Vect
 func _controller_button_pressed(button: JoyButton) -> bool:
 	return Input.is_joy_button_pressed(_controller_device_id(), button)
 
+func _record_charged_guard_control_aim(target_relative: Vector2, control_mode: String, delta: float) -> void:
+	if charged_guard_previous_control_mode != control_mode or not charged_guard_has_control_sample:
+		charged_guard_previous_control_mode = control_mode
+		charged_guard_previous_control_target = target_relative
+		charged_guard_has_control_sample = true
+		return
+	var authored_relative_delta: Vector2 = target_relative - charged_guard_previous_control_target
+	charged_guard_previous_control_target = target_relative
+	if training_menu_input_locked or delta <= 0.0 or authored_relative_delta.length_squared() <= 0.0001:
+		return
+	charged_guard_authored_aim_velocity = authored_relative_delta / delta
+	charged_guard_authored_angular_travel = charged_guard_angular_travel(target_relative, authored_relative_delta)
+	charged_guard_aim_turn_sign = charged_guard_turn_sign(charged_guard_authored_angular_travel)
+
 func _update_virtual_aim_point(delta: float) -> void:
 	player_aim_turn_sign = 0.0
 	authored_angular_travel_radians = 0.0
 	authored_virtual_aim_velocity = Vector2.ZERO
+	charged_guard_authored_aim_velocity = Vector2.ZERO
+	charged_guard_authored_angular_travel = 0.0
+	charged_guard_aim_turn_sign = 0.0
+	var mouse_authored_delta: Vector2 = charged_guard_mouse_motion_delta
+	charged_guard_mouse_motion_delta = Vector2.ZERO
 	if mobile_input_enabled:
 		var old_mobile_relative: Vector2 = virtual_aim_point - global_position
 		var mobile_magnitude: float = clampf(mobile_aim_direction.length(), 0.0, 1.0)
@@ -1207,6 +1253,7 @@ func _update_virtual_aim_point(delta: float) -> void:
 		# just as desktop requires more cursor travel.
 		var geared_magnitude: float = pow(mobile_magnitude, reach_scale)
 		var target_relative: Vector2 = mobile_direction * lerpf(minimum_range, maximum_range, geared_magnitude)
+		_record_charged_guard_control_aim(target_relative, "mobile", delta)
 		var mobile_drag_rate: float = get_combat_hand_setting("mouse_drag")
 		if combat_contact_preset == 4:
 			var mobile_flow_ratio: float = clampf(flow / 100.0, 0.0, 1.0)
@@ -1237,6 +1284,7 @@ func _update_virtual_aim_point(delta: float) -> void:
 		var controller_maximum: float = maxf(controller_minimum, get_combat_hand_setting("max"))
 		var controller_radius: float = lerpf(controller_minimum, controller_maximum, controller_aim_strength)
 		var new_controller_relative: Vector2 = controller_aim_direction * controller_radius
+		_record_charged_guard_control_aim(new_controller_relative, "controller", delta)
 		virtual_aim_point = global_position + new_controller_relative
 		var controller_relative_delta: Vector2 = new_controller_relative - old_controller_relative
 		if has_virtual_aim_sample and delta > 0.0:
@@ -1251,6 +1299,8 @@ func _update_virtual_aim_point(delta: float) -> void:
 		previous_virtual_aim_point = virtual_aim_point
 		has_virtual_aim_sample = true
 		return
+	charged_guard_previous_control_mode = "mouse"
+	charged_guard_has_control_sample = false
 	var mouse_pos: Vector2 = get_global_mouse_position()
 	if virtual_aim_point == Vector2.ZERO:
 		virtual_aim_point = mouse_pos
@@ -1265,6 +1315,11 @@ func _update_virtual_aim_point(delta: float) -> void:
 	var drag_rate: float = clampf(base_drag, 2.0, 50.0)
 	var drag_weight: float = 1.0 - exp(-drag_rate * delta)
 	virtual_aim_point = virtual_aim_point.lerp(mouse_pos, clampf(drag_weight, 0.0, 1.0))
+	if not training_menu_input_locked and delta > 0.0 and mouse_authored_delta.length_squared() > 0.0001:
+		var guard_aim_relative: Vector2 = virtual_aim_point - global_position
+		charged_guard_authored_aim_velocity = mouse_authored_delta / delta
+		charged_guard_authored_angular_travel = charged_guard_angular_travel(guard_aim_relative, mouse_authored_delta)
+		charged_guard_aim_turn_sign = charged_guard_turn_sign(charged_guard_authored_angular_travel)
 	if has_virtual_aim_sample:
 		var aim_radius: Vector2 = virtual_aim_point - global_position
 		var aim_point_delta: Vector2 = virtual_aim_point - old_virtual_aim_point
@@ -1774,12 +1829,13 @@ func _update_aim(delta: float) -> void:
 		var max_step_rad: float = deg_to_rad(max_turn_deg) * delta
 		desired_step = clampf(desired_step, -max_step_rad, max_step_rad)
 	var charged_position_stage_enabled: bool = get_combat_contact_setting("charged_guard_position_charge_enabled") >= 0.5
-	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(authored_virtual_aim_velocity.length(), authored_sword_engagement, charged_guard_movement_suppression_left > 0.0) if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
+	var charged_guard_break_speed: float = maxf(1.0, authored_engagement_speed_reference) * 0.30
+	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(charged_guard_authored_aim_velocity.length(), charged_guard_break_speed, charged_guard_movement_suppression_left > 0.0) if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
 	if charged_guard_fully_charged and charged_position_stage_enabled and charged_reposition_scale < 1.0:
 		desired_step *= charged_reposition_scale
 		var previous_hilt_offset: Vector2 = charged_guard_lock_hand_offset
 		charged_guard_lock_angle += desired_step
-		charged_guard_lock_hand_offset += authored_virtual_aim_velocity * delta * charged_reposition_scale
+		charged_guard_lock_hand_offset += charged_guard_authored_aim_velocity * delta * charged_reposition_scale
 		charged_guard_lock_hand_offset = charged_guard_clamp_hand_offset(charged_guard_lock_hand_offset, charged_guard_lock_radius, CHARGED_GUARD_MIN_HAND_RADIUS, charged_guard_radial_direction)
 		if charged_guard_lock_hand_offset.length_squared() >= CHARGED_GUARD_MIN_HAND_RADIUS * CHARGED_GUARD_MIN_HAND_RADIUS:
 			charged_guard_radial_direction = charged_guard_lock_hand_offset.normalized()
@@ -1791,6 +1847,64 @@ func _update_aim(delta: float) -> void:
 	# Second joint — the elbow trails the shoulder's aim at its own catch-up speed,
 	# instead of snapping to it instantly like every other single-pivot style.
 	elbow_angle = lerp_angle(elbow_angle, aim_angle, clampf(_current_elbow_joint_speed() * delta, 0.0, 1.0))
+
+func _authored_metronome_mode_applies() -> bool:
+	return combat_contact_preset != 4 and _is_metronome_style() and get_combat_contact_setting("authored_metronome_enabled") >= 0.5
+
+func _authored_metronome_pauses_phase() -> bool:
+	return _authored_metronome_mode_applies() and authored_metronome_state != AuthoredMetronomeState.ACTIVE
+
+func _update_authored_metronome_state(delta: float) -> void:
+	if not _authored_metronome_mode_applies():
+		authored_metronome_state = AuthoredMetronomeState.INACTIVE
+		authored_metronome_active_idle_time = 0.0
+		authored_metronome_ready_idle_time = 0.0
+		authored_metronome_swing_blend = 1.0
+		authored_metronome_sheathe_alpha = 1.0
+		return
+	if authored_metronome_state == AuthoredMetronomeState.INACTIVE:
+		authored_metronome_state = AuthoredMetronomeState.READY
+		authored_metronome_active_idle_time = 0.0
+		authored_metronome_ready_idle_time = 0.0
+		authored_metronome_swing_blend = 0.0
+		authored_metronome_sheathe_alpha = 1.0
+	var aim_speed: float = charged_guard_authored_aim_velocity.length()
+	var meaningful_movement: bool = aim_speed >= AUTHORED_METRONOME_ACTIVITY_SPEED
+	var wake_speed: float = maxf(AUTHORED_METRONOME_ACTIVITY_SPEED, get_combat_contact_setting("authored_metronome_wake_speed"))
+	match authored_metronome_state:
+		AuthoredMetronomeState.SHEATHED:
+			if meaningful_movement:
+				authored_metronome_state = AuthoredMetronomeState.READY
+				authored_metronome_ready_idle_time = 0.0
+		AuthoredMetronomeState.READY:
+			if aim_speed >= wake_speed:
+				authored_metronome_state = AuthoredMetronomeState.ACTIVE
+				authored_metronome_active_idle_time = 0.0
+				authored_metronome_ready_idle_time = 0.0
+			elif meaningful_movement:
+				authored_metronome_ready_idle_time = 0.0
+			else:
+				authored_metronome_ready_idle_time += delta
+				if authored_metronome_ready_idle_time >= maxf(0.05, get_combat_contact_setting("authored_metronome_sheathe_time")):
+					authored_metronome_state = AuthoredMetronomeState.SHEATHED
+		AuthoredMetronomeState.ACTIVE:
+			if meaningful_movement:
+				authored_metronome_active_idle_time = 0.0
+			else:
+				authored_metronome_active_idle_time += delta
+				if authored_metronome_active_idle_time >= maxf(0.05, get_combat_contact_setting("authored_metronome_idle_grace")):
+					authored_metronome_state = AuthoredMetronomeState.RETURNING
+		AuthoredMetronomeState.RETURNING:
+			if meaningful_movement:
+				authored_metronome_state = AuthoredMetronomeState.ACTIVE
+				authored_metronome_active_idle_time = 0.0
+			elif authored_metronome_swing_blend <= 0.01:
+				authored_metronome_state = AuthoredMetronomeState.READY
+				authored_metronome_ready_idle_time = 0.0
+	var target_swing_blend: float = 1.0 if authored_metronome_state == AuthoredMetronomeState.ACTIVE else 0.0
+	authored_metronome_swing_blend = move_toward(authored_metronome_swing_blend, target_swing_blend, AUTHORED_METRONOME_BLEND_RATE * delta)
+	var target_sheathe_alpha: float = 0.0 if authored_metronome_state == AuthoredMetronomeState.SHEATHED else 1.0
+	authored_metronome_sheathe_alpha = move_toward(authored_metronome_sheathe_alpha, target_sheathe_alpha, AUTHORED_METRONOME_SHEATHE_FADE_RATE * delta)
 
 func _style_default_swing_frequency() -> float:
 	match sword_style:
@@ -1891,6 +2005,9 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 	]:
 		if not copied_contact.has(setting_name):
 			copied_contact[setting_name] = get_combat_contact_setting(setting_name)
+	for authored_key: String in CombatSettingsConfig.AUTHORED_METRONOME_TUNING_KEYS:
+		if not copied_contact.has(authored_key):
+			copied_contact[authored_key] = get_combat_contact_setting(authored_key)
 	combat_contact_preset = saved_preset
 	combat_contact_settings[tgt_contact_key] = copied_contact
 
@@ -2203,6 +2320,10 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_near_body_rate": result = 0.5
 		"charged_guard_recent_motion_rate": result = 0.5
 		"charged_guard_pommel_rate": result = 1.0
+		"authored_metronome_enabled": result = 0.0
+		"authored_metronome_wake_speed": result = 350.0
+		"authored_metronome_idle_grace": result = 3.0
+		"authored_metronome_sheathe_time": result = 1.0
 		# Roll units/sec; going from +1 to -1 is a distance of 2.0, so 8.0
 		# gives a ~0.25s flip -- snappy but visible, not a hard pop.
 		"blade_roll_speed": result = 8.0
@@ -2271,7 +2392,7 @@ func _sword_transform() -> Dictionary:
 
 		if blade_freeze_left > 0.0:
 			result_angle = frozen_blade_world_angle
-		return _apply_charged_guard_pose({"start": result_start, "angle": result_angle, "arc_degrees": arc})
+		return _apply_authored_metronome_pose({"start": result_start, "angle": result_angle, "arc_degrees": arc})
 
 	# --- INDIVIDUAL FORMS (Presets 1, 2, 3) ---
 	match sword_style:
@@ -2279,42 +2400,49 @@ func _sword_transform() -> Dictionary:
 			var t_windup: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_windup["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_windup)
+			return _apply_authored_metronome_pose(t_windup)
 		SwordStyle.THRUST:
 			var t_thrust: Dictionary = _calculate_form_thrust(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_thrust["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_thrust)
+			return _apply_authored_metronome_pose(t_thrust)
 		SwordStyle.MOULINET:
 			var t_moul: Dictionary = _calculate_form_moulinet(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_moul)
+			return _apply_authored_metronome_pose(t_moul)
 		SwordStyle.MOULINET_2:
 			var t_moul2: Dictionary = _calculate_form_moulinet_2(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul2["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_moul2)
+			return _apply_authored_metronome_pose(t_moul2)
 		SwordStyle.MOULINET_3:
 			var t_moul3: Dictionary = _calculate_form_moulinet_3(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul3["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_moul3)
+			return _apply_authored_metronome_pose(t_moul3)
 		SwordStyle.MOULINET_4:
 			var t_moul4: Dictionary = _calculate_form_moulinet_4(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_moul4["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_moul4)
+			return _apply_authored_metronome_pose(t_moul4)
 		SwordStyle.THRUST_METRONOME:
 			var t_metro_thrust: Dictionary = _calculate_form_thrust_metronome(base_angle, radius, arc)
 			if blade_freeze_left > 0.0:
 				t_metro_thrust["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_metro_thrust)
+			return _apply_authored_metronome_pose(t_metro_thrust)
 		_:
 			var t_metro: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_metro["angle"] = frozen_blade_world_angle
-			return _apply_charged_guard_pose(t_metro)
+			return _apply_authored_metronome_pose(t_metro)
+
+func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
+	if _authored_metronome_mode_applies():
+		var metronome_angle: float = float(transform_data["angle"])
+		transform_data["start"] = global_position + Vector2.RIGHT.rotated(aim_angle) * combat_hand_radius
+		transform_data["angle"] = aim_angle + angle_difference(aim_angle, metronome_angle) * clampf(authored_metronome_swing_blend, 0.0, 1.0)
+	return _apply_charged_guard_pose(transform_data)
 
 func _apply_charged_guard_pose(transform_data: Dictionary) -> Dictionary:
 	if charged_guard_locked and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
@@ -2791,13 +2919,21 @@ static func charged_guard_pommel_alignment(blade_direction: Vector2, authored_ai
 		return -1.0
 	return authored_aim_velocity.normalized().dot(-blade_direction.normalized())
 
-static func charged_guard_motion_breaks(authored_angular_travel: float, authored_engagement: float) -> bool:
-	return absf(authored_angular_travel) >= deg_to_rad(2.0) and authored_engagement >= 0.30
+static func charged_guard_angular_travel(aim_relative: Vector2, authored_relative_delta: Vector2) -> float:
+	if aim_relative.length_squared() < 1.0 or authored_relative_delta.length_squared() <= 0.0001:
+		return 0.0
+	return aim_relative.cross(authored_relative_delta) / aim_relative.length_squared()
 
-static func charged_guard_slow_reposition_scale(authored_aim_speed: float, authored_engagement: float, player_moved_recently: bool = false) -> float:
+static func charged_guard_turn_sign(angular_travel: float) -> float:
+	return signf(angular_travel) if absf(angular_travel) >= SWING_COMMITMENT_INPUT_THRESHOLD else 0.0
+
+static func charged_guard_motion_breaks(authored_angular_travel: float, authored_aim_speed: float, minimum_break_speed: float = 270.0) -> bool:
+	return absf(authored_angular_travel) >= deg_to_rad(2.0) and authored_aim_speed >= minimum_break_speed
+
+static func charged_guard_slow_reposition_scale(authored_aim_speed: float, break_speed_threshold: float = 270.0, player_moved_recently: bool = false) -> float:
 	if player_moved_recently:
 		return 1.0
-	return 0.70 if authored_aim_speed > 1.0 and authored_engagement < 0.30 else 1.0
+	return 0.70 if authored_aim_speed > 1.0 and authored_aim_speed < break_speed_threshold else 1.0
 
 static func charged_guard_clamp_hand_offset(hand_offset: Vector2, maximum_radius: float, minimum_radius: float = 0.0, fallback_direction: Vector2 = Vector2.RIGHT) -> Vector2:
 	var max_radius: float = maxf(1.0, maximum_radius)
@@ -2847,7 +2983,8 @@ func _update_charged_guard(delta: float) -> void:
 		charged_guard_locked = false
 		return
 	if charged_guard_locked:
-		if charged_guard_motion_breaks(authored_angular_travel_radians, authored_sword_engagement):
+		var charged_guard_break_speed: float = maxf(1.0, authored_engagement_speed_reference) * 0.30
+		if charged_guard_motion_breaks(charged_guard_authored_angular_travel, charged_guard_authored_aim_velocity.length(), charged_guard_break_speed):
 			charged_guard_locked = false
 			_clear_charged_guard_attempt()
 			return
@@ -2874,9 +3011,9 @@ func _update_charged_guard(delta: float) -> void:
 	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(current_transform["angle"]))
 	var travel_sign: float = signf(cos(sword_phase))
-	var opposing_phase: bool = player_aim_turn_sign != 0.0 and player_aim_turn_sign == -travel_sign
-	var pommel_alignment: float = charged_guard_pommel_alignment(blade_direction, authored_virtual_aim_velocity)
-	var authored_speed: float = authored_virtual_aim_velocity.length()
+	var opposing_phase: bool = charged_guard_aim_turn_sign != 0.0 and charged_guard_aim_turn_sign == -travel_sign
+	var pommel_alignment: float = charged_guard_pommel_alignment(blade_direction, charged_guard_authored_aim_velocity)
+	var authored_speed: float = charged_guard_authored_aim_velocity.length()
 	var pommel_alignment_min: float = get_combat_contact_setting("charged_guard_pommel_alignment")
 	var pommel_speed_min: float = get_combat_contact_setting("charged_guard_pommel_speed")
 	var deliberate_pommel_drive: bool = pommel_alignment >= pommel_alignment_min and authored_speed >= pommel_speed_min
@@ -2935,6 +3072,15 @@ static func authored_stroke_drive_increment(angular_travel_radians: float, geari
 	return absf(angular_travel_radians) / required_travel_radians * pace_weight
 
 func _update_sword(delta: float) -> void:
+	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
+		blade_velocity = Vector2.ZERO
+		previous_blade_start = Vector2.ZERO
+		previous_blade_end = Vector2.ZERO
+		previous_blade_samples.clear()
+		current_blade_samples.clear()
+		blade_trail_points.clear()
+		hilt_trail_points.clear()
+		return
 	if blade_freeze_left > 0.0:
 		# Clash/parry weapon freeze only -- flesh and hilt contact no longer use this
 		# branch at all, see contact_drag_multiplier in the swing-phase advance below.
@@ -2975,6 +3121,8 @@ func _update_sword(delta: float) -> void:
 		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
 		sword_delta = 0.0
 	if charged_guard_locked:
+		sword_delta = 0.0
+	if _authored_metronome_pauses_phase():
 		sword_delta = 0.0
 	var tempo_enabled: bool = get_combat_hand_setting("tempo_assist_enabled") >= 0.5 and _is_metronome_style()
 	var autonomous_travel_sign: float = signf(cos(sword_phase))
@@ -4404,7 +4552,9 @@ func _draw_contact_spark_burst(center: Vector2, alpha: float) -> void:
 		draw_line(origin, origin + direction * length * 0.48, Color.WHITE, 1.1, true)
 
 func _draw() -> void:
-	_draw_metronome_indicator_base()
+	var authored_metronome_sheathed: bool = _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED
+	if not authored_metronome_sheathed:
+		_draw_metronome_indicator_base()
 	_draw_chakram_aim_trail()
 	_draw_dash_aim_preview()
 	if (charged_guard_charge > 0.0 or charged_guard_locked) and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
@@ -4620,9 +4770,10 @@ func _draw() -> void:
 	# whose source art has hilt/tip reversed, no PNG editing required.
 	var sword_flipped: bool = bool(SWORD_TEXTURE_FLIP_Y.get(equipped_sword_id, false))
 	var sword_rect: Rect2 = Rect2(-512.0, 768.0, 1024.0, -1536.0) if sword_flipped else Rect2(-512.0, -768.0, 1024.0, 1536.0)
-	draw_texture_rect(equipped_sword_texture(), sword_rect, false)
+	if authored_metronome_sheathe_alpha > 0.01:
+		draw_texture_rect(equipped_sword_texture(), sword_rect, false, Color(1.0, 1.0, 1.0, authored_metronome_sheathe_alpha))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	if sword_fire_left > 0.0:
+	if sword_fire_left > 0.0 and not authored_metronome_sheathed:
 		var fire_fade: float = clampf(sword_fire_left / maxf(sword_fire_duration, 0.001), 0.0, 1.0)
 		var flame_blade_samples: PackedVector2Array = current_blade_samples
 		if flame_blade_samples.size() < 2:
@@ -4631,4 +4782,5 @@ func _draw() -> void:
 			flame_blade_samples = _blade_polyline_samples(blade_hilt, blade_direction)
 		_draw_hd_sword_fire(flame_blade_samples, fire_fade)
 	# Draw last so the gold needle remains visible over the sword and crowded combat.
-	_draw_metronome_indicator_needle(sword_angle)
+	if not authored_metronome_sheathed:
+		_draw_metronome_indicator_needle(sword_angle)

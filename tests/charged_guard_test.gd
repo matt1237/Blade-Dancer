@@ -39,22 +39,25 @@ func test_pommel_gesture_latches_candidate_then_locks_after_guard_hold() -> void
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	player.sword_phase = 1.2
 	player.player_aim_turn_sign = -1.0
+	player.charged_guard_aim_turn_sign = -1.0
 	player.authored_sword_engagement = 1.0
 	var initial_transform: Dictionary = player._sword_transform()
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(initial_transform["angle"]))
-	player.authored_virtual_aim_velocity = -blade_direction * 200.0
+	player.charged_guard_authored_aim_velocity = -blade_direction * 200.0
 	for _frame: int in range(8):
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_candidate_active, "Sustained pommel-directed counter-drive in the reversal window should latch a guard candidate.")
 	assert(player.charged_guard_candidate_latch_left > 0.0, "A qualified gesture should grant a forgiving stabilization window.")
 	player.authored_virtual_aim_velocity = Vector2.ZERO
+	player.charged_guard_authored_aim_velocity = Vector2.ZERO
+	player.charged_guard_aim_turn_sign = 0.0
 	for _frame: int in range(20):
 		if player.charged_guard_locked:
 			break
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_locked, "A latched and maintained folded guard should lock after the short hold.")
-	player.authored_angular_travel_radians = deg_to_rad(4.0)
-	player.authored_sword_engagement = 0.6
+	player.charged_guard_authored_angular_travel = deg_to_rad(4.0)
+	player.charged_guard_authored_aim_velocity = Vector2(400.0, 0.0)
 	player._update_charged_guard(1.0 / 60.0)
 	assert(not player.charged_guard_locked, "Deliberate authored motion should release the lock.")
 	player.free()
@@ -73,6 +76,57 @@ func test_locked_guard_charges_blue_after_tunable_hold_and_persists() -> void:
 	for _frame: int in range(60):
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_fully_charged, "The completed charged state should persist while the player holds still.")
+	player.free()
+
+func test_guard_only_aim_signals_ignore_player_motion_across_input_modes() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.mobile_input_enabled = true
+	player.sword_phase = 1.2
+	player.mobile_aim_direction = Vector2.LEFT
+	player.has_virtual_aim_sample = true
+	player.virtual_aim_point = player.global_position + Vector2.LEFT * 120.0
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(absf(cos(player.sword_phase)) <= player.get_combat_contact_setting("charged_guard_acquisition_window"), "The walking regression must be exercised inside the Guard acquisition window.")
+	for _frame: int in range(5):
+		player.global_position += Vector2(5.0, 2.0)
+		player._update_virtual_aim_point(1.0 / 60.0)
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.authored_virtual_aim_velocity.length() > 0.0, "This setup should reproduce legacy aim velocity contaminated by player movement.")
+	assert(is_zero_approx(player.charged_guard_authored_aim_velocity.length()), "Mobile player translation with an unchanged aim stick must not count as Guard hand travel.")
+	assert(not player.charged_guard_candidate_active and not player.charged_guard_locked, "Player movement alone must not acquire Guard.")
+	player.mobile_aim_direction = Vector2.UP
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(player.charged_guard_authored_aim_velocity.length() > 0.0, "A real mobile aim change must still author Guard motion.")
+	player.mobile_input_enabled = false
+	player.set_input_mode("controller")
+	player.controller_aim_direction = Vector2.RIGHT
+	player.has_virtual_aim_sample = true
+	player._update_virtual_aim_point(1.0 / 60.0)
+	player.global_position += Vector2(7.0, -3.0)
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_authored_aim_velocity.length()), "Controller player translation with a steady stick must not count as Guard hand travel.")
+	player.controller_aim_direction = Vector2.DOWN
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(player.charged_guard_authored_aim_velocity.length() > 0.0, "A real controller aim change must still author Guard motion.")
+	player.set_input_mode("keyboard_mouse")
+	player.virtual_aim_point = player.global_position + Vector2.RIGHT * 100.0
+	player.has_virtual_aim_sample = true
+	var mouse_motion: InputEventMouseMotion = InputEventMouseMotion.new()
+	mouse_motion.relative = Vector2(0.0, 20.0)
+	player._input(mouse_motion)
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(player.charged_guard_authored_aim_velocity.length() > 0.0, "Actual mouse movement must still author Guard motion.")
+	player.global_position += Vector2(9.0, 4.0)
+	player._update_virtual_aim_point(1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_authored_aim_velocity.length()), "Player translation without a mouse-motion event must not count as Guard hand travel.")
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_locked = true
+	for _frame: int in range(30):
+		player.global_position += Vector2(4.0, 2.0)
+		player._update_virtual_aim_point(1.0 / 60.0)
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked and player.charged_guard_awaken_charge > 0.0, "Walking with the mouse/aim held still must not release Guard or interrupt its charged hold.")
 	player.free()
 
 func test_charged_guard_position_stage_defaults_off_and_can_be_disabled_without_losing_guard() -> void:
@@ -97,12 +151,13 @@ func test_charged_guard_position_stage_defaults_off_and_can_be_disabled_without_
 	player.free()
 
 func test_charged_guard_allows_slow_reposition_but_fast_flick_breaks() -> void:
-	var slow_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 0.10)
+	var slow_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 270.0)
 	assert(is_equal_approx(slow_scale, 0.70), "Slow authored input should reposition the charged sword at 70% response when the player is stationary.")
-	var movement_suppressed_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 0.10, true)
+	var movement_suppressed_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 270.0, true)
 	assert(is_equal_approx(movement_suppressed_scale, 1.0), "Player translation must not be misread as slow aim repositioning while charged.")
-	assert(Player.charged_guard_motion_breaks(deg_to_rad(3.0), 0.5), "A medium/fast deliberate flick should still break charged Guard.")
-	assert(not Player.charged_guard_motion_breaks(deg_to_rad(1.0), 0.10), "Slow movement below the existing break signature should retain Guard.")
+	assert(Player.charged_guard_motion_breaks(deg_to_rad(3.0), 400.0, 270.0), "A medium/fast deliberate aim flick should still break charged Guard.")
+	assert(not Player.charged_guard_motion_breaks(deg_to_rad(1.0), 400.0, 270.0), "Low angular travel should retain Guard even at a high aim speed.")
+	assert(not Player.charged_guard_motion_breaks(deg_to_rad(3.0), 100.0, 270.0), "Player movement alone must not meet the authored aim-speed threshold.")
 	var bounded_offset: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2(100.0, 0.0), 30.0)
 	assert(is_equal_approx(bounded_offset.length(), 30.0), "Charged hand reposition must remain inside the original lock radius.")
 
@@ -126,7 +181,8 @@ func test_pommel_acquisition_window_reaches_further_into_the_stroke() -> void:
 	player.player_aim_turn_sign = -1.0
 	player.authored_sword_engagement = 1.0
 	var transform: Dictionary = player._sword_transform()
-	player.authored_virtual_aim_velocity = -Vector2.RIGHT.rotated(float(transform["angle"])) * 200.0
+	player.charged_guard_authored_aim_velocity = -Vector2.RIGHT.rotated(float(transform["angle"])) * 200.0
+	player.charged_guard_aim_turn_sign = -1.0
 	for _frame: int in range(8):
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_candidate_active, "The slightly wider counter-phase window should allow pommel-drive through more of the metronome stroke.")
@@ -138,7 +194,8 @@ func test_countersteering_without_pommel_drive_does_not_acquire() -> void:
 	player.sword_phase = 1.2
 	player.player_aim_turn_sign = -1.0
 	player.authored_sword_engagement = 1.0
-	player.authored_virtual_aim_velocity = Vector2.RIGHT * 200.0
+	player.charged_guard_authored_aim_velocity = Vector2.RIGHT * 400.0
+	player.charged_guard_aim_turn_sign = -1.0
 	for _frame: int in range(12):
 		player._update_charged_guard(1.0 / 60.0)
 	assert(not player.charged_guard_candidate_active, "Angular counter-steering without a blade-axis pommel pull must not activate Guard.")
