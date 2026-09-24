@@ -42,14 +42,8 @@ const BLADE_HILT_INSET: float = 14.0
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
-const CHARGED_GUARD_POMMEL_ALIGNMENT_MIN: float = 0.82
-const CHARGED_GUARD_POMMEL_SPEED_MIN: float = 90.0
-const CHARGED_GUARD_POMMEL_TRAVEL_MIN: float = 14.0
-const CHARGED_GUARD_POMMEL_TIME_MIN: float = 0.06
 const CHARGED_GUARD_CANDIDATE_LATCH: float = 0.30
 const CHARGED_GUARD_POSITION_TOLERANCE_DEGREES: float = 35.0
-const CHARGED_GUARD_HOLD_DURATION: float = 0.20
-const CHARGED_GUARD_NEAR_BODY_RADIUS: float = 48.0
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
@@ -451,10 +445,18 @@ var charged_guard_candidate_active: bool = false
 var charged_guard_pommel_travel: float = 0.0
 var charged_guard_pommel_time: float = 0.0
 var charged_guard_candidate_latch_left: float = 0.0
+var charged_guard_recent_motion_left: float = 0.0
+var charged_guard_awaken_charge: float = 0.0
+var charged_guard_fully_charged: bool = false
+var charged_guard_afterimages: Array[Vector2] = []
 var charged_guard_lock_angle: float = 0.0
+var charged_guard_initial_lock_angle: float = 0.0
+var charged_guard_initial_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_flash_left: float = 0.0
 var charged_guard_candidate_angle: float = 0.0
 var charged_guard_lock_hand_offset: Vector2 = Vector2.ZERO
+var charged_guard_lock_radius: float = 0.0
+var charged_guard_movement_suppression_left: float = 0.0
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -1046,6 +1048,7 @@ func _physics_process(delta: float) -> void:
 	var blend_rate: float = clampf(get_combat_contact_setting("form_blend_smoothing"), 1.0, 30.0)
 	var target_blend: float = clampf(flow / 100.0, 0.0, 1.0)
 	p4_form_blend = lerpf(p4_form_blend, target_blend, clampf(delta * blend_rate, 0.0, 1.0))
+	var player_position_before_movement: Vector2 = global_position
 	if training_menu_input_locked:
 		velocity = velocity.move_toward(Vector2.ZERO, movement_deceleration * delta)
 		move_and_slide()
@@ -1055,6 +1058,12 @@ func _physics_process(delta: float) -> void:
 		_handle_dash_input()
 		_handle_chakram_input()
 		_handle_movement(delta, grapple_acceleration)
+	if global_position.distance_squared_to(player_position_before_movement) > 0.01:
+		# Camera-follow motion can make a stationary cursor look like authored aim
+		# travel in world coordinates. Don't let that move the charged hand pose.
+		charged_guard_movement_suppression_left = 0.40
+	else:
+		charged_guard_movement_suppression_left = maxf(0.0, charged_guard_movement_suppression_left - delta)
 	_update_aim(sword_control_delta)
 	_update_combat_hand_radius(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
@@ -1762,6 +1771,18 @@ func _update_aim(delta: float) -> void:
 	if max_turn_deg > 0.0:
 		var max_step_rad: float = deg_to_rad(max_turn_deg) * delta
 		desired_step = clampf(desired_step, -max_step_rad, max_step_rad)
+	var charged_position_stage_enabled: bool = get_combat_contact_setting("charged_guard_position_charge_enabled") >= 0.5
+	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(authored_virtual_aim_velocity.length(), authored_sword_engagement, charged_guard_movement_suppression_left > 0.0) if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
+	if charged_guard_fully_charged and charged_position_stage_enabled and charged_reposition_scale < 1.0:
+		desired_step *= charged_reposition_scale
+		var previous_hilt_offset: Vector2 = charged_guard_lock_hand_offset
+		charged_guard_lock_angle += desired_step
+		charged_guard_lock_hand_offset += authored_virtual_aim_velocity * delta * charged_reposition_scale
+		charged_guard_lock_hand_offset = charged_guard_clamp_hand_offset(charged_guard_lock_hand_offset, charged_guard_lock_radius)
+		if previous_hilt_offset.distance_to(charged_guard_lock_hand_offset) >= 1.0:
+			charged_guard_afterimages.push_front(previous_hilt_offset)
+			while charged_guard_afterimages.size() > 4:
+				charged_guard_afterimages.pop_back()
 	aim_angle += desired_step
 	# Second joint — the elbow trails the shoulder's aim at its own catch-up speed,
 	# instead of snapping to it instantly like every other single-pivot style.
@@ -2166,6 +2187,18 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"apex_hang_time": result = 0.04 if distinct else 0.0
 		"apex_hang_duration": result = 0.14
 		"charged_guard_enabled": result = 0.0
+		"charged_guard_position_charge_enabled": result = 0.0
+		"charged_guard_hold_duration": result = 0.20
+		"charged_guard_awaken_duration": result = 1.0
+		"charged_guard_acquisition_window": result = 0.65
+		"charged_guard_pommel_alignment": result = 0.82
+		"charged_guard_pommel_speed": result = 90.0
+		"charged_guard_pommel_travel": result = 14.0
+		"charged_guard_pommel_intent_time": result = 0.06
+		"charged_guard_near_body_radius": result = 48.0
+		"charged_guard_near_body_rate": result = 0.5
+		"charged_guard_recent_motion_rate": result = 0.5
+		"charged_guard_pommel_rate": result = 1.0
 		# Roll units/sec; going from +1 to -1 is a distance of 2.0, so 8.0
 		# gives a ~0.25s flip -- snappy but visible, not a hard pop.
 		"blade_roll_speed": result = 8.0
@@ -2754,12 +2787,25 @@ static func charged_guard_pommel_alignment(blade_direction: Vector2, authored_ai
 		return -1.0
 	return authored_aim_velocity.normalized().dot(-blade_direction.normalized())
 
-static func charged_guard_charge_multiplier(opposing_phase: bool, near_body: bool) -> float:
+static func charged_guard_motion_breaks(authored_angular_travel: float, authored_engagement: float) -> bool:
+	return absf(authored_angular_travel) >= deg_to_rad(2.0) and authored_engagement >= 0.30
+
+static func charged_guard_slow_reposition_scale(authored_aim_speed: float, authored_engagement: float, player_moved_recently: bool = false) -> float:
+	if player_moved_recently:
+		return 1.0
+	return 0.70 if authored_aim_speed > 1.0 and authored_engagement < 0.30 else 1.0
+
+static func charged_guard_clamp_hand_offset(hand_offset: Vector2, maximum_radius: float) -> Vector2:
+	return hand_offset.limit_length(maxf(1.0, maximum_radius))
+
+static func charged_guard_charge_multiplier(near_body: bool, recent_authored_motion: bool, pommel_pull: bool, near_body_bonus: float, recent_motion_bonus: float, pommel_pull_bonus: float) -> float:
 	var multiplier: float = 1.0
-	if opposing_phase:
-		multiplier += 0.5
 	if near_body:
-		multiplier += 0.5
+		multiplier += maxf(0.0, near_body_bonus)
+	if recent_authored_motion:
+		multiplier += maxf(0.0, recent_motion_bonus)
+	if pommel_pull:
+		multiplier += maxf(0.0, pommel_pull_bonus)
 	return multiplier
 
 func _clear_charged_guard_attempt() -> void:
@@ -2767,6 +2813,10 @@ func _clear_charged_guard_attempt() -> void:
 	charged_guard_pommel_travel = 0.0
 	charged_guard_pommel_time = 0.0
 	charged_guard_candidate_latch_left = 0.0
+	charged_guard_recent_motion_left = 0.0
+	charged_guard_awaken_charge = 0.0
+	charged_guard_fully_charged = false
+	charged_guard_afterimages.clear()
 	charged_guard_charge = 0.0
 
 func _update_charged_guard(delta: float) -> void:
@@ -2776,9 +2826,24 @@ func _update_charged_guard(delta: float) -> void:
 		charged_guard_locked = false
 		return
 	if charged_guard_locked:
-		if absf(authored_angular_travel_radians) >= deg_to_rad(2.0) and authored_sword_engagement >= 0.30:
+		if charged_guard_motion_breaks(authored_angular_travel_radians, authored_sword_engagement):
 			charged_guard_locked = false
 			_clear_charged_guard_attempt()
+			return
+		if get_combat_contact_setting("charged_guard_position_charge_enabled") < 0.5:
+			charged_guard_lock_angle = charged_guard_initial_lock_angle
+			charged_guard_lock_hand_offset = charged_guard_initial_hand_offset
+			charged_guard_awaken_charge = 0.0
+			charged_guard_fully_charged = false
+			charged_guard_afterimages.clear()
+			return
+		if not charged_guard_fully_charged:
+			var awaken_duration: float = maxf(0.05, get_combat_contact_setting("charged_guard_awaken_duration"))
+			charged_guard_awaken_charge = minf(awaken_duration, charged_guard_awaken_charge + delta)
+			if charged_guard_awaken_charge >= awaken_duration:
+				charged_guard_fully_charged = true
+				charged_guard_flash_left = 0.55
+				charged_guard_afterimages.clear()
 		return
 	var current_transform: Dictionary = _sword_transform()
 	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
@@ -2787,15 +2852,22 @@ func _update_charged_guard(delta: float) -> void:
 	var opposing_phase: bool = player_aim_turn_sign != 0.0 and player_aim_turn_sign == -travel_sign
 	var pommel_alignment: float = charged_guard_pommel_alignment(blade_direction, authored_virtual_aim_velocity)
 	var authored_speed: float = authored_virtual_aim_velocity.length()
-	var deliberate_pommel_drive: bool = pommel_alignment >= CHARGED_GUARD_POMMEL_ALIGNMENT_MIN and authored_speed >= CHARGED_GUARD_POMMEL_SPEED_MIN
+	var pommel_alignment_min: float = get_combat_contact_setting("charged_guard_pommel_alignment")
+	var pommel_speed_min: float = get_combat_contact_setting("charged_guard_pommel_speed")
+	var deliberate_pommel_drive: bool = pommel_alignment >= pommel_alignment_min and authored_speed >= pommel_speed_min
+	if authored_speed >= pommel_speed_min:
+		charged_guard_recent_motion_left = 0.16
+	else:
+		charged_guard_recent_motion_left = maxf(0.0, charged_guard_recent_motion_left - delta)
 	if not charged_guard_candidate_active:
-		if deliberate_pommel_drive and opposing_phase and absf(cos(sword_phase)) <= 0.45:
+		var acquisition_window: float = get_combat_contact_setting("charged_guard_acquisition_window")
+		if deliberate_pommel_drive and opposing_phase and absf(cos(sword_phase)) <= acquisition_window:
 			charged_guard_pommel_travel += authored_speed * pommel_alignment * delta
 			charged_guard_pommel_time += delta
 		else:
 			charged_guard_pommel_travel = 0.0
 			charged_guard_pommel_time = 0.0
-		if charged_guard_pommel_travel < CHARGED_GUARD_POMMEL_TRAVEL_MIN or charged_guard_pommel_time < CHARGED_GUARD_POMMEL_TIME_MIN:
+		if charged_guard_pommel_travel < get_combat_contact_setting("charged_guard_pommel_travel") or charged_guard_pommel_time < get_combat_contact_setting("charged_guard_pommel_intent_time"):
 			return
 		# Pommel-aligned counter-drive has been sustained through the timed phase.
 		charged_guard_candidate_active = true
@@ -2813,14 +2885,22 @@ func _update_charged_guard(delta: float) -> void:
 			_clear_charged_guard_attempt()
 		return
 	var hand_radius: float = current_hilt.length()
-	var near_body: bool = hand_radius <= CHARGED_GUARD_NEAR_BODY_RADIUS
-	charged_guard_charge = minf(CHARGED_GUARD_HOLD_DURATION, charged_guard_charge + delta * charged_guard_charge_multiplier(opposing_phase, near_body))
-	if charged_guard_charge >= CHARGED_GUARD_HOLD_DURATION:
+	var near_body_radius: float = get_combat_contact_setting("charged_guard_near_body_radius")
+	var near_body: bool = hand_radius <= near_body_radius
+	var recent_motion: bool = charged_guard_recent_motion_left > 0.0
+	var still_pommel_driving: bool = deliberate_pommel_drive
+	var charge_multiplier: float = charged_guard_charge_multiplier(near_body, recent_motion, still_pommel_driving, get_combat_contact_setting("charged_guard_near_body_rate"), get_combat_contact_setting("charged_guard_recent_motion_rate"), get_combat_contact_setting("charged_guard_pommel_rate"))
+	var hold_duration: float = get_combat_contact_setting("charged_guard_hold_duration")
+	charged_guard_charge = minf(hold_duration, charged_guard_charge + delta * charge_multiplier)
+	if charged_guard_charge >= hold_duration:
 		charged_guard_locked = true
 		charged_guard_candidate_active = false
 		charged_guard_candidate_latch_left = 0.0
 		charged_guard_lock_angle = current_angle
+		charged_guard_initial_lock_angle = current_angle
 		charged_guard_lock_hand_offset = current_hilt
+		charged_guard_initial_hand_offset = current_hilt
+		charged_guard_lock_radius = current_hilt.length()
 		charged_guard_flash_left = 0.18
 
 static func authored_stroke_drive_increment(angular_travel_radians: float, gearing_degrees: float, authored_pace: float) -> float:
@@ -4304,14 +4384,40 @@ func _draw() -> void:
 	if (charged_guard_charge > 0.0 or charged_guard_locked) and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
 		var guard_transform: Dictionary = _sword_transform()
 		var hand_local: Vector2 = (guard_transform["start"] as Vector2) - global_position
-		var charge_ratio: float = clampf(charged_guard_charge / CHARGED_GUARD_HOLD_DURATION, 0.0, 1.0)
-		var flash_ratio: float = clampf(charged_guard_flash_left / 0.18, 0.0, 1.0)
+		var charge_ratio: float = clampf(charged_guard_charge / maxf(0.01, get_combat_contact_setting("charged_guard_hold_duration")), 0.0, 1.0)
+		var position_stage_enabled: bool = get_combat_contact_setting("charged_guard_position_charge_enabled") >= 0.5
+		var awaken_duration: float = maxf(0.05, get_combat_contact_setting("charged_guard_awaken_duration"))
+		var awaken_ratio: float = clampf(charged_guard_awaken_charge / awaken_duration, 0.0, 1.0) if position_stage_enabled else 0.0
+		var show_fully_charged: bool = position_stage_enabled and charged_guard_fully_charged
+		var flash_duration: float = 0.55 if show_fully_charged else 0.18
+		var flash_ratio: float = clampf(charged_guard_flash_left / flash_duration, 0.0, 1.0)
 		var pulse: float = 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.025)
-		var glow_color: Color = Color(1.0, 0.78, 0.25, (0.18 + charge_ratio * 0.35) * pulse)
-		if flash_ratio > 0.0:
-			glow_color = Color(1.0, 0.96, 0.68, flash_ratio)
-		draw_circle(hand_local, 5.0 + charge_ratio * 5.0, glow_color)
-		draw_arc(hand_local, 10.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 28, Color(1.0, 0.88, 0.38, 0.95), 2.0, true)
+		if show_fully_charged:
+			for image_index: int in range(charged_guard_afterimages.size()):
+				var image_alpha: float = 0.16 * (1.0 - float(image_index) / 4.0)
+				draw_circle(charged_guard_afterimages[image_index], 6.5, Color(0.18, 0.62, 1.0, image_alpha))
+				draw_circle(charged_guard_afterimages[image_index], 3.0, Color(0.50, 0.85, 1.0, image_alpha * 0.75))
+			var charged_glow: Color = Color(0.18, 0.62, 1.0, 0.30 * pulse)
+			draw_circle(hand_local, 13.0 * pulse, charged_glow)
+			draw_circle(hand_local, 7.0, Color(0.35, 0.78, 1.0, 0.72 * pulse))
+			draw_circle(hand_local, 3.0, Color(0.82, 0.96, 1.0, 0.95))
+		else:
+			var glow_color: Color = Color(1.0, 0.78, 0.25, (0.18 + charge_ratio * 0.35) * pulse)
+			if flash_ratio > 0.0:
+				glow_color = Color(1.0, 0.96, 0.68, flash_ratio)
+			draw_circle(hand_local, 5.0 + charge_ratio * 5.0, glow_color)
+			if charged_guard_locked and position_stage_enabled:
+				var closing_radius: float = lerpf(20.0, 5.0, awaken_ratio)
+				var ring_alpha: float = 0.45 + 0.50 * awaken_ratio
+				draw_circle(hand_local, closing_radius, Color(0.20, 0.70, 1.0, ring_alpha), false, 2.0, true)
+				draw_arc(hand_local, closing_radius + 3.0, -PI * 0.5, -PI * 0.5 + TAU * awaken_ratio, 32, Color(0.70, 0.91, 1.0, 0.95), 1.5, true)
+			else:
+				draw_arc(hand_local, 10.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 28, Color(1.0, 0.88, 0.38, 0.95), 2.0, true)
+		if show_fully_charged and flash_ratio > 0.0:
+			var shimmer_radius: float = lerpf(9.0, 25.0, 1.0 - flash_ratio)
+			for shimmer_index: int in range(8):
+				var shimmer_direction: Vector2 = Vector2.RIGHT.rotated(TAU * float(shimmer_index) / 8.0)
+				draw_line(hand_local + shimmer_direction * shimmer_radius, hand_local + shimmer_direction * (shimmer_radius + 5.0), Color(0.72, 0.93, 1.0, flash_ratio), 1.8, true)
 	var flow_ratio: float = clampf(flow / 100.0, 0.0, 1.0)
 	if flow_ratio > 0.0 and flow_trail_points.size() > 1:
 		var trail_alpha: float = flow_ratio * flow_trail_max_alpha

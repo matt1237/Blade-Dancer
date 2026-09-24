@@ -1530,6 +1530,7 @@ func _materialize_combat_settings() -> Dictionary:
 	var contact_settings: Dictionary = player.combat_contact_settings.duplicate(true)
 	var hand_keys: Array[String] = ["windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end", "mouse_drag", "rotation", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "radial_response", "scale", "min", "max", "arc", "frequency", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks", "bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug"]
 	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "flesh_contact_drag", "flesh_contact_drag_recovery", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_hitstop", "farmable_contact_drag", "farmable_contact_drag_recovery", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
+	contact_keys.append_array(CombatSettingsConfig.CHARGED_GUARD_TUNING_KEYS)
 	for preset: int in range(1, 5):
 		var contact_key: String = str(preset)
 		var raw_contact: Variant = contact_settings.get(contact_key, {})
@@ -1754,23 +1755,20 @@ func _load_baked_global_preset() -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary and _global_state_complete(parsed as Dictionary) else {}
 
 func _initialize_global_presets() -> void:
-	# The baked package is the game’s actual default, not merely a launch profile.
-	# Dev preset saves remain authoring data and never replace fresh-game tuning.
+	# A user's saved Global Preset 2 is their live authoring package and must
+	# survive relaunch. The shipped baked package is only the first-run fallback.
+	if GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2)):
+		global_preset_slot = 2
+		GlobalPresetConfig.set_launch_slot(2)
+		var saved_user_default: Dictionary = GlobalPresetConfig.get_slot(2)
+		if _repair_global_preset_two_day_phases(saved_user_default):
+			GlobalPresetConfig.save_slot(2, saved_user_default, 2)
+		_apply_global_preset_state(saved_user_default)
+		return
 	var baked_game_default: Dictionary = _load_baked_global_preset()
 	if not baked_game_default.is_empty():
 		global_preset_slot = 2
 		_apply_global_preset_state(baked_game_default)
-		return
-	# Global Preset 2 is the canonical game default. Every launch starts from it,
-	# including returning users whose saved launch slot was changed elsewhere.
-	if GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2)):
-		global_preset_slot = 2
-		GlobalPresetConfig.set_launch_slot(2)
-		var default_state: Dictionary = GlobalPresetConfig.get_slot(2)
-		if _repair_global_preset_two_day_phases(default_state):
-			GlobalPresetConfig.save_slot(2, default_state, 2)
-		if not default_state.is_empty():
-			_apply_global_preset_state(default_state)
 		return
 	var baked_default: Dictionary = _load_baked_global_preset()
 	if not baked_default.is_empty():
