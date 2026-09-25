@@ -38,6 +38,7 @@ func test_driving_the_pommel_against_the_swing_banks_a_guard_then_locks() -> voi
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	_aim_right(player)
+	player.sword_phase = 1.2
 	# The drive is measured against the blade the metronome is swinging, so the guard comes from
 	# pushing the hilt back through that swing -- and answering the way the swing is travelling.
 	for _frame: int in range(8):
@@ -296,36 +297,34 @@ func test_charged_guard_blade_conform_sweeps_instead_of_snapping() -> void:
 	var in_cone_angle: float = deg_to_rad(45.0)
 	assert(is_equal_approx(Player.charged_guard_conformed_blade_angle(in_cone_angle, hand_offset, radial_direction, conform_rate, step), in_cone_angle), "A blade already inside the safe cone must be left completely untouched.")
 
-func test_the_drive_must_answer_the_sweep_the_blade_is_actually_making() -> void:
-	# The guard is the answer to the swing, so both halves of the answer are required at once: the
-	# drive must go against the blade, and it must turn against the direction the swing is
-	# travelling. Neither half alone banks anything.
+func test_only_an_axial_pull_inside_the_metronome_window_banks_a_guard() -> void:
 	var pushing_out: Player = _new_player()
 	pushing_out.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	_aim_right(pushing_out)
+	pushing_out.sword_phase = 1.2
 	var outward: Vector2 = Vector2.RIGHT.rotated(float(pushing_out._sword_transform()["angle"]))
 	pushing_out.charged_guard_authored_aim_velocity = outward * 400.0
-	pushing_out.charged_guard_aim_turn_sign = -signf(cos(pushing_out.sword_phase))
 	for _frame: int in range(20):
 		pushing_out._update_charged_guard(1.0 / 60.0)
-	assert(not pushing_out.charged_guard_candidate_active, "Driving out along the blade must never bank a guard.")
-	var turning_with_the_swing: Player = _new_player()
-	turning_with_the_swing.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	_aim_right(turning_with_the_swing)
-	turning_with_the_swing.charged_guard_authored_aim_velocity = -outward * 400.0
-	turning_with_the_swing.charged_guard_aim_turn_sign = signf(cos(turning_with_the_swing.sword_phase))
+	assert(not pushing_out.charged_guard_candidate_active, "Driving toward the tip cannot bank a guard even on the beat.")
+	var off_beat: Player = _new_player()
+	off_beat.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(off_beat)
+	off_beat.sword_phase = 0.0
 	for _frame: int in range(20):
-		turning_with_the_swing._update_charged_guard(1.0 / 60.0)
-	assert(not turning_with_the_swing.charged_guard_candidate_active, "Driving against the blade while turning with the swing must not bank a guard.")
+		_counter_drive(off_beat)
+		off_beat._update_charged_guard(1.0 / 60.0)
+	assert(not off_beat.charged_guard_candidate_active and is_zero_approx(off_beat.charged_guard_pommel_travel), "A pommel pull outside the beat cannot bank evidence.")
 	var answering: Player = _new_player()
 	answering.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	_aim_right(answering)
-	for _frame: int in range(8):
+	answering.sword_phase = 1.2
+	for _frame: int in range(4):
 		_counter_drive(answering)
 		answering._update_charged_guard(1.0 / 60.0)
-	assert(answering.charged_guard_candidate_active, "Answering the swing -- against the blade and against its travel -- must bank the guard.")
+	assert(answering.charged_guard_candidate_active, "A sustained axial pull on the beat qualifies without any cursor turn.")
 	pushing_out.free()
-	turning_with_the_swing.free()
+	off_beat.free()
 	answering.free()
 
 func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_player() -> void:
@@ -341,25 +340,24 @@ func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_play
 	var inward_return_angle: float = Player.charged_guard_safe_blade_angle(-PI * 0.5, Vector2.DOWN * Player.CHARGED_GUARD_MIN_HAND_RADIUS, Vector2.DOWN)
 	assert(Vector2.DOWN.dot(Vector2.RIGHT.rotated(inward_return_angle)) >= -0.001, "As the hand returns inward, the blade must rotate around the safe outward side rather than impale the player.")
 
-func test_opposite_timing_charges_a_guard_faster_without_gating_it() -> void:
-	var plain: Player = _new_player()
-	plain.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	_aim_right(plain)
-	var timed: Player = _new_player()
-	timed.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	_aim_right(timed)
-	# Inside the charge window and counter to the swing's own travel sign, so this drive is in
-	# opposite timing; the other drive is the same drive with no timing at all.
-	timed.sword_phase = acos(0.50)
+func test_timing_window_is_permission_not_a_charge_bonus() -> void:
+	var off_beat: Player = _new_player()
+	off_beat.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(off_beat)
+	off_beat.sword_phase = 0.0
+	var on_beat: Player = _new_player()
+	on_beat.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(on_beat)
+	on_beat.sword_phase = 1.2
 	for _frame: int in range(8):
-		_counter_drive(plain)
-		plain._update_charged_guard(1.0 / 60.0)
-		_counter_drive(timed)
-		timed._update_charged_guard(1.0 / 60.0)
-	assert(plain.charged_guard_candidate_active and timed.charged_guard_candidate_active, "Opposite timing is a bonus, not a permission: both drives must bank a guard.")
-	assert(timed.charged_guard_charge > plain.charged_guard_charge, "The same drive in opposite timing should charge the guard faster.")
-	plain.free()
-	timed.free()
+		_counter_drive(off_beat)
+		off_beat._update_charged_guard(1.0 / 60.0)
+		_counter_drive(on_beat)
+		on_beat._update_charged_guard(1.0 / 60.0)
+	assert(not off_beat.charged_guard_candidate_active, "Off-beat motion cannot create a candidate.")
+	assert(on_beat.charged_guard_candidate_active, "On-beat axial motion creates a candidate.")
+	off_beat.free()
+	on_beat.free()
 
 func test_driving_the_blade_forward_does_not_acquire() -> void:
 	var player: Player = _new_player()
@@ -479,13 +477,11 @@ func _blue_guard_player() -> Player:
 func _aim_right(player: Player) -> void:
 	player.virtual_aim_point = player.global_position + Vector2.RIGHT * 200.0
 
-## Drives the hilt against the blade the metronome is swinging: opposite the direction the blade
-## currently points, and turning against the way the swing is travelling. That counter-drive is
-## the one motion a guard is banked with, so every acquisition test starts by doing exactly it.
+## An axial mouse pull against the current blade, with no angular cursor turn required.
 func _counter_drive(player: Player, speed: float = 400.0) -> void:
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(player._sword_transform()["angle"]))
 	player.charged_guard_authored_aim_velocity = -blade_direction * speed
-	player.charged_guard_aim_turn_sign = -signf(cos(player.sword_phase))
+	player.charged_guard_aim_turn_sign = 0.0
 
 ## Steps the shared cursor anchor one sample per frame, exactly as _physics_process feeds
 ## it, so recognition runs through the real recorder rather than a copy of it.
@@ -630,6 +626,7 @@ func test_a_single_fast_drive_fills_the_bar_without_overfilling_it() -> void:
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	_aim_right(player)
+	player.sword_phase = 1.2
 	var bar: float = player.get_combat_contact_setting("charged_guard_pommel_travel")
 	for _frame: int in range(3):
 		_counter_drive(player, 6000.0)
@@ -649,6 +646,7 @@ func test_a_sideways_yank_cannot_cancel_a_guard_that_is_still_charging() -> void
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
 	_aim_right(player)
+	player.sword_phase = 1.2
 	_counter_drive(player, 600.0)
 	player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_pommel_travel > 0.0, "One counter-drive frame should have banked some travel.")
@@ -660,6 +658,91 @@ func test_a_sideways_yank_cannot_cancel_a_guard_that_is_still_charging() -> void
 		_counter_drive(player, 600.0)
 		player._update_charged_guard(1.0 / 60.0)
 	assert(player.charged_guard_candidate_active, "The drive must still be able to finish once the hand comes back to it.")
+	player.free()
+
+func test_three_deliberate_guard_cycles_acquire_lock_and_release_without_stale_evidence() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	for cycle: int in range(3):
+		for _frame: int in range(4):
+			_counter_drive(player)
+			player._update_charged_guard(1.0 / 60.0)
+		assert(player.charged_guard_candidate_active, "Rhythmic pull %d must create a candidate." % cycle)
+		for _frame: int in range(14):
+			player.charged_guard_authored_aim_velocity = Vector2.ZERO
+			player._update_charged_guard(1.0 / 60.0)
+		assert(player.charged_guard_locked, "Rhythmic pull %d must lock after a stable hold." % cycle)
+		player._release_charged_guard_hold()
+		player.charged_guard_authored_aim_velocity = Vector2.ZERO
+		player._update_charged_guard(0.5)
+		assert(not player.charged_guard_candidate_active and is_zero_approx(player.charged_guard_pommel_travel), "A released guard must not retain evidence for the next pull.")
+	player.free()
+
+func test_partial_pull_expires_after_a_short_interruption_instead_of_combining_with_later_motion() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	_counter_drive(player, 300.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_pommel_travel > 0.0, "The first pull should bank partial travel.")
+	player.charged_guard_authored_aim_velocity = Vector2.ZERO
+	for _frame: int in range(4):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_pommel_travel) and is_zero_approx(player.charged_guard_pommel_time), "An abandoned pull must lose both travel and intent evidence.")
+	_counter_drive(player, 300.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_candidate_active, "A fresh single frame cannot complete an old partial pull.")
+	player.free()
+
+func test_candidate_expires_even_while_its_blade_shape_is_valid() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	for _frame: int in range(4):
+		_counter_drive(player)
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_candidate_active, "A valid pull should enter candidate state.")
+	# Simulate a candidate at the end of its total lifetime with a valid blade angle.
+	player.charged_guard_candidate_latch_left = 0.001
+	player.charged_guard_authored_aim_velocity = Vector2.ZERO
+	player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_candidate_active and not player.charged_guard_locked, "A candidate must expire at its hard deadline, even if the blade shape stays valid.")
+	assert(is_zero_approx(player.charged_guard_charge), "Expiry must erase the partial hold.")
+	player.free()
+
+func test_old_long_charge_time_cannot_make_the_candidate_impossible_to_confirm() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_hold_duration", 0.60)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	for _frame: int in range(4):
+		_counter_drive(player)
+		player._update_charged_guard(1.0 / 60.0)
+	for _frame: int in range(16):
+		player.charged_guard_authored_aim_velocity = Vector2.ZERO
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked, "A legacy long charge time must not make lock mathematically impossible before the hard deadline.")
+	player.free()
+
+func test_an_interrupted_guard_shape_must_hold_afresh_before_locking() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	for _frame: int in range(4):
+		_counter_drive(player)
+		player._update_charged_guard(1.0 / 60.0)
+	for _frame: int in range(8):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_charge > 0.0, "A valid shape should begin its confirmation hold.")
+	player.charged_guard_candidate_angle += PI
+	player._update_charged_guard(1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_charge), "A lost shape cannot retain an earlier hold.")
 	player.free()
 
 func test_a_stroke_drawn_along_the_aim_never_breaks_the_guard() -> void:

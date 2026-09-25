@@ -49,6 +49,8 @@ const CHARGED_GUARD_MIN_HAND_RADIUS: float = 18.0
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
 const CHARGED_GUARD_CANDIDATE_LATCH: float = 0.30
+## One missed input sample may interrupt a deliberate pull; older evidence never survives.
+const CHARGED_GUARD_INPUT_GRACE: float = 0.04
 ## How far the blade may drift from the shape it was banked in before the guard slips away. This
 ## is what "keep the drive steady" means in practice: the swing never stops pushing the blade, and
 ## only a continuing counter-drive holds it still.
@@ -190,24 +192,11 @@ const CHARGED_GUARD_REACQUIRE_BLOCK: float = 0.5
 ## be the break-speed setting; it is a fixed reference now so the halting only depends on the
 ## sword, not on how the player has tuned the flick.
 const CHARGED_GUARD_REPOSITION_SPEED_REFERENCE: float = 800.0
-## Guard acquisition is a rhythm action played against the sword's own swing. The metronome
-## sweeps the blade on its own timer, and the player drives the hilt back the other way through
-## that sweep, so the swing cancels out and the blade holds still in a guard shape. The reference
-## is the blade, never the aim: measuring against the aim would ignore the beat completely, and
-## any brisk mouse movement would bank a guard.
-##
-## What banks a guard is a sustained counter-drive: the hilt driven against the way the blade is
-## currently sweeping, inside the alignment cone, fast enough. It banks its own speed scaled by
-## how straight the drive is, so precision decides *whether* a drive counts as well as how much of
-## it banks. When the drive lapses the bank bleeds off rather than being wiped -- a mistimed frame
-## costs a little of the drive, never all of it -- and it clears in about a fifth of a second, so
-## an abandoned attempt cannot linger on screen.
-const CHARGED_GUARD_BANK_BLEED: float = 120.0
-## Timing the drive to the turn of the stroke -- catching the end of the sweep, when the blade is
-## out at full extension and nearly still -- charges the guard faster. It is a reward only: the
-## blade holding its shape is the whole requirement, and nothing about *whether* a guard takes
-## depends on being in that part of the stroke.
-const CHARGED_GUARD_TIMING_CHARGE_BONUS: float = 0.75
+## Acquisition reads authored velocity against the visible blade's pommel axis, not cursor
+## orbit. Only aligned, sufficiently fast motion inside the metronome turn window can bank
+## travel and intent. A brief missed sample is tolerated; an abandoned pull is reset rather
+## than slowly bleeding into unrelated movement. The candidate then has one short, hard
+## deadline to hold its blade shape and lock.
 ## Acquisition diagnostics print at most this often, so a player counter-steering through a
 ## whole fight gets a readable trickle rather than a flood.
 const CHARGED_GUARD_ACQUISITION_LOG_INTERVAL: float = 0.25
@@ -635,6 +624,7 @@ var charged_guard_candidate_active: bool = false
 var charged_guard_candidate_angle: float = 0.0
 var charged_guard_pommel_travel: float = 0.0
 var charged_guard_pommel_time: float = 0.0
+var charged_guard_input_gap: float = 0.0
 var charged_guard_candidate_latch_left: float = 0.0
 ## Blue time banked toward the hold limit.
 var charged_guard_hold_time: float = 0.0
@@ -3732,6 +3722,7 @@ func _clear_charged_guard_attempt() -> void:
 	charged_guard_candidate_active = false
 	charged_guard_pommel_travel = 0.0
 	charged_guard_pommel_time = 0.0
+	charged_guard_input_gap = 0.0
 	charged_guard_candidate_latch_left = 0.0
 	charged_guard_recent_motion_left = 0.0
 	charged_guard_awaken_charge = 0.0
@@ -3741,23 +3732,16 @@ func _clear_charged_guard_attempt() -> void:
 	charged_guard_afterimages.clear()
 	charged_guard_charge = 0.0
 
-## One editor-only line saying why a guard did or did not take. Recognition that cannot be seen is
-## what made this worth instrumenting, and it is printed against the drive itself, so a failure
-## reads as "40 of 90 px/s" rather than as a mystery. Prints at most a few times a second, so a
-## fight's worth of driving reads as a trickle.
-func _log_charged_guard_acquisition(pommel_alignment: float, alignment_min: float, pommel_speed: float, speed_min: float, opposing_phase: bool, banked: float, needed: float, intent_met: bool) -> void:
+## Temporary debug-build acquisition trace, throttled during ordinary play but always printed
+## at candidate creation, expiry and lock. All values come from the live acquisition path.
+func _log_charged_guard_acquisition(alignment: float, speed: float, phase_valid: bool, travel: float, intent: float, candidate_age: float, candidate: bool, shape_valid: bool, event: String = "") -> void:
 	if not OS.is_debug_build():
 		return
-	if banked >= needed and intent_met:
-		charged_guard_acquisition_log_cooldown = CHARGED_GUARD_ACQUISITION_LOG_INTERVAL
-		print("[guard] taking | drive %.0f px/s, aligned %.2f, bank %.1f of %.1f px | opposite-timing %s" % [pommel_speed, pommel_alignment, banked, needed, opposing_phase])
-		return
-	if charged_guard_acquisition_log_cooldown > 0.0:
-		return
-	if maxf(banked, pommel_speed) < 5.0:
-		return
+	if event.is_empty():
+		if charged_guard_acquisition_log_cooldown > 0.0 or (speed < 5.0 and not candidate and travel <= 0.0):
+			return
 	charged_guard_acquisition_log_cooldown = CHARGED_GUARD_ACQUISITION_LOG_INTERVAL
-	print("[guard] not taking | drive %.0f of %.0f px/s | aligned %.2f of %.2f | bank %.1f of %.1f px | opposite-timing %s" % [pommel_speed, speed_min, pommel_alignment, alignment_min, banked, needed, opposing_phase])
+	print("[guard] %s | alignment %.2f speed %.0f px/s phase/window %s travel %.1f px intent %.3f s candidate_age %.3f s candidate %s shape %s%s" % ["acquiring" if event.is_empty() else event, alignment, speed, phase_valid, travel, intent, candidate_age, candidate, shape_valid, " LOCK" if event == "lock" else ""])
 
 ## Ends a held guard cleanly, and is the only way out of one. A flick, the hold limit
 ## running out and the feature being switched off all come through here, so no exit can leave
@@ -3838,69 +3822,69 @@ func _update_charged_guard(delta: float) -> void:
 		return
 	var current_transform: Dictionary = _sword_transform()
 	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
-	# The blade is the reference, never the aim. The metronome sweeps the blade on its own timer and
-	# the player drives the hilt back against that sweep, so the swing cancels out and the blade
-	# holds still in a guard shape. Reading the drive off the aim instead would ignore the beat
-	# entirely: any brisk mouse movement would bank a guard.
+	# Acquisition follows the authored axial pull against the visible blade. The metronome
+	# phase window supplies rhythm; cursor orbit direction is not an acquisition signal.
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(current_transform["angle"]))
-	var travel_sign: float = signf(cos(sword_phase))
-	var opposing_phase: bool = charged_guard_aim_turn_sign != 0.0 and charged_guard_aim_turn_sign == -travel_sign
 	var pommel_alignment: float = charged_guard_pommel_alignment(blade_direction, charged_guard_authored_aim_velocity)
 	var authored_speed: float = charged_guard_authored_aim_velocity.length()
-	var pommel_alignment_min: float = get_combat_contact_setting("charged_guard_pommel_alignment")
-	var pommel_speed_min: float = get_combat_contact_setting("charged_guard_pommel_speed")
-	var deliberate_pommel_drive: bool = pommel_alignment >= pommel_alignment_min and authored_speed >= pommel_speed_min and opposing_phase
-	if authored_speed >= pommel_speed_min:
+	var deliberate_pommel_drive: bool = pommel_alignment >= get_combat_contact_setting("charged_guard_pommel_alignment") and authored_speed >= get_combat_contact_setting("charged_guard_pommel_speed")
+	var phase_valid: bool = absf(cos(sword_phase)) <= get_combat_contact_setting("charged_guard_acquisition_window")
+	if authored_speed >= get_combat_contact_setting("charged_guard_pommel_speed"):
 		charged_guard_recent_motion_left = 0.16
 	else:
 		charged_guard_recent_motion_left = maxf(0.0, charged_guard_recent_motion_left - delta)
 	var travel_needed: float = get_combat_contact_setting("charged_guard_pommel_travel")
 	if not charged_guard_candidate_active:
 		if charged_guard_reacquire_block_left > 0.0:
+			charged_guard_pommel_travel = 0.0
+			charged_guard_pommel_time = 0.0
+			charged_guard_input_gap = 0.0
 			return
-		if deliberate_pommel_drive:
-			# Banked at the drive's own speed scaled by how straight it is, so the precision setting
-			# decides whether a drive counts as well as how much of it banks. Capped at the bar,
-			# because a fast drive is worth one guard rather than several seconds of one.
+		if deliberate_pommel_drive and phase_valid:
+			charged_guard_input_gap = 0.0
 			charged_guard_pommel_travel = minf(travel_needed, charged_guard_pommel_travel + authored_speed * pommel_alignment * delta)
 			charged_guard_pommel_time += delta
 		else:
-			# Bled off rather than wiped, so one mistimed frame costs a little of the drive
-			# instead of all of it.
-			charged_guard_pommel_travel = maxf(0.0, charged_guard_pommel_travel - CHARGED_GUARD_BANK_BLEED * delta)
-			charged_guard_pommel_time = 0.0
-		var intent_met: bool = charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
-		var banked: bool = charged_guard_pommel_travel >= travel_needed and intent_met
-		_log_charged_guard_acquisition(pommel_alignment, pommel_alignment_min, authored_speed, pommel_speed_min, opposing_phase, charged_guard_pommel_travel, travel_needed, intent_met)
+			charged_guard_input_gap += delta
+			if charged_guard_input_gap > CHARGED_GUARD_INPUT_GRACE:
+				charged_guard_pommel_travel = 0.0
+				charged_guard_pommel_time = 0.0
+		var banked: bool = charged_guard_pommel_travel >= travel_needed and charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
 		if not banked:
+			_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, false)
 			return
 		charged_guard_candidate_active = true
 		charged_guard_candidate_angle = float(current_transform["angle"])
 		charged_guard_candidate_latch_left = CHARGED_GUARD_CANDIDATE_LATCH
-		charged_guard_pommel_travel = 0.0
-		charged_guard_pommel_time = 0.0
+		charged_guard_input_gap = 0.0
+		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, true, true, "candidate")
 		charged_guard_charge = 0.0
 		return
+	# The latch is a HARD total deadline, including time spent inside the angle tolerance.
 	charged_guard_candidate_latch_left = maxf(0.0, charged_guard_candidate_latch_left - delta)
-	# What keeps the guard is the shape, not the drive. The metronome never stops pushing the
-	# blade, so only a continuing counter-drive holds it still: drift out of the shape the guard
-	# was banked in and it slips away, once the latch's own grace has run out.
+	var candidate_age: float = CHARGED_GUARD_CANDIDATE_LATCH - charged_guard_candidate_latch_left
 	var guard_folded: bool = absf(angle_difference(charged_guard_candidate_angle, float(current_transform["angle"]))) <= deg_to_rad(CHARGED_GUARD_POSITION_TOLERANCE_DEGREES)
+	if charged_guard_candidate_latch_left <= 0.0:
+		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded, "expired")
+		_clear_charged_guard_attempt()
+		return
+	_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded)
 	if not guard_folded:
-		if charged_guard_candidate_latch_left <= 0.0:
-			_clear_charged_guard_attempt()
+		# Settle may resume within the deadline, but an interrupted shape earns no hold time.
+		charged_guard_charge = 0.0
 		return
 	var hand_radius: float = current_hilt.length()
 	var near_body: bool = hand_radius <= get_combat_contact_setting("charged_guard_near_body_radius")
 	var recent_motion: bool = charged_guard_recent_motion_left > 0.0
 	var charge_multiplier: float = charged_guard_charge_multiplier(near_body, recent_motion, deliberate_pommel_drive, get_combat_contact_setting("charged_guard_near_body_rate"), get_combat_contact_setting("charged_guard_recent_motion_rate"), get_combat_contact_setting("charged_guard_pommel_rate"))
-	# Timing the drive to the turn of the stroke charges it faster. A reward only: holding the
-	# blade's shape is the whole requirement.
-	if opposing_phase and absf(cos(sword_phase)) <= get_combat_contact_setting("charged_guard_acquisition_window"):
-		charge_multiplier += CHARGED_GUARD_TIMING_CHARGE_BONUS
-	var hold_duration: float = get_combat_contact_setting("charged_guard_hold_duration")
+	# The charge-time tuner cannot require a hold longer than the candidate's hard deadline.
+	# Older presets with a longer value remain loadable and use this effective ceiling.
+	var hold_duration: float = minf(get_combat_contact_setting("charged_guard_hold_duration"), CHARGED_GUARD_CANDIDATE_LATCH - 0.05)
 	charged_guard_charge = minf(hold_duration, charged_guard_charge + delta * charge_multiplier)
 	if charged_guard_charge >= hold_duration:
+		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded, "lock")
+		charged_guard_pommel_travel = 0.0
+		charged_guard_pommel_time = 0.0
 		var lock_angle: float = float(current_transform["angle"])
 		charged_guard_locked = true
 		charged_guard_candidate_active = false
