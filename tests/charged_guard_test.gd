@@ -34,31 +34,28 @@ func test_pommel_alignment_requires_strong_axis_drive() -> void:
 	var boosted_rate: float = Player.charged_guard_charge_multiplier(true, true, true, 0.5, 0.5, 1.0)
 	assert(boosted_rate > baseline_rate, "Near-body position, recent movement, and pommel pull should independently stack as charge-rate boosts.")
 
-func test_pommel_gesture_latches_candidate_then_locks_after_guard_hold() -> void:
+func test_driving_the_pommel_against_the_swing_banks_a_guard_then_locks() -> void:
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	player.sword_phase = 1.2
-	player.player_aim_turn_sign = -1.0
-	player.charged_guard_aim_turn_sign = -1.0
-	player.authored_sword_engagement = 1.0
-	var initial_transform: Dictionary = player._sword_transform()
-	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(initial_transform["angle"]))
-	player.charged_guard_authored_aim_velocity = -blade_direction * 200.0
+	_aim_right(player)
+	# The drive is measured against the blade the metronome is swinging, so the guard comes from
+	# pushing the hilt back through that swing -- and answering the way the swing is travelling.
 	for _frame: int in range(8):
+		_counter_drive(player)
 		player._update_charged_guard(1.0 / 60.0)
-	assert(player.charged_guard_candidate_active, "Sustained pommel-directed counter-drive in the reversal window should latch a guard candidate.")
-	assert(player.charged_guard_candidate_latch_left > 0.0, "A qualified gesture should grant a forgiving stabilization window.")
-	player.authored_virtual_aim_velocity = Vector2.ZERO
-	player.charged_guard_authored_aim_velocity = Vector2.ZERO
-	player.charged_guard_aim_turn_sign = 0.0
-	for _frame: int in range(20):
+	assert(player.charged_guard_candidate_active, "A sustained counter-drive should bank a guard candidate.")
+	assert(player.charged_guard_candidate_latch_left > 0.0, "A qualified drive should grant a forgiving stabilization window.")
+	for _frame: int in range(60):
 		if player.charged_guard_locked:
 			break
+		_counter_drive(player)
 		player._update_charged_guard(1.0 / 60.0)
-	assert(player.charged_guard_locked, "A latched and maintained folded guard should lock after the short hold.")
-	player.charged_guard_authored_lateral_aim_speed = player.get_combat_contact_setting("charged_guard_break_speed") + 1.0
+	assert(player.charged_guard_locked, "Keeping the drive steady should charge the guard to a lock.")
+	# And the flick breaks it again: it is the exit the player reaches for, and it has to be
+	# lateral -- across the aim, not along it -- to count.
+	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 2000.0
 	player._update_charged_guard(1.0 / 60.0)
-	assert(not player.charged_guard_locked, "A deliberate sideways flick should release the lock.")
+	assert(not player.charged_guard_locked, "A hard sideways flick must break a held guard.")
 	player.free()
 
 func test_locked_guard_charges_blue_after_tunable_hold_and_persists() -> void:
@@ -149,14 +146,11 @@ func test_charged_guard_position_stage_defaults_off_and_can_be_disabled_without_
 	assert(player.charged_guard_lock_hand_offset.is_equal_approx(player.charged_guard_initial_hand_offset), "Disabling the stage restores the original hand position.")
 	player.free()
 
-func test_charged_guard_allows_slow_reposition_but_fast_flick_breaks() -> void:
+func test_charged_guard_damps_slow_reposition_without_ever_stopping_the_follow() -> void:
 	var slow_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 270.0)
 	assert(is_equal_approx(slow_scale, 0.70), "Slow authored input should reposition the charged sword at 70% response when the player is stationary.")
 	var movement_suppressed_scale: float = Player.charged_guard_slow_reposition_scale(40.0, 270.0, true)
 	assert(is_equal_approx(movement_suppressed_scale, 1.0), "Player translation must not be misread as slow aim repositioning while charged.")
-	assert(Player.charged_guard_motion_breaks(400.0, 270.0), "A medium/fast deliberate sideways flick should still break charged Guard.")
-	assert(not Player.charged_guard_motion_breaks(0.0, 270.0), "A purely radial push must retain Guard however fast it is.")
-	assert(not Player.charged_guard_motion_breaks(100.0, 270.0), "Player movement alone must not meet the authored flick threshold.")
 	var bounded_offset: Vector2 = Player.charged_guard_clamp_hand_offset(Vector2(100.0, 0.0), 30.0)
 	assert(is_equal_approx(bounded_offset.length(), 30.0), "Charged hand reposition must remain inside the original lock radius.")
 
@@ -164,9 +158,9 @@ func test_charged_hand_keeps_following_the_cursor_while_the_player_walks() -> vo
 	# Regression: the reposition scale was doing double duty as "should the hand follow at
 	# all", so walking -- which returns the full-speed 1.0 scale -- skipped repositioning
 	# entirely and pinned the charged blade in place. Speed and following are separate.
-	var break_speed: float = 600.0
+	var reference_speed: float = Player.CHARGED_GUARD_REPOSITION_SPEED_REFERENCE
 	var step: float = 1.0 / 60.0
-	var walking_scale: float = Player.charged_guard_slow_reposition_scale(0.0, break_speed, true)
+	var walking_scale: float = Player.charged_guard_slow_reposition_scale(0.0, reference_speed, true)
 	assert(is_equal_approx(walking_scale, 1.0), "Player translation must keep the charged hand at full reposition speed.")
 	assert(Player.charged_guard_hand_follows_cursor(true, true, 1.0), "A ramped-in charged guard must follow the cursor at full speed, which is exactly the scale walking produces.")
 	assert(Player.charged_guard_hand_follows_cursor(true, true, 0.70), "The damped band must still follow the cursor, just more slowly.")
@@ -241,17 +235,44 @@ func test_charged_guard_reposition_converges_instead_of_accumulating_cursor_disp
 		settled = Player.charged_guard_repositioned_hand_offset(settled, inward_target, reposition_speed, step)
 	assert(settled.is_equal_approx(inward_target), "Sustained repositioning must settle exactly on the bounded aim target.")
 
-func test_guard_break_speed_is_tunable_and_defaults_to_the_shipped_threshold() -> void:
+func test_guard_hold_limit_is_tunable_and_releases_a_blue_guard() -> void:
 	var player: Player = _new_player()
-	var shipped_threshold: float = player.get_combat_contact_setting("charged_guard_break_speed")
-	assert(is_equal_approx(shipped_threshold, 600.0), "The Guard break threshold should default to 600 px/s of sideways aim movement.")
-	assert(Player.charged_guard_motion_breaks(shipped_threshold + 1.0, shipped_threshold), "A sideways flick just above the tuned threshold must break the guard.")
-	assert(not Player.charged_guard_motion_breaks(shipped_threshold - 1.0, shipped_threshold), "A sideways flick just below the tuned threshold must not break the guard.")
-	player.set_combat_contact_setting("charged_guard_break_speed", 1000.0)
-	var raised_threshold: float = player.get_combat_contact_setting("charged_guard_break_speed")
-	assert(is_equal_approx(raised_threshold, 1000.0), "The Guard break threshold must persist through the contact preset authority.")
-	assert(not Player.charged_guard_motion_breaks(700.0, raised_threshold), "Raising the tuner must stop the same flick from breaking the guard.")
-	assert(Player.charged_guard_motion_breaks(700.0, shipped_threshold), "The same flick must still break the guard at the shipped threshold, proving the tuner is what changed.")
+	assert(is_equal_approx(player.get_combat_contact_setting("charged_guard_hold_limit"), 4.0), "The guard's hold limit should default to four seconds.")
+	player.set_combat_contact_setting("charged_guard_hold_limit", 1.0)
+	assert(is_equal_approx(player.get_combat_contact_setting("charged_guard_hold_limit"), 1.0), "The hold limit must persist through the contact preset authority.")
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_locked = true
+	player.charged_guard_fully_charged = true
+	for _frame: int in range(30):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked, "Half the tuned hold limit is not yet the whole of it.")
+	var banked: float = player.charged_guard_hold_time
+	player.charged_guard_gesture_active = true
+	for _frame: int in range(60):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked and is_equal_approx(player.charged_guard_hold_time, banked), "The count must pause while a stroke is being drawn, so a circle can never be timed out from under the hand.")
+	player.charged_guard_gesture_active = false
+	for _frame: int in range(31):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_locked, "A blue guard must release itself once the tuned hold limit runs out.")
+	assert(is_zero_approx(player.charged_guard_hold_time), "A released guard must bank no leftover hold time.")
+	assert(player.charged_guard_reacquire_block_left > 0.0, "Running out of hold must block a fresh guard briefly, so a shape still being held does not immediately take again.")
+	player.free()
+
+func test_guard_hold_limit_counts_from_blue_rather_than_from_the_lock() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_locked = true
+	# Four and a half seconds of holding: one second of confirmation hold, then three and a half
+	# seconds of blue, which is still inside the four second default. Counting from the lock
+	# instead would have released the guard, so this is the whole difference.
+	for _frame: int in range(270):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_fully_charged, "Four and a half seconds should have completed the one second confirmation hold.")
+	assert(player.charged_guard_locked, "The charge is free, so the hold limit must not count it.")
+	assert(player.charged_guard_hold_time < player.get_combat_contact_setting("charged_guard_hold_limit"), "Only the time spent blue may count toward the hold limit.")
 	player.free()
 
 func test_charged_guard_blade_conform_sweeps_instead_of_snapping() -> void:
@@ -275,35 +296,37 @@ func test_charged_guard_blade_conform_sweeps_instead_of_snapping() -> void:
 	var in_cone_angle: float = deg_to_rad(45.0)
 	assert(is_equal_approx(Player.charged_guard_conformed_blade_angle(in_cone_angle, hand_offset, radial_direction, conform_rate, step), in_cone_angle), "A blade already inside the safe cone must be left completely untouched.")
 
-func test_guard_break_measure_tracks_the_blade_not_the_cursor_distance() -> void:
-	# Regression, second pass. The first form divided the aim's travel by the live
-	# player-to-cursor distance, so the same flick broke the guard up close, did nothing
-	# far away, and left the tuner inert past ~130 px. Removing that division made the
-	# measure distance-free in CURSOR pixels -- but the hand's reach is clamped, so past
-	# hand range a sideways sweep of p px at distance d swings the blade only
-	# (reach / d) * p px. Raw cursor pixels therefore broke the guard on sweeps that barely
-	# moved the blade, which is the accidental break that was reported.
-	var delta: float = 1.0 / 60.0
-	var reach_limit: float = 80.0
-	var sideways_flick: Vector2 = Vector2(0.0, 4.0)
-	var inside_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(40.0, 0.0), sideways_flick, delta, reach_limit)
-	assert(is_equal_approx(inside_speed, 4.0 / delta), "Inside hand range the measure must be the cursor's own sideways speed in px/s, leaving the tuned feel untouched.")
-	var edge_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit, 0.0), sideways_flick, delta, reach_limit)
-	assert(is_equal_approx(edge_speed, inside_speed), "The gearing must begin exactly at the hand-range limit, with no step at the boundary.")
-	var far_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), sideways_flick, delta, reach_limit)
-	assert(is_equal_approx(far_speed, inside_speed / 4.0), "Past hand range the measure must fall off as reach / distance, the share of the sweep that can actually move the hand.")
-	var ungeared_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), sideways_flick, delta)
-	assert(is_equal_approx(ungeared_speed, inside_speed), "Mobile and controller aim is already in hand-space, so a zero reach limit must disable the gearing entirely.")
-	var radial_push: Vector2 = Vector2(6.0, 0.0)
-	var push_speed: float = Player.charged_guard_lateral_aim_speed(Vector2(300.0, 0.0), radial_push, delta, reach_limit)
-	assert(is_zero_approx(push_speed), "Pushing the cursor straight out along the aim axis must measure as no sideways flick at all.")
-	var yank: Vector2 = Vector2(0.0, 10.0)
-	var near_yank: float = Player.charged_guard_lateral_aim_speed(Vector2(40.0, 0.0), yank, delta, reach_limit)
-	var far_yank: float = Player.charged_guard_lateral_aim_speed(Vector2(reach_limit * 4.0, 0.0), yank, delta, reach_limit)
-	assert(Player.charged_guard_motion_breaks(near_yank, 600.0), "A sideways yank inside hand range must still break the guard at the shipped threshold.")
-	assert(not Player.charged_guard_motion_breaks(far_yank, 600.0), "The identical cursor sweep at four times hand range must no longer break the guard; that is the accidental break that was reported.")
-	assert(Player.charged_guard_motion_breaks(far_yank, 120.0), "A deliberately lowered threshold must still let a range sweep break the guard, so the tuner is never inert.")
-	assert(not Player.charged_guard_motion_breaks(push_speed, 1.0), "A purely radial push must retain the guard even against a near-zero threshold.")
+func test_the_drive_must_answer_the_sweep_the_blade_is_actually_making() -> void:
+	# The guard is the answer to the swing, so both halves of the answer are required at once: the
+	# drive must go against the blade, and it must turn against the direction the swing is
+	# travelling. Neither half alone banks anything.
+	var pushing_out: Player = _new_player()
+	pushing_out.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(pushing_out)
+	var outward: Vector2 = Vector2.RIGHT.rotated(float(pushing_out._sword_transform()["angle"]))
+	pushing_out.charged_guard_authored_aim_velocity = outward * 400.0
+	pushing_out.charged_guard_aim_turn_sign = -signf(cos(pushing_out.sword_phase))
+	for _frame: int in range(20):
+		pushing_out._update_charged_guard(1.0 / 60.0)
+	assert(not pushing_out.charged_guard_candidate_active, "Driving out along the blade must never bank a guard.")
+	var turning_with_the_swing: Player = _new_player()
+	turning_with_the_swing.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(turning_with_the_swing)
+	turning_with_the_swing.charged_guard_authored_aim_velocity = -outward * 400.0
+	turning_with_the_swing.charged_guard_aim_turn_sign = signf(cos(turning_with_the_swing.sword_phase))
+	for _frame: int in range(20):
+		turning_with_the_swing._update_charged_guard(1.0 / 60.0)
+	assert(not turning_with_the_swing.charged_guard_candidate_active, "Driving against the blade while turning with the swing must not bank a guard.")
+	var answering: Player = _new_player()
+	answering.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(answering)
+	for _frame: int in range(8):
+		_counter_drive(answering)
+		answering._update_charged_guard(1.0 / 60.0)
+	assert(answering.charged_guard_candidate_active, "Answering the swing -- against the blade and against its travel -- must bank the guard.")
+	pushing_out.free()
+	turning_with_the_swing.free()
+	answering.free()
 
 func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_player() -> void:
 	var outward_angle: float = Player.charged_guard_safe_blade_angle(0.0, Vector2.RIGHT * 80.0, Vector2.RIGHT)
@@ -318,31 +341,39 @@ func test_charged_guard_orientation_tracks_hand_radius_without_turning_into_play
 	var inward_return_angle: float = Player.charged_guard_safe_blade_angle(-PI * 0.5, Vector2.DOWN * Player.CHARGED_GUARD_MIN_HAND_RADIUS, Vector2.DOWN)
 	assert(Vector2.DOWN.dot(Vector2.RIGHT.rotated(inward_return_angle)) >= -0.001, "As the hand returns inward, the blade must rotate around the safe outward side rather than impale the player.")
 
-func test_pommel_acquisition_window_reaches_further_into_the_stroke() -> void:
-	var player: Player = _new_player()
-	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	player.sword_phase = acos(0.60)
-	player.player_aim_turn_sign = -1.0
-	player.authored_sword_engagement = 1.0
-	var transform: Dictionary = player._sword_transform()
-	player.charged_guard_authored_aim_velocity = -Vector2.RIGHT.rotated(float(transform["angle"])) * 200.0
-	player.charged_guard_aim_turn_sign = -1.0
+func test_opposite_timing_charges_a_guard_faster_without_gating_it() -> void:
+	var plain: Player = _new_player()
+	plain.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(plain)
+	var timed: Player = _new_player()
+	timed.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(timed)
+	# Inside the charge window and counter to the swing's own travel sign, so this drive is in
+	# opposite timing; the other drive is the same drive with no timing at all.
+	timed.sword_phase = acos(0.50)
 	for _frame: int in range(8):
-		player._update_charged_guard(1.0 / 60.0)
-	assert(player.charged_guard_candidate_active, "The slightly wider counter-phase window should allow pommel-drive through more of the metronome stroke.")
-	player.free()
+		_counter_drive(plain)
+		plain._update_charged_guard(1.0 / 60.0)
+		_counter_drive(timed)
+		timed._update_charged_guard(1.0 / 60.0)
+	assert(plain.charged_guard_candidate_active and timed.charged_guard_candidate_active, "Opposite timing is a bonus, not a permission: both drives must bank a guard.")
+	assert(timed.charged_guard_charge > plain.charged_guard_charge, "The same drive in opposite timing should charge the guard faster.")
+	plain.free()
+	timed.free()
 
-func test_countersteering_without_pommel_drive_does_not_acquire() -> void:
+func test_driving_the_blade_forward_does_not_acquire() -> void:
 	var player: Player = _new_player()
 	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
-	player.sword_phase = 1.2
-	player.player_aim_turn_sign = -1.0
-	player.authored_sword_engagement = 1.0
-	player.charged_guard_authored_aim_velocity = Vector2.RIGHT * 400.0
-	player.charged_guard_aim_turn_sign = -1.0
-	for _frame: int in range(12):
+	_aim_right(player)
+	# A big push along the blade: real speed, well past every bar, but it is driving out toward
+	# the tip. A guard comes from driving the hilt back the other way, and that is the whole
+	# distinction.
+	var outward: Vector2 = Vector2.RIGHT.rotated(float(player._sword_transform()["angle"]))
+	player.charged_guard_authored_aim_velocity = outward * 400.0
+	player.charged_guard_aim_turn_sign = -signf(cos(player.sword_phase))
+	for _frame: int in range(30):
 		player._update_charged_guard(1.0 / 60.0)
-	assert(not player.charged_guard_candidate_active, "Angular counter-steering without a blade-axis pommel pull must not activate Guard.")
+	assert(not player.charged_guard_candidate_active, "Driving out along the blade must never bank a guard.")
 	player.free()
 
 func test_stroke_drive_rewards_fast_travel_more_than_slow_travel() -> void:
@@ -440,7 +471,21 @@ func _blue_guard_player() -> Player:
 	player.charged_guard_locked = true
 	player.charged_guard_fully_charged = true
 	player.charged_guard_lock_hand_offset = Vector2(40.0, 0.0)
+	_aim_right(player)
 	return player
+
+## Points the aim a fixed 200 px to the right, so a test can express a flick as a straight
+## downward velocity without depending on where the player happens to be standing.
+func _aim_right(player: Player) -> void:
+	player.virtual_aim_point = player.global_position + Vector2.RIGHT * 200.0
+
+## Drives the hilt against the blade the metronome is swinging: opposite the direction the blade
+## currently points, and turning against the way the swing is travelling. That counter-drive is
+## the one motion a guard is banked with, so every acquisition test starts by doing exactly it.
+func _counter_drive(player: Player, speed: float = 400.0) -> void:
+	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(player._sword_transform()["angle"]))
+	player.charged_guard_authored_aim_velocity = -blade_direction * speed
+	player.charged_guard_aim_turn_sign = -signf(cos(player.sword_phase))
 
 ## Steps the shared cursor anchor one sample per frame, exactly as _physics_process feeds
 ## it, so recognition runs through the real recorder rather than a copy of it.
@@ -555,17 +600,78 @@ func test_gesture_feature_off_leaves_the_guard_and_the_aim_untouched() -> void:
 	assert(not player._charged_guard_gesture_armed(), "A stick is not a drawn pointer, so controller input must not read gestures.")
 	player.free()
 
-func test_a_hard_sideways_flick_still_breaks_the_guard_and_discards_the_stroke() -> void:
+func test_a_hard_sideways_flick_breaks_a_held_guard() -> void:
 	var player: Player = _blue_guard_player()
-	# A hard sideways draw: real motion, never brought to rest.
-	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(6.0, 24.0), 30)
-	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "An unfinished stroke must not fire.")
-	player.charged_guard_authored_lateral_aim_speed = player.get_combat_contact_setting("charged_guard_break_speed") + 1.0
+	# The flick is the exit the player reaches for, read as lateral speed -- across the aim, not
+	# along it -- so a straight drawn stroke can never look like one.
+	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 1500.0
 	player._update_charged_guard(1.0 / 60.0)
-	assert(not player.charged_guard_locked, "The established sideways flick must still break the guard exactly as it did before gestures existed.")
-	player._update_charged_guard_gesture(1.0 / 60.0)
-	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "A broken guard must never discharge a thrust.")
-	assert(player.charged_guard_gesture_path.is_empty(), "Once the guard has broken, the interrupted stroke must be discarded rather than left to fire the moment it settles.")
+	assert(not player.charged_guard_locked, "A hard sideways flick must break a held guard.")
+	assert(player.charged_guard_reacquire_block_left > 0.0, "A flicked-away guard must stay away for a moment rather than taking again on the next frame.")
+	player.free()
+
+func test_the_flick_break_is_geared_to_how_far_out_the_cursor_is_held() -> void:
+	# Measured at full reach and again with the hand drawn in, the same lateral speed must land on
+	# the same side of the threshold: a gesture cannot mean something different depending on where
+	# the hand happens to be held.
+	var reach_limit: float = 170.0
+	var threshold: float = 600.0
+	assert(not Player.charged_guard_motion_breaks(349.0, threshold, reach_limit, reach_limit), "A flick at full reach must be judged on its raw lateral speed.")
+	assert(Player.charged_guard_motion_breaks(349.0, threshold, reach_limit, reach_limit * 0.5), "The same flick with the hand drawn in must still count, which is what the gearing is for.")
+	assert(Player.charged_guard_motion_breaks(100.0, 300.0, reach_limit, 1.0), "A close-in flick must be amplified rather than thrown away.")
+	assert(not Player.charged_guard_motion_breaks(20.0, 300.0, reach_limit, 1.0), "The gearing must stay capped, so a cursor sitting on the body cannot turn every movement into a break.")
+	assert(not Player.charged_guard_motion_breaks(1000.0, 0.0, reach_limit, reach_limit), "A zero threshold must switch the flick break off rather than make it instant.")
+
+func test_a_single_fast_drive_fills_the_bar_without_overfilling_it() -> void:
+	# Regression: the bank accumulated raw drive speed, so one quick mouse movement banked hundreds
+	# of pixels -- far past the bar -- and the guard's ring then sat on screen for over a second
+	# afterwards, reading as a guard that was forever starting. The bar is capped now, and a drive
+	# worth several bars still has to satisfy the intent time like any other.
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	var bar: float = player.get_combat_contact_setting("charged_guard_pommel_travel")
+	for _frame: int in range(3):
+		_counter_drive(player, 6000.0)
+		player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_candidate_active, "Three frames is inside the drive's required intent time, so nothing latches yet.")
+	assert(player.charged_guard_pommel_travel <= bar + 0.001, "A drive worth hundreds of pixels of travel must still bank only one bar.")
+	_counter_drive(player, 6000.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_candidate_active, "Holding that same drive through its intent time must still latch the guard.")
+	player.free()
+
+func test_a_sideways_yank_cannot_cancel_a_guard_that_is_still_charging() -> void:
+	# Regression: the flick break was tested whenever the guard was engaged, charging included, so
+	# a sideways jab threw away a drive that was still in progress -- and a real mouse is never
+	# held perfectly straight, so the guard could not be acquired in play at all. A flick is an
+	# exit from a held guard, never an interruption of one being acquired.
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	_aim_right(player)
+	_counter_drive(player, 600.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_pommel_travel > 0.0, "One counter-drive frame should have banked some travel.")
+	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 4000.0
+	player._update_charged_guard(1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_reacquire_block_left), "A sideways yank must not trip a guard release while nothing is even locked.")
+	assert(player.charged_guard_pommel_travel > 0.0, "The travel already banked must survive the yank instead of being wiped.")
+	for _frame: int in range(6):
+		_counter_drive(player, 600.0)
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_candidate_active, "The drive must still be able to finish once the hand comes back to it.")
+	player.free()
+
+func test_a_stroke_drawn_along_the_aim_never_breaks_the_guard() -> void:
+	var player: Player = _blue_guard_player()
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(8.0, 0.0), 6)
+	assert(not player.charged_guard_gesture_path.is_empty(), "A stroke in progress is held while the guard stands.")
+	# A thrust runs out along the aim, so its lateral part is nothing: however hard it is driven
+	# it must not read as the sideways flick that breaks a guard.
+	player.charged_guard_authored_aim_velocity = Vector2.RIGHT * 1500.0
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked, "A stroke drawn along the aim must never break the guard, however fast it is drawn.")
+	player.free()
 
 func test_circle_recognition_reads_the_revolution_and_the_direction_it_was_drawn() -> void:
 	var clockwise: PackedVector2Array = PackedVector2Array()
@@ -717,14 +823,9 @@ func test_the_guard_cannot_re_enter_while_the_thrust_is_running() -> void:
 	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.THRUST, "The stroke should have fired the thrust.")
 	# Now hand the guard the exact signals that acquire it, and keep them up for the whole
 	# of the attack.
-	player.sword_phase = 1.2
-	player.player_aim_turn_sign = -1.0
-	player.charged_guard_aim_turn_sign = -1.0
-	player.authored_sword_engagement = 1.0
-	var initial_transform: Dictionary = player._sword_transform()
-	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(initial_transform["angle"]))
+	_aim_right(player)
 	for _frame: int in range(30):
-		player.charged_guard_authored_aim_velocity = -blade_direction * 200.0
+		player.charged_guard_authored_aim_velocity = Vector2.LEFT * 200.0
 		player._update_charged_guard(1.0 / 60.0)
 		assert(not player.charged_guard_locked, "A committed thrust owns the sword, so the guard must not re-enter while the attack is still running.")
 		assert(is_zero_approx(player.charged_guard_charge), "The thrust must not let guard charge build up behind it to snap back on.")

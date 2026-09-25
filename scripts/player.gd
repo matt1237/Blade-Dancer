@@ -49,6 +49,9 @@ const CHARGED_GUARD_MIN_HAND_RADIUS: float = 18.0
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
 const CHARGED_GUARD_CANDIDATE_LATCH: float = 0.30
+## How far the blade may drift from the shape it was banked in before the guard slips away. This
+## is what "keep the drive steady" means in practice: the swing never stops pushing the blade, and
+## only a continuing counter-drive holds it still.
 const CHARGED_GUARD_POSITION_TOLERANCE_DEGREES: float = 35.0
 ## Top speed the locked hand repositions at once the guard is fully charged.
 ## Deliberately independent of the Guard Break Speed Threshold tuner: that slider
@@ -167,6 +170,47 @@ const CHARGED_GUARD_WHIRLWIND_RECOVER: float = 0.20
 ## but it is capped so the blade always reads as pointing outward rather than sideways.
 ## 0.44 rad is 25 degrees.
 const CHARGED_GUARD_WHIRLWIND_LEAD_MAX: float = 0.44
+## Exits from a charged guard. A hard sideways flick breaks one, as it always has: it is the exit
+## the player reaches for, and reading it as *lateral* speed -- motion across the aim rather than
+## along it -- is what keeps a straight drawn stroke from ever looking like one. Running out of
+## hold is the backstop, and discharging a gesture is the other deliberate way out.
+## How far the flick's gearing may amplify a close-in flick. The cursor can sit nearer the body
+## than the hand itself -- the hand stops at its minimum radius, the cursor does not -- so without
+## a ceiling the divisor approaches zero and every movement would read as a break.
+const CHARGED_GUARD_BREAK_GEARING_MAX: float = 4.0
+## The hold limit's own bounds, so a slider can never be set to something that means "never",
+## which would put the guard back in the state where nothing guarantees a way out of it.
+const CHARGED_GUARD_HOLD_LIMIT_MIN: float = 1.0
+const CHARGED_GUARD_HOLD_LIMIT_MAX: float = 15.0
+## Every way out of a guard blocks a fresh one briefly. Without it, the stroke that cancelled the
+## guard -- or simply still holding the shape it timed out on -- would satisfy the acquisition
+## gate on the very next frame and hand the guard straight back.
+const CHARGED_GUARD_REACQUIRE_BLOCK: float = 0.5
+## The speed reference the charged hand's slow-reposition scaling compares against. It used to
+## be the break-speed setting; it is a fixed reference now so the halting only depends on the
+## sword, not on how the player has tuned the flick.
+const CHARGED_GUARD_REPOSITION_SPEED_REFERENCE: float = 800.0
+## Guard acquisition is a rhythm action played against the sword's own swing. The metronome
+## sweeps the blade on its own timer, and the player drives the hilt back the other way through
+## that sweep, so the swing cancels out and the blade holds still in a guard shape. The reference
+## is the blade, never the aim: measuring against the aim would ignore the beat completely, and
+## any brisk mouse movement would bank a guard.
+##
+## What banks a guard is a sustained counter-drive: the hilt driven against the way the blade is
+## currently sweeping, inside the alignment cone, fast enough. It banks its own speed scaled by
+## how straight the drive is, so precision decides *whether* a drive counts as well as how much of
+## it banks. When the drive lapses the bank bleeds off rather than being wiped -- a mistimed frame
+## costs a little of the drive, never all of it -- and it clears in about a fifth of a second, so
+## an abandoned attempt cannot linger on screen.
+const CHARGED_GUARD_BANK_BLEED: float = 120.0
+## Timing the drive to the turn of the stroke -- catching the end of the sweep, when the blade is
+## out at full extension and nearly still -- charges the guard faster. It is a reward only: the
+## blade holding its shape is the whole requirement, and nothing about *whether* a guard takes
+## depends on being in that part of the stroke.
+const CHARGED_GUARD_TIMING_CHARGE_BONUS: float = 0.75
+## Acquisition diagnostics print at most this often, so a player counter-steering through a
+## whole fight gets a readable trickle rather than a flood.
+const CHARGED_GUARD_ACQUISITION_LOG_INTERVAL: float = 0.25
 const AUTHORED_METRONOME_ACTIVITY_SPEED: float = 25.0
 const AUTHORED_METRONOME_SHEATHE_FADE_RATE: float = 8.0
 ## Sword-trail visibility tracks arc energy while the metronome is in play, and stays
@@ -543,7 +587,6 @@ var authored_angular_travel_radians: float = 0.0
 var authored_virtual_aim_velocity: Vector2 = Vector2.ZERO
 var charged_guard_authored_aim_velocity: Vector2 = Vector2.ZERO
 var charged_guard_authored_angular_travel: float = 0.0
-var charged_guard_authored_lateral_aim_speed: float = 0.0
 var charged_guard_aim_turn_sign: float = 0.0
 var charged_guard_mouse_motion_delta: Vector2 = Vector2.ZERO
 var charged_guard_previous_control_target: Vector2 = Vector2.ZERO
@@ -587,9 +630,16 @@ var authored_apex_hang_armed_drive: float = 0.0
 var charged_guard_charge: float = 0.0
 var charged_guard_locked: bool = false
 var charged_guard_candidate_active: bool = false
+## The blade angle the guard was banked at. The metronome keeps swinging the blade while the guard
+## is charged, so holding this shape is the same thing as holding the drive.
+var charged_guard_candidate_angle: float = 0.0
 var charged_guard_pommel_travel: float = 0.0
 var charged_guard_pommel_time: float = 0.0
 var charged_guard_candidate_latch_left: float = 0.0
+## Blue time banked toward the hold limit.
+var charged_guard_hold_time: float = 0.0
+var charged_guard_acquisition_log_cooldown: float = 0.0
+var charged_guard_reacquire_block_left: float = 0.0
 var charged_guard_recent_motion_left: float = 0.0
 var charged_guard_awaken_charge: float = 0.0
 var charged_guard_fully_charged: bool = false
@@ -600,7 +650,6 @@ var charged_guard_lock_angle: float = 0.0
 var charged_guard_initial_lock_angle: float = 0.0
 var charged_guard_initial_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_flash_left: float = 0.0
-var charged_guard_candidate_angle: float = 0.0
 var charged_guard_lock_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_lock_radius: float = 0.0
 var charged_guard_radial_direction: Vector2 = Vector2.RIGHT
@@ -1410,7 +1459,6 @@ func _record_charged_guard_control_aim(target_relative: Vector2, control_mode: S
 		return
 	charged_guard_authored_aim_velocity = authored_relative_delta / delta
 	charged_guard_authored_angular_travel = charged_guard_angular_travel(target_relative, authored_relative_delta)
-	charged_guard_authored_lateral_aim_speed = charged_guard_lateral_aim_speed(target_relative, authored_relative_delta, delta)
 	charged_guard_aim_turn_sign = charged_guard_turn_sign(charged_guard_authored_angular_travel)
 
 func _update_virtual_aim_point(delta: float) -> void:
@@ -1419,7 +1467,6 @@ func _update_virtual_aim_point(delta: float) -> void:
 	authored_virtual_aim_velocity = Vector2.ZERO
 	charged_guard_authored_aim_velocity = Vector2.ZERO
 	charged_guard_authored_angular_travel = 0.0
-	charged_guard_authored_lateral_aim_speed = 0.0
 	charged_guard_aim_turn_sign = 0.0
 	var mouse_authored_delta: Vector2 = charged_guard_mouse_motion_delta
 	charged_guard_mouse_motion_delta = Vector2.ZERO
@@ -1504,7 +1551,6 @@ func _update_virtual_aim_point(delta: float) -> void:
 		var guard_aim_relative: Vector2 = virtual_aim_point - global_position
 		charged_guard_authored_aim_velocity = mouse_authored_delta / delta
 		charged_guard_authored_angular_travel = charged_guard_angular_travel(guard_aim_relative, mouse_authored_delta)
-		charged_guard_authored_lateral_aim_speed = charged_guard_lateral_aim_speed(guard_aim_relative, mouse_authored_delta, delta, _cursor_hand_reach_limit())
 		charged_guard_aim_turn_sign = charged_guard_turn_sign(charged_guard_authored_angular_travel)
 	if has_virtual_aim_sample:
 		var aim_radius: Vector2 = virtual_aim_point - global_position
@@ -2022,8 +2068,7 @@ func _update_aim(delta: float) -> void:
 		var max_step_rad: float = deg_to_rad(max_turn_deg) * delta
 		desired_step = clampf(desired_step, -max_step_rad, max_step_rad)
 	var charged_position_stage_enabled: bool = get_combat_contact_setting("charged_guard_position_charge_enabled") >= 0.5
-	var charged_guard_break_speed: float = maxf(1.0, get_combat_contact_setting("charged_guard_break_speed"))
-	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(charged_guard_authored_aim_velocity.length(), charged_guard_break_speed, charged_guard_movement_suppression_left > 0.0) * charged_guard_reposition_ramp if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
+	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(charged_guard_authored_aim_velocity.length(), CHARGED_GUARD_REPOSITION_SPEED_REFERENCE, charged_guard_movement_suppression_left > 0.0) * charged_guard_reposition_ramp if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
 	if charged_guard_hand_follows_cursor(charged_guard_fully_charged, charged_position_stage_enabled, charged_guard_reposition_ramp):
 		desired_step *= charged_reposition_scale
 		# Converge on a bounded target instead of integrating cursor displacement, so
@@ -2554,15 +2599,20 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_hold_duration": result = 0.20
 		"charged_guard_awaken_duration": result = 1.0
 		"charged_guard_break_speed": result = 600.0
+		"charged_guard_hold_limit": result = 4.0
 		"charged_guard_acquisition_window": result = 0.65
 		"charged_guard_pommel_alignment": result = 0.82
 		"charged_guard_pommel_speed": result = 90.0
 		"charged_guard_pommel_travel": result = 14.0
 		"charged_guard_pommel_intent_time": result = 0.06
 		"charged_guard_near_body_radius": result = 48.0
-		"charged_guard_near_body_rate": result = 0.5
-		"charged_guard_recent_motion_rate": result = 0.5
-		"charged_guard_pommel_rate": result = 1.0
+		# The three charge boosts are opt-in and off by default. Stacked, they charge a guard in a
+		# fraction of the guard's own charge time, so the charge-time slider stops describing what
+		# happens; with them at zero the slider is the whole charge rate, and each boost becomes a
+		# deliberate choice to make one specific situation charge faster.
+		"charged_guard_near_body_rate": result = 0.0
+		"charged_guard_recent_motion_rate": result = 0.0
+		"charged_guard_pommel_rate": result = 0.0
 		"authored_metronome_enabled": result = 0.0
 		"authored_metronome_wake_speed": result = 350.0
 		"authored_metronome_energy_build": result = 0.8
@@ -3200,10 +3250,32 @@ func _begin_metronome_reversal_pulse(current_angle: float) -> void:
 	metronome_reversal_side = -1.0 if reversal_offset < 0.0 else 1.0
 	metronome_reversal_flash_left = metronome_reversal_pulse_duration
 
+## How well a pull lines up with the pull axis, which is the direction back toward the body.
+## The caller passes the player's aim direction as that axis rather than the blade: the metronome
+## swings the blade on its own, so a blade-relative measure moves under the player's hand.
 static func charged_guard_pommel_alignment(blade_direction: Vector2, authored_aim_velocity: Vector2) -> float:
 	if blade_direction.length_squared() < 0.001 or authored_aim_velocity.length_squared() < 0.001:
 		return -1.0
 	return authored_aim_velocity.normalized().dot(-blade_direction.normalized())
+
+## How much of the aim's motion is lateral: across the aim's line rather than along it. A
+## deliberate drawn stroke runs roughly along the pull, so this is what separates a hard sideways
+## flick from a straight stroke, and what lets the flick stay a legible exit at all.
+static func charged_guard_lateral_aim_speed(aim_direction: Vector2, authored_aim_velocity: Vector2) -> float:
+	if aim_direction.length_squared() < 0.001:
+		return authored_aim_velocity.length()
+	var axis: Vector2 = aim_direction.normalized()
+	return (authored_aim_velocity - axis * authored_aim_velocity.dot(axis)).length()
+
+## Whether a flick is hard enough to break a guard, geared by how far out the cursor is being
+## held. The same flick covers fewer pixels per second when the hand is drawn in, so without the
+## gearing a guard was harder to leave the closer it was held. The flick is a gesture, and it has
+## to mean the same thing wherever the hand happens to be.
+static func charged_guard_motion_breaks(lateral_speed: float, break_speed_threshold: float, cursor_reach_limit: float, aim_distance: float) -> bool:
+	if break_speed_threshold <= 0.0:
+		return false
+	var gearing: float = clampf(cursor_reach_limit / maxf(aim_distance, 1.0), 1.0, CHARGED_GUARD_BREAK_GEARING_MAX)
+	return lateral_speed * gearing >= break_speed_threshold
 
 static func charged_guard_angular_travel(aim_relative: Vector2, authored_relative_delta: Vector2) -> float:
 	if aim_relative.length_squared() < 1.0 or authored_relative_delta.length_squared() <= 0.0001:
@@ -3213,49 +3285,14 @@ static func charged_guard_angular_travel(aim_relative: Vector2, authored_relativ
 static func charged_guard_turn_sign(angular_travel: float) -> float:
 	return signf(angular_travel) if absf(angular_travel) >= SWING_COMMITMENT_INPUT_THRESHOLD else 0.0
 
-## Speed of the aim's sideways movement in world px/s, measured as if the cursor sat at
-## the hand-range limit. This is the flick measure the guard breaks on.
-##
-## Two earlier forms were each wrong in opposite directions. charged_guard_angular_travel
-## above divides by the player-to-aim distance, so it demanded a cursor movement
-## proportional to how far the cursor sat from the player: the same flick broke the guard
-## up close, did nothing at range, and left the break-speed tuner inert past ~130px.
-## Dropping that division made the measure distance-free in CURSOR pixels, which is not
-## what the blade does. The hand's reach is clamped, so past hand range a sideways cursor
-## move of p px at distance d swings the blade only (hand_radius / d) * p px. A 600px/s
-## cursor sweep at 400px therefore shoved the blade at under a tenth of that speed and
-## broke the guard for a motion the player could barely see.
-##
-## Scaling by cursor_reach_limit / d restores the intent: inside hand range the measure is
-## the cursor's own sideways speed, so the tuned feel is untouched, and beyond it only the
-## share of the sweep that could actually reach the hand counts. The divisor is where the
-## hand stops following rather than the blade's own hand_radius / d, which is so much
-## harsher past hand range that a guard would hardly be breakable there at all.
-## cursor_reach_limit <= 0 disables the gearing, which is what the mobile and controller
-## paths want: their aim is already expressed in hand-space, so nothing is clamped.
-## A purely radial push still measures zero, so extending the hand to max range can never
-## break a guard however hard the cursor is shoved outward.
-static func charged_guard_lateral_aim_speed(aim_relative: Vector2, authored_relative_delta: Vector2, delta: float, cursor_reach_limit: float = 0.0) -> float:
-	if aim_relative.length_squared() < 1.0 or delta <= 0.0:
-		return 0.0
-	var aim_distance: float = aim_relative.length()
-	var aim_axis: Vector2 = aim_relative / aim_distance
-	var lateral_speed: float = (authored_relative_delta - aim_axis * authored_relative_delta.dot(aim_axis)).length() / delta
-	if cursor_reach_limit <= 0.0 or aim_distance <= cursor_reach_limit:
-		return lateral_speed
-	return lateral_speed * cursor_reach_limit / aim_distance
-
-static func charged_guard_motion_breaks(authored_lateral_aim_speed: float, minimum_break_speed: float = 600.0) -> bool:
-	return authored_lateral_aim_speed >= minimum_break_speed
-
 ## Speed multiplier for the charged hand's follow. This is never a gate on whether the hand
 ## follows: 0.70 while the player sweeps the aim slowly, 1.0 otherwise. Player translation
 ## returns the full-speed 1.0 so walking is never misread as a slow aim sweep -- which is
 ## exactly why this value must not be compared against 1.0 to decide whether to follow.
-static func charged_guard_slow_reposition_scale(authored_aim_speed: float, break_speed_threshold: float = 270.0, player_moved_recently: bool = false) -> float:
+static func charged_guard_slow_reposition_scale(authored_aim_speed: float, reference_speed: float = CHARGED_GUARD_REPOSITION_SPEED_REFERENCE, player_moved_recently: bool = false) -> float:
 	if player_moved_recently:
 		return 1.0
-	return 0.70 if authored_aim_speed > 1.0 and authored_aim_speed < break_speed_threshold else 1.0
+	return 0.70 if authored_aim_speed > 1.0 and authored_aim_speed < reference_speed else 1.0
 
 ## Whether the charged hand follows the cursor this frame. Kept deliberately separate from
 ## the scale above, because both the full-speed 1.0 and the damped 0.70 must follow -- only
@@ -3507,10 +3544,10 @@ func _clear_charged_guard_gesture_stroke() -> void:
 	charged_guard_gesture_active = false
 	charged_guard_gesture_spent = false
 
-## The gesture layer's whole lifecycle: the trail and hit-flash timers, the running
-## ability, and stroke recognition while the blue guard is held. Called before
-## _update_charged_guard on purpose, so a stroke that has qualified releases the guard on
-## the frame it completes and the break test never sees that frame's sweep at all.
+## The gesture layer's whole lifecycle: the trail and hit-flash timers, the running ability, and
+## stroke recognition while the blue guard is held. Called before _update_charged_guard on
+## purpose, so a stroke that has qualified releases the guard on the frame it completes, before
+## that same frame's motion can reach the acquisition gate.
 func _update_charged_guard_gesture(delta: float) -> void:
 	charged_guard_gesture_flash_left = maxf(0.0, charged_guard_gesture_flash_left - delta)
 	charged_guard_gesture_trail_left = maxf(0.0, charged_guard_gesture_trail_left - delta)
@@ -3704,25 +3741,69 @@ func _clear_charged_guard_attempt() -> void:
 	charged_guard_afterimages.clear()
 	charged_guard_charge = 0.0
 
+## One editor-only line saying why a guard did or did not take. Recognition that cannot be seen is
+## what made this worth instrumenting, and it is printed against the drive itself, so a failure
+## reads as "40 of 90 px/s" rather than as a mystery. Prints at most a few times a second, so a
+## fight's worth of driving reads as a trickle.
+func _log_charged_guard_acquisition(pommel_alignment: float, alignment_min: float, pommel_speed: float, speed_min: float, opposing_phase: bool, banked: float, needed: float, intent_met: bool) -> void:
+	if not OS.is_debug_build():
+		return
+	if banked >= needed and intent_met:
+		charged_guard_acquisition_log_cooldown = CHARGED_GUARD_ACQUISITION_LOG_INTERVAL
+		print("[guard] taking | drive %.0f px/s, aligned %.2f, bank %.1f of %.1f px | opposite-timing %s" % [pommel_speed, pommel_alignment, banked, needed, opposing_phase])
+		return
+	if charged_guard_acquisition_log_cooldown > 0.0:
+		return
+	if maxf(banked, pommel_speed) < 5.0:
+		return
+	charged_guard_acquisition_log_cooldown = CHARGED_GUARD_ACQUISITION_LOG_INTERVAL
+	print("[guard] not taking | drive %.0f of %.0f px/s | aligned %.2f of %.2f | bank %.1f of %.1f px | opposite-timing %s" % [pommel_speed, speed_min, pommel_alignment, alignment_min, banked, needed, opposing_phase])
+
+## Ends a held guard cleanly, and is the only way out of one. A flick, the hold limit
+## running out and the feature being switched off all come through here, so no exit can leave
+## the charge, the candidate latch or the banked hold time behind on the sword.
+func _release_charged_guard_hold() -> void:
+	charged_guard_locked = false
+	charged_guard_fully_charged = false
+	charged_guard_awaken_charge = 0.0
+	charged_guard_hold_time = 0.0
+	charged_guard_reacquire_block_left = CHARGED_GUARD_REACQUIRE_BLOCK
+	_clear_charged_guard_attempt()
+
 func _update_charged_guard(delta: float) -> void:
 	charged_guard_flash_left = maxf(0.0, charged_guard_flash_left - delta)
+	charged_guard_acquisition_log_cooldown = maxf(0.0, charged_guard_acquisition_log_cooldown - delta)
+	charged_guard_reacquire_block_left = maxf(0.0, charged_guard_reacquire_block_left - delta)
 	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
-		# The lunging thrust owns the sword until it finishes. The guard stays released
-		# and inert for the whole sequence, so no pommel drive, sweep or break test can
-		# re-enter or interrupt an attack that is already committed.
+		# An ability owns the sword until it finishes. The guard stays released and inert for
+		# the whole sequence, so no pull or fresh acquisition can interrupt an attack that is
+		# already committed.
 		_clear_charged_guard_attempt()
 		charged_guard_locked = false
 		return
 	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or not _is_metronome_style():
-		_clear_charged_guard_attempt()
-		charged_guard_locked = false
+		_release_charged_guard_hold()
 		return
+	var aim_direction: Vector2 = _current_aim_direction()
 	if charged_guard_locked:
-		var charged_guard_break_speed: float = maxf(1.0, get_combat_contact_setting("charged_guard_break_speed"))
-		if charged_guard_motion_breaks(charged_guard_authored_lateral_aim_speed, charged_guard_break_speed):
-			charged_guard_locked = false
-			_clear_charged_guard_attempt()
+		# A hard sideways flick breaks a held guard: it is the exit the player reaches for, geared
+		# by how far out the cursor is held so the same flick means the same thing wherever the
+		# hand is. It is an exit only, never an interruption: a pull that is still charging is not
+		# thrown away by a sideways jab, so a guard cannot be lost while it is being acquired.
+		var aim_distance: float = (virtual_aim_point - global_position).length()
+		var flick_speed: float = charged_guard_lateral_aim_speed(aim_direction, charged_guard_authored_aim_velocity)
+		if charged_guard_motion_breaks(flick_speed, get_combat_contact_setting("charged_guard_break_speed"), _cursor_hand_reach_limit(), aim_distance):
+			_release_charged_guard_hold()
 			return
+		# The guard runs out on its own. Counted from blue only, because the charge itself is
+		# free -- timing that would punish the very act of building the guard -- and paused
+		# while a stroke is being drawn, so a circle can never be timed out from under the
+		# player's hand.
+		if charged_guard_fully_charged and not charged_guard_gesture_active:
+			charged_guard_hold_time += delta
+			if charged_guard_hold_time >= clampf(get_combat_contact_setting("charged_guard_hold_limit"), CHARGED_GUARD_HOLD_LIMIT_MIN, CHARGED_GUARD_HOLD_LIMIT_MAX):
+				_release_charged_guard_hold()
+				return
 		if get_combat_contact_setting("charged_guard_position_charge_enabled") < 0.5:
 			charged_guard_lock_angle = charged_guard_initial_lock_angle
 			charged_guard_lock_hand_offset = charged_guard_initial_hand_offset
@@ -3757,6 +3838,10 @@ func _update_charged_guard(delta: float) -> void:
 		return
 	var current_transform: Dictionary = _sword_transform()
 	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
+	# The blade is the reference, never the aim. The metronome sweeps the blade on its own timer and
+	# the player drives the hilt back against that sweep, so the swing cancels out and the blade
+	# holds still in a guard shape. Reading the drive off the aim instead would ignore the beat
+	# entirely: any brisk mouse movement would bank a guard.
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(current_transform["angle"]))
 	var travel_sign: float = signf(cos(sword_phase))
 	var opposing_phase: bool = charged_guard_aim_turn_sign != 0.0 and charged_guard_aim_turn_sign == -travel_sign
@@ -3764,22 +3849,31 @@ func _update_charged_guard(delta: float) -> void:
 	var authored_speed: float = charged_guard_authored_aim_velocity.length()
 	var pommel_alignment_min: float = get_combat_contact_setting("charged_guard_pommel_alignment")
 	var pommel_speed_min: float = get_combat_contact_setting("charged_guard_pommel_speed")
-	var deliberate_pommel_drive: bool = pommel_alignment >= pommel_alignment_min and authored_speed >= pommel_speed_min
+	var deliberate_pommel_drive: bool = pommel_alignment >= pommel_alignment_min and authored_speed >= pommel_speed_min and opposing_phase
 	if authored_speed >= pommel_speed_min:
 		charged_guard_recent_motion_left = 0.16
 	else:
 		charged_guard_recent_motion_left = maxf(0.0, charged_guard_recent_motion_left - delta)
+	var travel_needed: float = get_combat_contact_setting("charged_guard_pommel_travel")
 	if not charged_guard_candidate_active:
-		var acquisition_window: float = get_combat_contact_setting("charged_guard_acquisition_window")
-		if deliberate_pommel_drive and opposing_phase and absf(cos(sword_phase)) <= acquisition_window:
-			charged_guard_pommel_travel += authored_speed * pommel_alignment * delta
+		if charged_guard_reacquire_block_left > 0.0:
+			return
+		if deliberate_pommel_drive:
+			# Banked at the drive's own speed scaled by how straight it is, so the precision setting
+			# decides whether a drive counts as well as how much of it banks. Capped at the bar,
+			# because a fast drive is worth one guard rather than several seconds of one.
+			charged_guard_pommel_travel = minf(travel_needed, charged_guard_pommel_travel + authored_speed * pommel_alignment * delta)
 			charged_guard_pommel_time += delta
 		else:
-			charged_guard_pommel_travel = 0.0
+			# Bled off rather than wiped, so one mistimed frame costs a little of the drive
+			# instead of all of it.
+			charged_guard_pommel_travel = maxf(0.0, charged_guard_pommel_travel - CHARGED_GUARD_BANK_BLEED * delta)
 			charged_guard_pommel_time = 0.0
-		if charged_guard_pommel_travel < get_combat_contact_setting("charged_guard_pommel_travel") or charged_guard_pommel_time < get_combat_contact_setting("charged_guard_pommel_intent_time"):
+		var intent_met: bool = charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
+		var banked: bool = charged_guard_pommel_travel >= travel_needed and intent_met
+		_log_charged_guard_acquisition(pommel_alignment, pommel_alignment_min, authored_speed, pommel_speed_min, opposing_phase, charged_guard_pommel_travel, travel_needed, intent_met)
+		if not banked:
 			return
-		# Pommel-aligned counter-drive has been sustained through the timed phase.
 		charged_guard_candidate_active = true
 		charged_guard_candidate_angle = float(current_transform["angle"])
 		charged_guard_candidate_latch_left = CHARGED_GUARD_CANDIDATE_LATCH
@@ -3788,26 +3882,31 @@ func _update_charged_guard(delta: float) -> void:
 		charged_guard_charge = 0.0
 		return
 	charged_guard_candidate_latch_left = maxf(0.0, charged_guard_candidate_latch_left - delta)
-	var current_angle: float = float(current_transform["angle"])
-	var guard_folded: bool = absf(angle_difference(charged_guard_candidate_angle, current_angle)) <= deg_to_rad(CHARGED_GUARD_POSITION_TOLERANCE_DEGREES)
+	# What keeps the guard is the shape, not the drive. The metronome never stops pushing the
+	# blade, so only a continuing counter-drive holds it still: drift out of the shape the guard
+	# was banked in and it slips away, once the latch's own grace has run out.
+	var guard_folded: bool = absf(angle_difference(charged_guard_candidate_angle, float(current_transform["angle"]))) <= deg_to_rad(CHARGED_GUARD_POSITION_TOLERANCE_DEGREES)
 	if not guard_folded:
 		if charged_guard_candidate_latch_left <= 0.0:
 			_clear_charged_guard_attempt()
 		return
 	var hand_radius: float = current_hilt.length()
-	var near_body_radius: float = get_combat_contact_setting("charged_guard_near_body_radius")
-	var near_body: bool = hand_radius <= near_body_radius
+	var near_body: bool = hand_radius <= get_combat_contact_setting("charged_guard_near_body_radius")
 	var recent_motion: bool = charged_guard_recent_motion_left > 0.0
-	var still_pommel_driving: bool = deliberate_pommel_drive
-	var charge_multiplier: float = charged_guard_charge_multiplier(near_body, recent_motion, still_pommel_driving, get_combat_contact_setting("charged_guard_near_body_rate"), get_combat_contact_setting("charged_guard_recent_motion_rate"), get_combat_contact_setting("charged_guard_pommel_rate"))
+	var charge_multiplier: float = charged_guard_charge_multiplier(near_body, recent_motion, deliberate_pommel_drive, get_combat_contact_setting("charged_guard_near_body_rate"), get_combat_contact_setting("charged_guard_recent_motion_rate"), get_combat_contact_setting("charged_guard_pommel_rate"))
+	# Timing the drive to the turn of the stroke charges it faster. A reward only: holding the
+	# blade's shape is the whole requirement.
+	if opposing_phase and absf(cos(sword_phase)) <= get_combat_contact_setting("charged_guard_acquisition_window"):
+		charge_multiplier += CHARGED_GUARD_TIMING_CHARGE_BONUS
 	var hold_duration: float = get_combat_contact_setting("charged_guard_hold_duration")
 	charged_guard_charge = minf(hold_duration, charged_guard_charge + delta * charge_multiplier)
 	if charged_guard_charge >= hold_duration:
+		var lock_angle: float = float(current_transform["angle"])
 		charged_guard_locked = true
 		charged_guard_candidate_active = false
 		charged_guard_candidate_latch_left = 0.0
-		charged_guard_lock_angle = current_angle
-		charged_guard_initial_lock_angle = current_angle
+		charged_guard_lock_angle = lock_angle
+		charged_guard_initial_lock_angle = lock_angle
 		charged_guard_lock_hand_offset = current_hilt
 		charged_guard_initial_hand_offset = current_hilt
 		charged_guard_lock_radius = current_hilt.length()
@@ -5318,6 +5417,9 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		_draw_pixel_knight()
+	# The guard visual starts the moment the guard itself does. Nothing is drawn while the drive is
+	# still banking: the bank is deliberately invisible, and a readout appearing before the guard
+	# did is exactly what made the state look like it was arriving on its own.
 	if _charged_guard_engaged() and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
 		var guard_transform: Dictionary = _sword_transform()
 		var hand_local: Vector2 = (guard_transform["start"] as Vector2) - global_position
@@ -5360,11 +5462,16 @@ func _draw() -> void:
 				glow_color = Color(1.0, 0.96, 0.68, flash_ratio)
 			draw_circle(hand_local, 5.0 + charge_ratio * 5.0, glow_color)
 			if charged_guard_locked and position_stage_enabled:
+				# The confirmation hold is drawn in the same amber as the charge it is finishing,
+				# not blue. Blue is the charged state itself, so nothing blue may appear until that
+				# state is actually up -- otherwise the ring reads as the state arriving early.
 				var closing_radius: float = lerpf(20.0, 5.0, awaken_ratio)
 				var ring_alpha: float = 0.45 + 0.50 * awaken_ratio
-				draw_circle(hand_local, closing_radius, Color(0.20, 0.70, 1.0, ring_alpha), false, 2.0, true)
-				draw_arc(hand_local, closing_radius + 3.0, -PI * 0.5, -PI * 0.5 + TAU * awaken_ratio, 32, Color(0.70, 0.91, 1.0, 0.95), 1.5, true)
+				draw_circle(hand_local, closing_radius, Color(1.0, 0.80, 0.32, ring_alpha), false, 2.0, true)
+				draw_arc(hand_local, closing_radius + 3.0, -PI * 0.5, -PI * 0.5 + TAU * awaken_ratio, 32, Color(1.0, 0.90, 0.55, 0.95), 1.5, true)
 			else:
+				# The charge as the amber arc that fills around the hand while the guard builds.
+				# It is the guard's own readout: it starts when the guard does, and it is never blue.
 				draw_arc(hand_local, 10.0, -PI * 0.5, -PI * 0.5 + TAU * charge_ratio, 28, Color(1.0, 0.88, 0.38, 0.95), 2.0, true)
 		if show_fully_charged and flash_ratio > 0.0:
 			var shimmer_radius: float = lerpf(9.0, 25.0, 1.0 - flash_ratio)
