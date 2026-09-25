@@ -181,7 +181,39 @@ func test_guard_holds_the_sheathe_timer_so_the_blade_cannot_fade_under_it() -> v
 	assert(not player._charged_guard_engaged(), "Releasing the guard must hand the sheathe timer back.")
 	for _frame: int in range(30):
 		player._update_authored_metronome_state(1.0 / 60.0)
-	assert(player.authored_metronome_state == Player.AuthoredMetronomeState.SHEATHED, "Once the guard is released the blade must sheath after its normal delay again.")
+func test_sword_trail_visibility_tracks_arc_energy_only_inside_the_metronome() -> void:
+	assert(is_equal_approx(Player.sword_trail_visibility_scale(0.0, false), 1.0), "Outside the metronome the trails must draw exactly as they always have.")
+	assert(is_equal_approx(Player.sword_trail_visibility_scale(1.0, false), 1.0), "Energy must never touch the trails of a style that has no energy system.")
+	assert(is_equal_approx(Player.sword_trail_visibility_scale(0.0, true), Player.SWORD_TRAIL_MIN_VISIBILITY), "A resting metronome blade must leave only a faint trace.")
+	assert(is_equal_approx(Player.sword_trail_visibility_scale(1.0, true), Player.SWORD_TRAIL_MAX_VISIBILITY), "A fully driven blade must peak brighter than the unchanged base alpha.")
+	assert(is_equal_approx(Player.sword_trail_visibility_scale(0.5, true), (Player.SWORD_TRAIL_MIN_VISIBILITY + Player.SWORD_TRAIL_MAX_VISIBILITY) * 0.5), "The ramp must be linear, so the trail tracks energy with no stepped ignition.")
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("authored_metronome_enabled", 0.0)
+	player.authored_metronome_energy = 1.0
+	assert(is_equal_approx(player._sword_trail_visibility_scale(), 1.0), "With the metronome switched off the trails must be left completely alone, however much energy the state machine last reported.")
+	player.set_combat_contact_setting("authored_metronome_enabled", 1.0)
+	player.authored_metronome_energy = 0.0
+	assert(is_equal_approx(player._sword_trail_visibility_scale(), Player.SWORD_TRAIL_MIN_VISIBILITY), "With the metronome in play, arc energy alone must set the trails.")
+	player.authored_metronome_energy = 1.0
+	assert(is_equal_approx(player._sword_trail_visibility_scale(), Player.SWORD_TRAIL_MAX_VISIBILITY), "Full arc energy must reach the brighter trail peak.")
+	player.free()
+
+func test_a_running_thrust_keeps_the_blade_drawn_just_as_a_guard_does() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("authored_metronome_enabled", 1.0)
+	player.set_combat_contact_setting("authored_metronome_sheathe_time", 0.2)
+	player.charged_guard_gesture_state = Player.ChargedGuardGesture.THRUST
+	player.charged_guard_gesture_direction = Vector2.RIGHT
+	player.charged_guard_locked = false
+	assert(not player._charged_guard_engaged(), "The ability owns the sword rather than the guard, so the guard itself must read as released while the thrust runs.")
+	for _frame: int in range(120):
+		player._update_authored_metronome_state(1.0 / 60.0)
+	assert(player.authored_metronome_state != Player.AuthoredMetronomeState.SHEATHED, "An attack in progress must not let an idle blade sheath out from under it.")
+	assert(is_equal_approx(player.authored_metronome_sheathe_alpha, 1.0), "The thrust must keep the blade fully drawn for its whole sequence.")
+	player.charged_guard_gesture_state = Player.ChargedGuardGesture.NONE
+	for _frame: int in range(30):
+		player._update_authored_metronome_state(1.0 / 60.0)
+	assert(player.authored_metronome_state == Player.AuthoredMetronomeState.SHEATHED, "Once the thrust is over the sheathe timer must have the blade back again.")
 	player.free()
 
 func test_guard_wakes_a_sheathed_blade_back_into_view() -> void:

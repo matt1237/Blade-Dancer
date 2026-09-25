@@ -429,3 +429,331 @@ func test_charged_guard_afterimages_emit_continuously_while_blue() -> void:
 	for image: Vector2 in player.charged_guard_afterimages:
 		assert(image.is_equal_approx(Vector2(40.0, 0.0)), "Each afterimage must record the hand offset it was sampled at.")
 	player.free()
+
+## A player holding the blue charged guard with gestures on -- the only state a gesture
+## is ever read in.
+func _blue_guard_player() -> Player:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_gestures_enabled", 1.0)
+	player.charged_guard_locked = true
+	player.charged_guard_fully_charged = true
+	player.charged_guard_lock_hand_offset = Vector2(40.0, 0.0)
+	return player
+
+## Steps the shared cursor anchor one sample per frame, exactly as _physics_process feeds
+## it, so recognition runs through the real recorder rather than a copy of it.
+func _draw_straight_stroke(player: Player, start: Vector2, step: Vector2, frames: int) -> void:
+	player.charged_guard_gesture_cursor = start
+	player._update_charged_guard_gesture(1.0 / 60.0)
+	for _frame: int in range(frames):
+		player.charged_guard_gesture_cursor += step
+		player._update_charged_guard_gesture(1.0 / 60.0)
+
+## Steps the shared cursor anchor around a circle in screen space, one sample per frame,
+## closing it back onto its own start so the shape is a genuine revolution rather than an
+## arc. Positive angles rotate toward +y, which is downward on screen: clockwise.
+func _draw_circle_stroke(player: Player, center: Vector2, radius: float, samples: int, clockwise: bool) -> void:
+	player.charged_guard_gesture_cursor = center + Vector2(radius, 0.0)
+	player._update_charged_guard_gesture(1.0 / 60.0)
+	for step: int in range(1, samples + 1):
+		var travel_angle: float = TAU * float(step) / float(samples)
+		if not clockwise:
+			travel_angle = -travel_angle
+		player.charged_guard_gesture_cursor = center + Vector2.RIGHT.rotated(travel_angle) * radius
+		player._update_charged_guard_gesture(1.0 / 60.0)
+
+## The circle test at the shipped bars, so the tests read as shape and size rather than as
+## a wall of constant names.
+func _circle_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	return Player.gesture_circle_qualified(path, stroke_time, Player.CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, Player.CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, Player.CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, Player.CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, Player.CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, Player.CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, Player.CHARGED_GUARD_GESTURE_CIRCLE_WINDOW)
+
+func test_gesture_recognition_demands_a_long_straight_stroke_inside_the_window() -> void:
+	var straight: PackedVector2Array = PackedVector2Array()
+	for index: int in range(31):
+		straight.append(Vector2(float(index) * 8.0, 0.0))
+	assert(is_equal_approx(Player.gesture_straightness(straight), 1.0), "A line drawn dead straight must measure as fully straight.")
+	assert(is_equal_approx(Player.gesture_chord(straight).length(), 240.0), "The direction must come from the whole stroke, so the chord spans its full length.")
+	assert(Player.gesture_stroke_qualified(straight, 0.5, 220.0, 0.85, 1.5), "A 240 px straight stroke drawn inside the window should qualify.")
+	var shorter: PackedVector2Array = PackedVector2Array()
+	for index: int in range(11):
+		shorter.append(Vector2(float(index) * 8.0, 0.0))
+	assert(not Player.gesture_stroke_qualified(shorter, 0.2, 220.0, 0.85, 1.5), "A short flick must never qualify, however straight it is.")
+	var curve: PackedVector2Array = PackedVector2Array()
+	for index: int in range(25):
+		var sweep_angle: float = PI * float(index) / 24.0
+		curve.append(Vector2(cos(sweep_angle), sin(sweep_angle)) * 120.0)
+	assert(Player.gesture_straightness(curve) < 0.85, "A drawn arc must not read as straight.")
+	assert(is_equal_approx(Player.gesture_chord(curve).length(), 240.0), "The arc must still be long enough that only its shape can reject it.")
+	assert(not Player.gesture_stroke_qualified(curve, 0.4, 220.0, 0.85, 1.5), "However long it is, a curved sweep must not fire the thrust.")
+	var squiggle: PackedVector2Array = PackedVector2Array()
+	for index: int in range(31):
+		squiggle.append(Vector2(float(index) * 8.0, 40.0 if index % 2 == 0 else -40.0))
+	assert(Player.gesture_straightness(squiggle) < 0.5, "A zig-zag must measure far from straight.")
+	assert(not Player.gesture_stroke_qualified(straight, 2.0, 220.0, 0.85, 1.5), "A stroke that overran the window must not qualify, however straight it was.")
+	var two_samples: PackedVector2Array = PackedVector2Array([Vector2.ZERO, Vector2(240.0, 0.0)])
+	assert(not Player.gesture_stroke_qualified(two_samples, 0.4, 220.0, 0.85, 1.5), "Two samples is a jump, not a drawn stroke.")
+
+func test_gesture_fires_only_once_the_stroke_settles() -> void:
+	var player: Player = _blue_guard_player()
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(8.0, 0.0), 30)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "A stroke must not fire while the cursor is still moving.")
+	assert(player.charged_guard_locked, "Drawing alone must not release the guard.")
+	assert(player.charged_guard_gesture_trail_left > 0.0, "The stroke must leave a trail as it is drawn so the player can see what they are drawing.")
+	assert(player.charged_guard_gesture_path.size() > 1, "The drawn path must be retained for the trail to be drawn from.")
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.THRUST, "A long straight stroke brought to rest should discharge the guard into a lunging thrust.")
+	assert(not player.charged_guard_locked, "Activation must consume the guard.")
+	assert(player.charged_guard_gesture_flash_left > 0.0, "A read stroke should flash its trail.")
+	assert(player.charged_guard_gesture_direction.x > 0.9, "The thrust must follow the line the player drew, not the cursor's last frame.")
+	assert(player.charged_guard_gesture_path.size() > 1, "The trail must survive activation so the picture of the gesture is still on screen.")
+	assert(is_zero_approx(player.charged_guard_gesture_lunge_left), "The lunge must wait for the wind-up rather than dragging the body out immediately.")
+	var flash_at_fire: float = player.charged_guard_gesture_flash_left
+	for _frame: int in range(4):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.THRUST, "The ability must run on as one committed sequence.")
+	assert(player.charged_guard_gesture_flash_left < flash_at_fire, "The flash must decay rather than stay pinned.")
+	assert(player.charged_guard_gesture_lunge_armed and player.charged_guard_gesture_lunge_left > 0.0, "The lunge must arm once the wind-up has elapsed, so the body follows the blade out.")
+	player.free()
+
+func test_gesture_ignores_a_slow_drag_even_though_it_is_long_and_straight() -> void:
+	var player: Player = _blue_guard_player()
+	# 300 px of dead-straight travel, but spread over 1.67 seconds. On shape alone this
+	# stroke is perfect; only the window can reject it.
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(3.0, 0.0), 100)
+	for _frame: int in range(12):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "A drag slower than the window must never be read as a deliberate gesture.")
+	assert(player.charged_guard_locked, "A slow drag must leave the guard held.")
+	player.free()
+
+func test_gesture_feature_off_leaves_the_guard_and_the_aim_untouched() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_locked = true
+	player.charged_guard_fully_charged = true
+	assert(is_zero_approx(player.get_combat_contact_setting("charged_guard_gestures_enabled")), "Gestures must ship off.")
+	assert(not player._charged_guard_gesture_armed(), "Gestures must stay inert until the feature is switched on.")
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(8.0, 0.0), 40)
+	for _frame: int in range(10):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "With the feature off the same stroke must not fire a thrust.")
+	assert(player.charged_guard_locked, "With the feature off the guard must be untouched.")
+	assert(is_zero_approx(player.charged_guard_gesture_trail_left), "With the feature off nothing is drawn.")
+	assert(player.charged_guard_gesture_path.is_empty(), "With the feature off no path is retained at all.")
+	player.set_combat_contact_setting("charged_guard_gestures_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 0.0)
+	assert(not player._charged_guard_gesture_armed(), "Gestures belong to the blue charged state, so the original guard alone must not read them.")
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.charged_guard_fully_charged = false
+	assert(not player._charged_guard_gesture_armed(), "Gestures must wait for the blue state to complete its confirmation hold.")
+	player.charged_guard_fully_charged = true
+	player.set_input_mode("controller")
+	assert(not player._charged_guard_gesture_armed(), "A stick is not a drawn pointer, so controller input must not read gestures.")
+	player.free()
+
+func test_a_hard_sideways_flick_still_breaks_the_guard_and_discards_the_stroke() -> void:
+	var player: Player = _blue_guard_player()
+	# A hard sideways draw: real motion, never brought to rest.
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(6.0, 24.0), 30)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "An unfinished stroke must not fire.")
+	player.charged_guard_authored_lateral_aim_speed = player.get_combat_contact_setting("charged_guard_break_speed") + 1.0
+	player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_locked, "The established sideways flick must still break the guard exactly as it did before gestures existed.")
+	player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "A broken guard must never discharge a thrust.")
+	assert(player.charged_guard_gesture_path.is_empty(), "Once the guard has broken, the interrupted stroke must be discarded rather than left to fire the moment it settles.")
+
+func test_circle_recognition_reads_the_revolution_and_the_direction_it_was_drawn() -> void:
+	var clockwise: PackedVector2Array = PackedVector2Array()
+	var counter: PackedVector2Array = PackedVector2Array()
+	for step: int in range(33):
+		var travel_angle: float = TAU * float(step) / 32.0
+		clockwise.append(Vector2.RIGHT.rotated(travel_angle) * 60.0)
+		counter.append(Vector2.RIGHT.rotated(-travel_angle) * 60.0)
+	var clockwise_sweep: float = Player.gesture_orbit_sweep(clockwise)
+	var counter_sweep: float = Player.gesture_orbit_sweep(counter)
+	assert(absf(clockwise_sweep - TAU) < 0.05, "A circle drawn one way must sweep a whole positive revolution.")
+	assert(absf(counter_sweep + TAU) < 0.05, "The same circle drawn the other way must sweep a whole negative revolution, which is what sets the sweep direction.")
+	assert(clockwise_sweep > 0.0 and counter_sweep < 0.0, "The two directions must be opposite in sign, since the sign is what decides which way the sword sweeps.")
+	assert(_circle_qualified(clockwise, 0.55), "A closed 60 px revolution should qualify.")
+	assert(_circle_qualified(counter, 0.55), "Which way it was drawn must not change whether the circle reads.")
+	# The whole point of measuring the sweep around the stroke's middle rather than the turn
+	# between its segments: a bad, lumpy, unsteady circle must still read. Rough drawing is the
+	# normal case, not the exception.
+	var rough: PackedVector2Array = PackedVector2Array()
+	for step: int in range(33):
+		var travel_angle: float = TAU * float(step) / 32.0
+		var lumpy_radius: float = 60.0 * (1.0 + 0.12 * sin(travel_angle * 7.0) + 0.10 * cos(travel_angle * 13.0))
+		rough.append(Vector2.RIGHT.rotated(travel_angle) * lumpy_radius)
+	assert(absf(Player.gesture_orbit_sweep(rough) - TAU) < 0.1, "Wobble in a rough circle must barely move its sweep, which is exactly why the sweep is measured around the middle.")
+	assert(_circle_qualified(rough, 1.4), "A lumpy, unsteady circle must still be read as a circle.")
+	assert(_circle_qualified(rough, 2.6), "A slow, careful circle must not be timed out. People who draw circles badly draw them slowly.")
+	assert(not _circle_qualified(rough, 3.4), "Three seconds is still the outer limit, even for circles.")
+	# Overshooting back past the start is what a bad circle-drawer does most often, so closure
+	# and sweep are an either/or: only a stroke that fell short of a whole turn has to bring
+	# its ends back together.
+	var overshoot: PackedVector2Array = PackedVector2Array()
+	for step: int in range(43):
+		overshoot.append(Vector2.RIGHT.rotated(TAU * 1.3 * float(step) / 42.0) * 60.0)
+	assert(absf(Player.gesture_orbit_sweep(overshoot)) >= Player.CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, "An overshooting circle must have plainly gone the whole way round.")
+	assert(_circle_qualified(overshoot, 0.8), "A circle drawn a little too far round must still fire, rather than being thrown out for not meeting its own start.")
+	var straight: PackedVector2Array = PackedVector2Array()
+	for index: int in range(31):
+		straight.append(Vector2(float(index) * 8.0, 0.0))
+	assert(absf(Player.gesture_orbit_sweep(straight)) < Player.CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, "A straight line subtends almost no sweep at all, so it can never reach the circle's floor.")
+	assert(not _circle_qualified(straight, 0.5), "A line must never read as a circle, however long it is.")
+	var small: PackedVector2Array = PackedVector2Array()
+	for step: int in range(33):
+		small.append(Vector2.RIGHT.rotated(TAU * float(step) / 32.0) * 20.0)
+	assert(not _circle_qualified(small, 0.55), "A tiny twitch circle must be too small to be deliberate.")
+	var spiral: PackedVector2Array = PackedVector2Array()
+	for step: int in range(65):
+		var spiral_ratio: float = float(step) / 64.0
+		spiral.append(Vector2.RIGHT.rotated(TAU * 2.0 * spiral_ratio) * lerpf(20.0, 120.0, spiral_ratio))
+	assert(Player.gesture_radius_spread(spiral) > Player.CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, "An opening spiral must measurably fail the roundness bar.")
+	assert(absf(Player.gesture_orbit_sweep(spiral)) >= Player.CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, "The spiral must sweep enough to be rejected by its shape alone, not by a missing revolution.")
+	assert(not _circle_qualified(spiral, 1.4), "Two widening turns must not read as a deliberate circle.")
+	var open_c: PackedVector2Array = PackedVector2Array()
+	for step: int in range(25):
+		open_c.append(Vector2.RIGHT.rotated(TAU * 0.8 * float(step) / 24.0) * 60.0)
+	assert(not _circle_qualified(open_c, 0.45), "A stroke that stopped a long way short of its own start must not fire.")
+	var squiggle: PackedVector2Array = PackedVector2Array()
+	for index: int in range(32):
+		squiggle.append(Vector2(float(index) * 8.0, 40.0 if index % 2 == 0 else -40.0))
+	assert(absf(Player.gesture_orbit_sweep(squiggle)) < Player.CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, "A zig-zag sweeps back and forth and must cancel out.")
+	assert(not _circle_qualified(squiggle, 0.5), "A zig-zag must never read as a circle.")
+
+func test_circle_gesture_fires_a_whirlwind_that_sweeps_round_the_player() -> void:
+	var player: Player = _blue_guard_player()
+	player.charged_guard_lock_angle = 0.25
+	player.charged_guard_lock_hand_offset = Vector2(40.0, 0.0)
+	_draw_circle_stroke(player, Vector2(700.0, 400.0), 60.0, 32, true)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "A circle must not fire while the cursor is still going round.")
+	assert(player.charged_guard_locked, "Drawing a circle must not release the guard on its own.")
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.WHIRLWIND, "A closed circle brought to rest should discharge the guard into a whirlwind rather than a thrust.")
+	assert(not player.charged_guard_locked, "Activation must consume the guard.")
+	assert(player.charged_guard_gesture_spin_sign > 0.0, "A clockwise circle must sweep the sword clockwise.")
+	var windup: float = Player.CHARGED_GUARD_WHIRLWIND_WINDUP
+	var spin: float = Player.CHARGED_GUARD_WHIRLWIND_SPIN
+	var recover: float = Player.CHARGED_GUARD_WHIRLWIND_RECOVER
+	# The sword sweeps about the player, not about the hand: the hilt rides a circle around the
+	# body at the distance the guard was already holding it.
+	player.charged_guard_gesture_phase_time = 0.0
+	var start_pose: Dictionary = player._apply_charged_guard_whirlwind_pose({"start": Vector2.ZERO, "angle": 3.0})
+	assert(((start_pose["start"] as Vector2) - player.global_position).is_equal_approx(Vector2(40.0, 0.0)), "The sweep must begin exactly where the guard was holding the hilt.")
+	assert(is_equal_approx(float(start_pose["angle"]), 0.25), "The sweep must begin at the angle the blade was already holding, so the first frame cannot jump.")
+	player.charged_guard_gesture_phase_time = windup + spin * 0.25
+	var quarter_pose: Dictionary = player._apply_charged_guard_whirlwind_pose({"start": Vector2.ZERO, "angle": 3.0})
+	var quarter_hilt: Vector2 = (quarter_pose["start"] as Vector2) - player.global_position
+	var quarter_orbit: float = quarter_hilt.angle()
+	assert(quarter_hilt.length() > 39.0 and quarter_hilt.length() < 41.0, "The hilt must orbit at the distance the guard was holding it, neither pulled in nor pushed out.")
+	assert(absf(angle_difference(0.0, quarter_orbit)) > 0.1, "A quarter of the way through, the hilt must genuinely have travelled around the body.")
+	assert(angle_difference(quarter_orbit, float(quarter_pose["angle"])) > 0.0, "The blade must point outward from the body, leaning ahead of the hilt rather than trailing it.")
+	assert(angle_difference(quarter_orbit, float(quarter_pose["angle"])) <= Player.CHARGED_GUARD_WHIRLWIND_LEAD_MAX + 0.001, "The outward lean must stay inside its cap, so the blade always reads as pointing outward rather than sideways.")
+	player.charged_guard_gesture_phase_time = windup + spin
+	var full_pose: Dictionary = player._apply_charged_guard_whirlwind_pose({"start": Vector2.ZERO, "angle": 3.0})
+	assert(((full_pose["start"] as Vector2) - player.global_position).is_equal_approx(Vector2(40.0, 0.0)), "One whole turn must land the hilt exactly back where it started, so the sweep begins and ends in the same place.")
+	assert(is_equal_approx(float(full_pose["angle"]), 0.25 + TAU), "The sweep must carry the blade exactly one whole revolution.")
+	player.charged_guard_gesture_phase_time = windup + spin + recover + 0.5
+	var settled_pose: Dictionary = player._apply_charged_guard_whirlwind_pose({"start": Vector2(9.0, 4.0), "angle": 3.0})
+	assert(((settled_pose["start"] as Vector2) - player.global_position).is_equal_approx(Vector2(9.0, 4.0)), "The hilt must ease home into the live aim rather than snapping there.")
+	assert(absf(angle_difference(float(settled_pose["angle"]), 3.0)) < 0.001, "The blade must ease home into the live aim instead of snapping a whole turn back.")
+	# Counter-clockwise carries the hilt the other way round the body.
+	player.charged_guard_gesture_spin_sign = -1.0
+	player.charged_guard_gesture_spin_lead = -Player.CHARGED_GUARD_WHIRLWIND_LEAD_MAX
+	player.charged_guard_gesture_phase_time = windup + spin * 0.25
+	var counter_hilt: Vector2 = (player._apply_charged_guard_whirlwind_pose({"start": Vector2.ZERO, "angle": 3.0})["start"] as Vector2) - player.global_position
+	assert(counter_hilt.y < 0.0, "A counter-clockwise circle must carry the hilt the other way round the body.")
+	player.charged_guard_gesture_spin_sign = 1.0
+	player.charged_guard_gesture_spin_lead = 0.25
+	player.charged_guard_gesture_phase_time = 0.2
+	player._advance_charged_guard_whirlwind(0.0)
+	assert(not player.charged_guard_gesture_lunge_armed and is_zero_approx(player.charged_guard_gesture_lunge_left), "The whirlwind must never touch the body, so it must never arm the thrust's lunge.")
+	player._advance_charged_guard_whirlwind(Player.charged_guard_whirlwind_total_duration())
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "The sweep must end and hand the sword back to ordinary play.")
+	var handed_back: Dictionary = player._apply_charged_guard_gesture_pose({"start": Vector2(1.0, 2.0), "angle": 0.5})
+	assert(is_equal_approx(float(handed_back["angle"]), 0.5) and (handed_back["start"] as Vector2).is_equal_approx(Vector2(1.0, 2.0)), "Once the sweep is over the ability must leave the pose completely untouched.")
+	player.free()
+
+func test_counter_clockwise_circle_sweeps_the_sword_the_other_way() -> void:
+	var player: Player = _blue_guard_player()
+	player.charged_guard_lock_angle = -0.25
+	player.charged_guard_lock_hand_offset = Vector2(40.0, 0.0)
+	_draw_circle_stroke(player, Vector2(700.0, 400.0), 60.0, 32, false)
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.WHIRLWIND, "A circle drawn either way should discharge the guard into a whirlwind.")
+	assert(player.charged_guard_gesture_spin_sign < 0.0, "A counter-clockwise circle must sweep the sword counter-clockwise.")
+	assert(is_equal_approx(player.charged_guard_gesture_spin_lead, -0.25), "The blade must lean ahead of the outward radial in the direction actually drawn, taking its lean from the angle the blade was already holding.")
+	player.free()
+
+func test_gesture_sparks_trail_the_stroke_and_fade_inside_a_fixed_pool() -> void:
+	var player: Player = _blue_guard_player()
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(8.0, 0.0), 30)
+	assert(not player.charged_guard_gesture_sparks.is_empty(), "Cutting the stroke should throw off sparks as it is drawn.")
+	assert(player.charged_guard_gesture_sparks.size() <= Player.CHARGED_GUARD_GESTURE_SPARK_POOL, "The spark pool must stay inside its fixed size while drawing.")
+	player._spawn_charged_guard_gesture_sparks(Vector2(400.0, 300.0), 200, 5.0)
+	assert(player.charged_guard_gesture_sparks.size() == Player.CHARGED_GUARD_GESTURE_SPARK_POOL, "Overfilling the pool must drop the oldest sparks rather than grow without bound.")
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.THRUST, "The stroke should have been read.")
+	assert(player.charged_guard_gesture_sparks.size() == Player.CHARGED_GUARD_GESTURE_SPARK_POOL, "A read stroke's burst must land inside the same bounded pool.")
+	for _frame: int in range(40):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_sparks.is_empty(), "Every spark must fade out on its own, leaving nothing behind to accumulate.")
+	player.free()
+
+func test_the_guard_cannot_re_enter_while_the_thrust_is_running() -> void:
+	var player: Player = _blue_guard_player()
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(8.0, 0.0), 30)
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.THRUST, "The stroke should have fired the thrust.")
+	# Now hand the guard the exact signals that acquire it, and keep them up for the whole
+	# of the attack.
+	player.sword_phase = 1.2
+	player.player_aim_turn_sign = -1.0
+	player.charged_guard_aim_turn_sign = -1.0
+	player.authored_sword_engagement = 1.0
+	var initial_transform: Dictionary = player._sword_transform()
+	var blade_direction: Vector2 = Vector2.RIGHT.rotated(float(initial_transform["angle"]))
+	for _frame: int in range(30):
+		player.charged_guard_authored_aim_velocity = -blade_direction * 200.0
+		player._update_charged_guard(1.0 / 60.0)
+		assert(not player.charged_guard_locked, "A committed thrust owns the sword, so the guard must not re-enter while the attack is still running.")
+		assert(is_zero_approx(player.charged_guard_charge), "The thrust must not let guard charge build up behind it to snap back on.")
+	player.free()
+
+func test_gesture_thrust_arms_the_lunge_drives_out_and_hands_the_pose_back() -> void:
+	var player: Player = _new_player()
+	player.charged_guard_gesture_state = Player.ChargedGuardGesture.THRUST
+	player.charged_guard_gesture_direction = Vector2.RIGHT
+	player.charged_guard_gesture_hand_radius = 30.0
+	var windup: float = Player.CHARGED_GUARD_THRUST_WINDUP
+	var extend: float = Player.CHARGED_GUARD_THRUST_EXTEND
+	var hold: float = Player.CHARGED_GUARD_THRUST_HOLD
+	var recover: float = Player.CHARGED_GUARD_THRUST_RECOVER
+	assert(is_zero_approx(Player.charged_guard_thrust_extension(0.0, windup, extend, hold, recover)), "The sequence must begin at the reach the guard was holding.")
+	assert(Player.charged_guard_thrust_extension(windup * 0.5, windup, extend, hold, recover) < 0.0, "The wind-up must pull the hand back off the guard before the drive.")
+	var mid_drive: float = Player.charged_guard_thrust_extension(windup + extend * 0.5, windup, extend, hold, recover)
+	assert(mid_drive > 0.0 and mid_drive < 1.0, "The drive must read as an acceleration rather than a jump to full reach.")
+	assert(is_equal_approx(Player.charged_guard_thrust_extension(windup + extend + hold * 0.5, windup, extend, hold, recover), 1.0), "Full reach should be held for a beat at the top of the thrust.")
+	assert(is_zero_approx(Player.charged_guard_thrust_extension(Player.charged_guard_thrust_total_duration(), windup, extend, hold, recover)), "The sequence must settle back to the guard's own reach.")
+	player.charged_guard_gesture_phase_time = windup + extend + hold * 0.5
+	var thrust_pose: Dictionary = player._apply_charged_guard_gesture_pose({"start": Vector2.ZERO, "angle": PI})
+	assert(is_zero_approx(float(thrust_pose["angle"])), "The blade must lie along the drawn line.")
+	assert((thrust_pose["start"] as Vector2).is_equal_approx(player.global_position + Vector2.RIGHT * (30.0 + Player.CHARGED_GUARD_THRUST_REACH)), "Full reach must extend the hand along the drawn line from the radius it was holding.")
+	player.charged_guard_gesture_phase_time = 0.0
+	player._advance_charged_guard_thrust(windup + 0.001)
+	assert(player.charged_guard_gesture_lunge_armed and player.charged_guard_gesture_lunge_left > 0.0, "The lunge must arm exactly when the drive begins, so the wind-up never reads as walking.")
+	player._advance_charged_guard_thrust(Player.charged_guard_thrust_total_duration())
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "The ability must end and hand the sword back to ordinary play.")
+	var handed_back: Dictionary = player._apply_charged_guard_gesture_pose({"start": Vector2(1.0, 2.0), "angle": 0.5})
+	assert(is_equal_approx(float(handed_back["angle"]), 0.5) and (handed_back["start"] as Vector2).is_equal_approx(Vector2(1.0, 2.0)), "Once the sequence is over the ability must leave the pose completely untouched.")
+	player.free()

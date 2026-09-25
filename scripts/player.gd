@@ -6,6 +6,10 @@ signal tutorial_action(event_type: String, target: Node)
 # New values are appended so persisted integer IDs for every existing form remain stable.
 enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
 enum AuthoredMetronomeState { INACTIVE, READY, ACTIVE, RETURNING, SHEATHED }
+## The one ability a Charged Guard gesture can discharge into. NONE means the gesture
+## layer is idle and the guard owns the pose; THRUST means the lunging thrust owns the
+## pose instead (see the ordered override chain at _apply_charged_guard_gesture_pose).
+enum ChargedGuardGesture { NONE, THRUST, WHIRLWIND }
 const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
@@ -67,8 +71,108 @@ const CHARGED_GUARD_BLADE_CONFORM_RATE: float = 8.0
 ## the same whether the hand is creeping or flicking.
 const CHARGED_GUARD_AFTERIMAGE_COUNT: int = 5
 const CHARGED_GUARD_AFTERIMAGE_INTERVAL: float = 0.05
+## --- Charged Guard gestures -------------------------------------------------
+## A gesture is a deliberately drawn cursor stroke that discharges the blue charged
+## guard as a lunging thrust. Recognition is measured on the cursor's own SCREEN
+## positions, which are the one part of the aim pipeline the camera cannot touch: the
+## camera moves the world, never the pointer's place on the screen. A stroke drawn at
+## the same speed therefore measures the same whatever the camera is doing, and the
+## trail is drawn back through the live camera so it stays exactly where the player
+## drew it.
+##
+## The bar is deliberately conservative, because the guard is easy to enter by
+## accident: nothing a player does to reposition a held guard should ever lob them
+## into a lunging attack. A stroke must be long, nearly straight, drawn inside the
+## window, and brought to rest before it counts.
+const CHARGED_GUARD_GESTURE_MIN_SPAN: float = 220.0
+## Chord over path length: 1.0 is a perfect line, about 0.64 a semicircle, far lower a
+## squiggle. Scale-free, so a bigger version of the same wiggle still fails.
+const CHARGED_GUARD_GESTURE_STRAIGHTNESS: float = 0.85
+## Longest a single stroke may take. A longer draw is abandoned rather than trimmed, so
+## a slow drag can never be mistaken for a deliberate line.
+const CHARGED_GUARD_GESTURE_WINDOW: float = 1.5
+## Stillness that closes a stroke and lets it be read. This is the punctuation an
+## authored stroke already ends on, and it is what keeps the gesture and the guard
+## break from ever competing for the same motion.
+const CHARGED_GUARD_GESTURE_SETTLE_TIME: float = 0.07
+const CHARGED_GUARD_GESTURE_MOVE_EPSILON: float = 1.0
+## Frame samples a single stroke may hold. The window is what really bounds this -- the
+## longest window is the circle's three seconds, which at 60 Hz is 180 samples -- so this is
+## headroom above that rather than a separate cap. It has to clear it: hitting the cap
+## abandons the stroke, so a lower number would quietly kill exactly the slow, careful
+## circles the circle window was widened to accept.
+const CHARGED_GUARD_GESTURE_SAMPLE_LIMIT: int = 256
+const CHARGED_GUARD_GESTURE_TRAIL_FADE: float = 0.32
+const CHARGED_GUARD_GESTURE_FLASH_TIME: float = 0.30
+## The trail is the feature's only feedback, so it is deliberately loud: a thick saturated
+## blue ribbon, brightest at the cursor and fading back down the stroke, with sparks of the
+## same shimmer falling off the drawing point. Sparks are a small fixed pool, each carrying
+## its own remaining life, so they fade one at a time rather than all together.
+const CHARGED_GUARD_GESTURE_TRAIL_WIDTH: float = 4.5
+const CHARGED_GUARD_GESTURE_SPARK_INTERVAL: float = 0.035
+const CHARGED_GUARD_GESTURE_SPARK_LIFE: float = 0.24
+const CHARGED_GUARD_GESTURE_SPARK_POOL: int = 24
+const CHARGED_GUARD_GESTURE_SPARK_BURST: int = 8
+## The whirlwind's stroke is a circle rather than a line, so it is read by sweeping around
+## the stroke's own centre of mass instead of by turning from segment to segment: wobble in a
+## rough hand-drawn circle jitters the path, which barely moves the direction each point sits
+## in as seen from the middle, so a loosely drawn revolution still measures a whole turn. The
+## sign of that sweep is the direction the player drew, which is what decides which way the
+## blade spins. Screen and world share the same y-down handedness and the camera never
+## mirrors, so the sign carries over as-is.
+## The bars are deliberately forgiving, because a circle is far harder to draw than a line and
+## a generous shape must never be the reason the ability will not fire. The sweep floor is
+## only 200 degrees: its job is to establish a direction and reject a scribble, not to prove
+## the stroke closed. Closure proves that, and the two are an either/or -- a stroke that swept
+## nearly the whole way around has already shown it came around, so the ends are only required
+## to meet when the sweep fell short. An overshooting circle therefore still reads.
+const CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP: float = 3.49
+const CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP: float = 5.236
+const CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS: float = 40.0
+const CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE: float = 1.0
+const CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD: float = 2.4
+const CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES: int = 8
+## Circles get their own, much longer window than the line. A line is flicked in a third of a
+## second; a circle drawn carefully -- as anyone who does not draw circles well will draw it
+## -- takes two or three, and timing those out was the likeliest reason the ability would not
+## fire at all in play.
+const CHARGED_GUARD_GESTURE_CIRCLE_WINDOW: float = 3.0
+## The lunging thrust the gesture discharges into. Deliberately unhurried: the wind-up
+## turns the blade onto the drawn line, the drive throws it out, the hold reads at full
+## reach, and the recovery settles back into ordinary metre. The body is thrown along
+## the same line, so the thrust is a real committed attack rather than a pose.
+const CHARGED_GUARD_THRUST_WINDUP: float = 0.08
+const CHARGED_GUARD_THRUST_EXTEND: float = 0.13
+const CHARGED_GUARD_THRUST_HOLD: float = 0.06
+const CHARGED_GUARD_THRUST_RECOVER: float = 0.26
+## Fraction of full reach the wind-up pulls the hand back before the drive.
+const CHARGED_GUARD_THRUST_WINDUP_PULL: float = 0.30
+## Extra hand travel at full reach, added to the live hand radius.
+const CHARGED_GUARD_THRUST_REACH: float = 46.0
+const CHARGED_GUARD_THRUST_LUNGE_SPEED: float = 600.0
+const CHARGED_GUARD_THRUST_LUNGE_TIME: float = 0.16
+## The whirlwind a drawn circle discharges into: the whole sword sweeps one full turn around
+## the player -- the hilt orbiting the body at the distance the guard was already holding it,
+## the blade pointing outward -- so the tip cuts a ring the whole way round and lands exactly
+## back where it began. A short counter-orbit winds it up, and a settle then eases both the
+## hilt and the blade into wherever the player's aim has got to by then. It moves nothing at
+## all: the body is left entirely to the player, so walking, dashing and being knocked about
+## mid-swing all behave exactly as they normally do.
+const CHARGED_GUARD_WHIRLWIND_ANTICIPATION: float = 0.35
+const CHARGED_GUARD_WHIRLWIND_WINDUP: float = 0.06
+const CHARGED_GUARD_WHIRLWIND_SPIN: float = 0.34
+const CHARGED_GUARD_WHIRLWIND_RECOVER: float = 0.20
+## How far ahead of the outward radial the blade may lean. The lean is taken from the angle
+## the blade is already holding at activation, so the first frame matches what was on screen,
+## but it is capped so the blade always reads as pointing outward rather than sideways.
+## 0.44 rad is 25 degrees.
+const CHARGED_GUARD_WHIRLWIND_LEAD_MAX: float = 0.44
 const AUTHORED_METRONOME_ACTIVITY_SPEED: float = 25.0
 const AUTHORED_METRONOME_SHEATHE_FADE_RATE: float = 8.0
+## Sword-trail visibility tracks arc energy while the metronome is in play, and stays
+## exactly 1.0 -- today's look -- for every other sword style and whenever it is off.
+const SWORD_TRAIL_MIN_VISIBILITY: float = 0.10
+const SWORD_TRAIL_MAX_VISIBILITY: float = 1.15
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
@@ -506,6 +610,45 @@ var charged_guard_radial_direction: Vector2 = Vector2.RIGHT
 ## following it let player movement steer the guard.
 var charged_guard_cursor_motion: Vector2 = Vector2.ZERO
 var charged_guard_movement_suppression_left: float = 0.0
+## The cursor's screen position this frame, captured once per frame so recognition never
+## depends on when it is asked, and so the drawn path can be replayed through the live
+## camera. This is the gesture layer's sole input.
+var charged_guard_gesture_cursor: Vector2 = Vector2.ZERO
+## Screen-space points of the stroke being drawn. Screen space is the reason no camera
+## motion can draw, bend, extend or rotate a gesture.
+var charged_guard_gesture_path: PackedVector2Array = PackedVector2Array()
+var charged_guard_gesture_stroke_time: float = 0.0
+var charged_guard_gesture_still: float = 0.0
+var charged_guard_gesture_active: bool = false
+## A stroke is spent once it has been read, or once it overran the window: either way it
+## can never qualify, and only fresh movement starts a new one.
+var charged_guard_gesture_spent: bool = false
+var charged_guard_gesture_has_cursor: bool = false
+var charged_guard_gesture_previous_cursor: Vector2 = Vector2.ZERO
+var charged_guard_gesture_trail_left: float = 0.0
+var charged_guard_gesture_flash_left: float = 0.0
+## Sparks are the shimmer falling off the drawing point: screen-space positions, each
+## carrying its own remaining life in z, so they fade individually instead of in lockstep.
+var charged_guard_gesture_sparks: Array[Vector3] = []
+var charged_guard_gesture_spark_timer: float = 0.0
+var charged_guard_gesture_state: ChargedGuardGesture = ChargedGuardGesture.NONE
+var charged_guard_gesture_phase_time: float = 0.0
+var charged_guard_gesture_direction: Vector2 = Vector2.RIGHT
+## Captured at activation so the thrust extends from the reach the player was actually
+## holding, instead of breathing with the cursor during the sequence.
+var charged_guard_gesture_hand_radius: float = 0.0
+## The whirlwind sweeps the whole sword one turn around the player. All of it is captured at
+## activation -- which way the circle was drawn, the hilt's own angle out from the body, and
+## how far out it was being held -- so the sweep is a fixed shape that begins and ends exactly
+## where the guard was holding the blade, rather than chasing the cursor around with it. The
+## hilt's offset is kept whole rather than just its length, so the radius and the starting
+## angle both come out of the one value and cannot drift apart.
+var charged_guard_gesture_spin_sign: float = 1.0
+var charged_guard_gesture_orbit_angle: float = 0.0
+var charged_guard_gesture_spin_lead: float = 0.0
+var charged_guard_gesture_hand_offset: Vector2 = Vector2.ZERO
+var charged_guard_gesture_lunge_armed: bool = false
+var charged_guard_gesture_lunge_left: float = 0.0
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -1126,6 +1269,11 @@ func _physics_process(delta: float) -> void:
 	_update_aim(sword_control_delta)
 	_update_combat_hand_radius(sword_control_delta)
 	_update_authored_metronome_state(sword_control_delta)
+	# The gesture layer reads the cursor's own screen position, captured once per frame.
+	# Screen space is inherently camera-free: the camera moves the world, never the
+	# pointer's place on the screen.
+	charged_guard_gesture_cursor = get_viewport().get_mouse_position()
+	_update_charged_guard_gesture(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
 	_apply_experimental_bind_retention(sword_control_delta)
 	_update_sword(sword_control_delta)
@@ -1455,6 +1603,13 @@ func _handle_movement(delta: float, grapple_acceleration: Vector2 = Vector2.ZERO
 		# that velocity each frame, so rope tension can bend it into an orbit.
 		if not grapple_controller.is_dash_momentum_active():
 			velocity = dash_direction * dash_speed
+	elif charged_guard_gesture_lunge_left > 0.0:
+		# The thrust's lunge owns movement for its short drive: ordinary input is
+		# suppressed so the body is genuinely thrown along the drawn line, while walls,
+		# terrain and the arena clamp still resolve through move_and_slide below exactly
+		# as they do for a dash.
+		charged_guard_gesture_lunge_left = maxf(0.0, charged_guard_gesture_lunge_left - delta)
+		velocity = charged_guard_gesture_direction * CHARGED_GUARD_THRUST_LUNGE_SPEED
 	else:
 		var input_direction: Vector2 = _movement_input()
 		var pressure_multiplier: float = body_pressure_speed_multiplier if _is_touching_enemy() and invulnerable <= 0.0 else 1.0
@@ -1903,6 +2058,24 @@ func _authored_metronome_mode_applies() -> bool:
 func _authored_metronome_pauses_phase() -> bool:
 	return _authored_metronome_mode_applies() and authored_metronome_energy <= 0.0
 
+## How brightly the sword's own trails draw -- red tip and gold hilt -- as a multiplier on
+## their unchanged base alphas. Outside the metronome this is exactly 1.0, so every other
+## sword style keeps the trails it has always had. Inside it, arc energy is the one thing
+## that drives them: a resting blade leaves a 10% trace, a fully driven one peaks 15%
+## brighter than before (0.45 -> 0.5175 red, 0.55 -> 0.6325 gold), and the ramp between the
+## two is linear, so nothing pops.
+##
+## Gated on the mode rather than on the ACTIVE enum member on purpose: energy is still zero
+## on the first frame of a swing, so gating on ACTIVE would flash a full-brightness trail
+## for that one frame and then drop it. The mode is already true before the swing lands.
+static func sword_trail_visibility_scale(energy: float, metronome_active: bool, minimum: float = SWORD_TRAIL_MIN_VISIBILITY, maximum: float = SWORD_TRAIL_MAX_VISIBILITY) -> float:
+	if not metronome_active:
+		return 1.0
+	return lerpf(minimum, maximum, clampf(energy, 0.0, 1.0))
+
+func _sword_trail_visibility_scale() -> float:
+	return sword_trail_visibility_scale(authored_metronome_energy, _authored_metronome_mode_applies())
+
 ## Arc energy is the single authority for how wide the metronome opens.
 ## Authored aim travel above the wake threshold fills it. Once the idle grace
 ## passes with no authored input the energy bleeds away, and the eased arc
@@ -1929,8 +2102,10 @@ func _update_authored_metronome_state(delta: float) -> void:
 	# of letting the blade fade out from under the guard. The timer is held at zero rather
 	# than frozen mid-count because a guard is always acquired out of movement, which has
 	# already zeroed it -- holding it means the full sheathe delay runs again after release
-	# instead of the sword vanishing the instant the guard ends.
-	var keeps_sword_drawn: bool = aim_speed >= AUTHORED_METRONOME_ACTIVITY_SPEED or _charged_guard_engaged()
+	# instead of the sword vanishing the instant the guard ends. A running gesture ability
+	# is the same claim made by a thrust: the blade is out and being driven, so it must not
+	# be treated as idle and fade away mid-attack.
+	var keeps_sword_drawn: bool = aim_speed >= AUTHORED_METRONOME_ACTIVITY_SPEED or _charged_guard_engaged() or charged_guard_gesture_state != ChargedGuardGesture.NONE
 	var wake_speed: float = maxf(AUTHORED_METRONOME_ACTIVITY_SPEED, get_combat_contact_setting("authored_metronome_wake_speed"))
 	if authored_metronome_state == AuthoredMetronomeState.SHEATHED and keeps_sword_drawn:
 		authored_metronome_state = AuthoredMetronomeState.READY
@@ -2375,6 +2550,7 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"apex_hang_duration": result = 0.14
 		"charged_guard_enabled": result = 0.0
 		"charged_guard_position_charge_enabled": result = 0.0
+		"charged_guard_gestures_enabled": result = 0.0
 		"charged_guard_hold_duration": result = 0.20
 		"charged_guard_awaken_duration": result = 1.0
 		"charged_guard_break_speed": result = 600.0
@@ -2514,9 +2690,50 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 	return _apply_charged_guard_pose(transform_data)
 
 func _apply_charged_guard_pose(transform_data: Dictionary) -> Dictionary:
+	# One ordered chain owns the sword's pose: the normal aim pipeline, then the authored
+	# metronome, then the charged guard, then a gesture ability. Every stage is a pure
+	# no-op when it does not apply and the last stage to apply wins, so two systems can
+	# never write the pose in the same frame -- not because they check each other's
+	# flags, but because the chain is the only writer there is.
 	if charged_guard_locked and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
 		transform_data["angle"] = charged_guard_lock_angle
 		transform_data["start"] = global_position + charged_guard_lock_hand_offset
+	return _apply_charged_guard_gesture_pose(transform_data)
+
+## The lunging thrust's claim on the pose. By the time this runs the guard has already
+## released, so it is the only stage writing: the blade lies along the drawn line and the
+## hand drives out and back along it.
+func _apply_charged_guard_gesture_pose(transform_data: Dictionary) -> Dictionary:
+	if charged_guard_gesture_state == ChargedGuardGesture.THRUST:
+		var extension: float = charged_guard_thrust_extension(charged_guard_gesture_phase_time, CHARGED_GUARD_THRUST_WINDUP, CHARGED_GUARD_THRUST_EXTEND, CHARGED_GUARD_THRUST_HOLD, CHARGED_GUARD_THRUST_RECOVER)
+		transform_data["angle"] = charged_guard_gesture_direction.angle()
+		transform_data["start"] = global_position + charged_guard_gesture_direction * maxf(2.0, charged_guard_gesture_hand_radius + CHARGED_GUARD_THRUST_REACH * extension)
+		return transform_data
+	if charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
+		return _apply_charged_guard_whirlwind_pose(transform_data)
+	return transform_data
+
+## The whirlwind's claim on the pose: the whole sword sweeps one turn around the player,
+## turning the way the circle was drawn. The hilt orbits the body at the distance the guard
+## was already holding it, so the tip cuts a ring the whole way round, and the blade leads the
+## sweep from the outward radial. The last of it eases both the hilt and the blade into
+## wherever the player's aim has arrived by then, rather than handing control back cold -- the
+## sword ends a whole turn from where it started, so an abrupt return would snap it back on
+## the final frame.
+func _apply_charged_guard_whirlwind_pose(transform_data: Dictionary) -> Dictionary:
+	var spun: float = charged_guard_whirlwind_spin(charged_guard_gesture_phase_time, CHARGED_GUARD_WHIRLWIND_WINDUP, CHARGED_GUARD_WHIRLWIND_SPIN)
+	var orbit_angle: float = charged_guard_gesture_orbit_angle + spun * charged_guard_gesture_spin_sign
+	var hilt_offset: Vector2 = Vector2.RIGHT.rotated(orbit_angle) * charged_guard_gesture_hand_offset.length()
+	var blade_angle: float = orbit_angle + charged_guard_gesture_spin_lead
+	var recover_elapsed: float = charged_guard_gesture_phase_time - CHARGED_GUARD_WHIRLWIND_WINDUP - CHARGED_GUARD_WHIRLWIND_SPIN
+	if recover_elapsed > 0.0:
+		var recover_ratio: float = smoothstep(0.0, 1.0, clampf(recover_elapsed / maxf(CHARGED_GUARD_WHIRLWIND_RECOVER, 0.0001), 0.0, 1.0))
+		# The hand comes home to the body as well as the blade coming home to the aim, so
+		# neither of them snaps when the ability lets go of the pose.
+		hilt_offset = hilt_offset.lerp((transform_data["start"] as Vector2) - global_position, recover_ratio)
+		blade_angle = lerp_angle(blade_angle, float(transform_data["angle"]), recover_ratio)
+	transform_data["angle"] = blade_angle
+	transform_data["start"] = global_position + hilt_offset
 	return transform_data
 
 func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw_sine: float) -> Dictionary:
@@ -3095,6 +3312,378 @@ static func charged_guard_charge_multiplier(near_body: bool, recent_authored_mot
 		multiplier += maxf(0.0, pommel_pull_bonus)
 	return multiplier
 
+## --- Charged Guard gesture recognition --------------------------------------
+
+## The straight-line chord of a drawn stroke. The direction comes from the whole stroke
+## rather than its last frame, so a flick at the end of a bowed line cannot bias where
+## the blade ends up pointing.
+static func gesture_chord(path: PackedVector2Array) -> Vector2:
+	if path.size() < 2:
+		return Vector2.ZERO
+	return path[path.size() - 1] - path[0]
+
+static func gesture_path_length(path: PackedVector2Array) -> float:
+	var travelled: float = 0.0
+	for index: int in range(path.size() - 1):
+		travelled += path[index].distance_to(path[index + 1])
+	return travelled
+
+## Chord length over drawn length. Scale-free, so drawing the same shape larger or
+## smaller cannot change the reading.
+static func gesture_straightness(path: PackedVector2Array) -> float:
+	var travelled: float = gesture_path_length(path)
+	if travelled <= 0.0001:
+		return 0.0
+	return clampf(gesture_chord(path).length() / travelled, 0.0, 1.0)
+
+## The whole recognition test in one place: real samples, inside the window, long enough,
+## straight enough. It deliberately has no speed requirement of its own, because a stroke
+## quiet enough to survive the guard break is by definition one the player drew rather
+## than yanked. That leaves the break as the only thing that decides how hard the guard is
+## to leave, and stops the two ever competing for the same motion.
+static func gesture_stroke_qualified(path: PackedVector2Array, stroke_time: float, minimum_span: float, minimum_straightness: float, window: float) -> bool:
+	if path.size() < 3:
+		return false
+	if stroke_time <= 0.0 or stroke_time > window:
+		return false
+	if gesture_chord(path).length() < minimum_span:
+		return false
+	return gesture_straightness(path) >= minimum_straightness
+
+## How far around its own centre of mass a stroke travelled, in radians, signed. This is the
+## circle's real measure, and it is deliberately not the sum of the turns between segments: a
+## rough circle's wobble adds cancelling turns until a genuine revolution can measure under
+## 270 degrees and be thrown out for not turning enough. Sweeping the direction of each point
+## as seen from the stroke's middle is immune to that, so a loosely drawn circle still reads
+## as a whole turn. A zig-zag or a scribble sweeps back and forth and cancels to nothing, a
+## figure-eight likewise, and a straight line subtends at most half a turn -- which is why the
+## roundness and closure tests do the rest of the work.
+static func gesture_orbit_sweep(path: PackedVector2Array) -> float:
+	if path.size() < 3:
+		return 0.0
+	var centroid: Vector2 = gesture_centroid(path)
+	var sweep: float = 0.0
+	var previous_direction: Vector2 = path[0] - centroid
+	for index: int in range(1, path.size()):
+		var next_direction: Vector2 = path[index] - centroid
+		if previous_direction.length_squared() > 0.0001 and next_direction.length_squared() > 0.0001:
+			sweep += angle_difference(previous_direction.angle(), next_direction.angle())
+			previous_direction = next_direction
+	return sweep
+
+static func gesture_centroid(path: PackedVector2Array) -> Vector2:
+	var centroid: Vector2 = Vector2.ZERO
+	if path.is_empty():
+		return centroid
+	for point: Vector2 in path:
+		centroid += point
+	return centroid / float(path.size())
+
+## How far the stroke's points sit from their own centre of mass, and how much that distance
+## varies. Between them they separate a round stroke from an oval, a spiral or a scribble,
+## without caring how big the player drew it.
+static func gesture_mean_radius(path: PackedVector2Array) -> float:
+	if path.size() < 2:
+		return 0.0
+	var centroid: Vector2 = gesture_centroid(path)
+	var total: float = 0.0
+	for point: Vector2 in path:
+		total += point.distance_to(centroid)
+	return total / float(path.size())
+
+static func gesture_radius_spread(path: PackedVector2Array) -> float:
+	if path.size() < 2:
+		return 0.0
+	var centroid: Vector2 = gesture_centroid(path)
+	var smallest: float = INF
+	var largest: float = 0.0
+	for point: Vector2 in path:
+		var radius: float = point.distance_to(centroid)
+		smallest = minf(smallest, radius)
+		largest = maxf(largest, radius)
+	if smallest <= 0.0001:
+		return INF
+	return largest / smallest
+
+## The circle gesture's whole test: enough samples to be a real stroke, inside the circle's
+## own generous window, big enough to be deliberate, round rather than spiral, and swept one
+## way the whole way. Closure and sweep are an either/or rather than both: a stroke that
+## swept nearly the whole way around has already proved it came around, so only a stroke that
+## fell short of that has to bring its ends back together. Shape is a hard disambiguator, so a
+## closed revolution can never also pass the line gesture's straightness bar -- the two can
+## never both fire, and nothing has to arbitrate between them.
+static func gesture_circle_qualified(path: PackedVector2Array, stroke_time: float, minimum_sweep: float, closure_free_sweep: float, minimum_radius: float, maximum_closure: float, maximum_radius_spread: float, minimum_samples: int, window: float) -> bool:
+	if path.size() < minimum_samples:
+		return false
+	if stroke_time <= 0.0 or stroke_time > window:
+		return false
+	var radius: float = gesture_mean_radius(path)
+	if radius < minimum_radius:
+		return false
+	if gesture_radius_spread(path) > maximum_radius_spread:
+		return false
+	var sweep: float = absf(gesture_orbit_sweep(path))
+	if sweep < minimum_sweep:
+		return false
+	if sweep < closure_free_sweep and gesture_chord(path).length() > radius * maximum_closure:
+		return false
+	return true
+
+## Hand extension through the thrust, as a fraction of full reach: a short pull back off
+## the guard, a fast drive out, a beat held at full reach, then a settle home. Pure, so
+## the sequence's shape can be checked without running a player.
+static func charged_guard_thrust_extension(elapsed: float, windup: float, extend: float, hold: float, recover: float) -> float:
+	if elapsed <= 0.0:
+		return 0.0
+	if elapsed < windup:
+		return lerpf(0.0, -CHARGED_GUARD_THRUST_WINDUP_PULL, elapsed / maxf(windup, 0.0001))
+	var drive_time: float = elapsed - windup
+	if drive_time < extend:
+		var drive_ratio: float = drive_time / maxf(extend, 0.0001)
+		return lerpf(-CHARGED_GUARD_THRUST_WINDUP_PULL, 1.0, 1.0 - pow(1.0 - drive_ratio, 3.0))
+	var held_time: float = drive_time - extend
+	if held_time < hold:
+		return 1.0
+	var recover_time: float = held_time - hold
+	if recover_time < recover:
+		return 1.0 - smoothstep(0.0, 1.0, recover_time / maxf(recover, 0.0001))
+	return 0.0
+
+static func charged_guard_thrust_total_duration() -> float:
+	return CHARGED_GUARD_THRUST_WINDUP + CHARGED_GUARD_THRUST_EXTEND + CHARGED_GUARD_THRUST_HOLD + CHARGED_GUARD_THRUST_RECOVER
+
+## Blade rotation through the whirlwind, in radians relative to the angle it started at: a
+## short counter-turn to wind up, then one eased full revolution. Eased at both ends so the
+## whip reads as a slash without snapping off either end of it.
+static func charged_guard_whirlwind_spin(elapsed: float, windup: float, spin: float) -> float:
+	if elapsed <= 0.0:
+		return 0.0
+	if elapsed < windup:
+		return lerpf(0.0, -CHARGED_GUARD_WHIRLWIND_ANTICIPATION, elapsed / maxf(windup, 0.0001))
+	var spin_ratio: float = clampf((elapsed - windup) / maxf(spin, 0.0001), 0.0, 1.0)
+	return lerpf(-CHARGED_GUARD_WHIRLWIND_ANTICIPATION, TAU, smoothstep(0.0, 1.0, spin_ratio))
+
+static func charged_guard_whirlwind_total_duration() -> float:
+	return CHARGED_GUARD_WHIRLWIND_WINDUP + CHARGED_GUARD_WHIRLWIND_SPIN + CHARGED_GUARD_WHIRLWIND_RECOVER
+
+## True only while a stroke can actually be read: the blue charged state is held, the
+## feature is on, and the input is a drawn pointer rather than a stick.
+func _charged_guard_gesture_armed() -> bool:
+	if get_combat_contact_setting("charged_guard_gestures_enabled") < 0.5:
+		return false
+	if not charged_guard_locked or not charged_guard_fully_charged:
+		return false
+	if get_combat_contact_setting("charged_guard_position_charge_enabled") < 0.5:
+		return false
+	if mobile_input_enabled or input_mode == INPUT_MODE_CONTROLLER:
+		return false
+	if training_menu_input_locked or hit_stagger_left > 0.0:
+		return false
+	return true
+
+## Sparks carry their own remaining life, so each fades on its own; the pool bounds them by
+## dropping the oldest first.
+func _decay_charged_guard_gesture_sparks(delta: float) -> void:
+	for spark_index: int in range(charged_guard_gesture_sparks.size() - 1, -1, -1):
+		var spark: Vector3 = charged_guard_gesture_sparks[spark_index]
+		spark.z -= delta
+		if spark.z <= 0.0:
+			charged_guard_gesture_sparks.remove_at(spark_index)
+		else:
+			charged_guard_gesture_sparks[spark_index] = spark
+
+func _spawn_charged_guard_gesture_sparks(origin: Vector2, count: int, spread: float) -> void:
+	for _spark: int in range(count):
+		var offset: Vector2 = Vector2(randf_range(-spread, spread), randf_range(-spread, spread))
+		var life: float = CHARGED_GUARD_GESTURE_SPARK_LIFE * randf_range(0.6, 1.0)
+		charged_guard_gesture_sparks.append(Vector3(origin.x + offset.x, origin.y + offset.y, life))
+	while charged_guard_gesture_sparks.size() > CHARGED_GUARD_GESTURE_SPARK_POOL:
+		charged_guard_gesture_sparks.remove_at(0)
+
+func _clear_charged_guard_gesture_stroke() -> void:
+	charged_guard_gesture_path.clear()
+	charged_guard_gesture_stroke_time = 0.0
+	charged_guard_gesture_still = 0.0
+	charged_guard_gesture_active = false
+	charged_guard_gesture_spent = false
+
+## The gesture layer's whole lifecycle: the trail and hit-flash timers, the running
+## ability, and stroke recognition while the blue guard is held. Called before
+## _update_charged_guard on purpose, so a stroke that has qualified releases the guard on
+## the frame it completes and the break test never sees that frame's sweep at all.
+func _update_charged_guard_gesture(delta: float) -> void:
+	charged_guard_gesture_flash_left = maxf(0.0, charged_guard_gesture_flash_left - delta)
+	charged_guard_gesture_trail_left = maxf(0.0, charged_guard_gesture_trail_left - delta)
+	_decay_charged_guard_gesture_sparks(delta)
+	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
+		if charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
+			_advance_charged_guard_whirlwind(delta)
+		else:
+			_advance_charged_guard_thrust(delta)
+		return
+	if not _charged_guard_gesture_armed():
+		_clear_charged_guard_gesture_stroke()
+		return
+	if not charged_guard_gesture_has_cursor:
+		charged_guard_gesture_previous_cursor = charged_guard_gesture_cursor
+		charged_guard_gesture_has_cursor = true
+		return
+	var cursor_moved: float = charged_guard_gesture_cursor.distance_to(charged_guard_gesture_previous_cursor)
+	charged_guard_gesture_previous_cursor = charged_guard_gesture_cursor
+	if charged_guard_gesture_active:
+		charged_guard_gesture_stroke_time += delta
+		if charged_guard_gesture_stroke_time > CHARGED_GUARD_GESTURE_WINDOW or charged_guard_gesture_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
+			# Too slow, or absurdly oversampled. Abandoned rather than trimmed, so a long
+			# slow drag degrades to "no gesture" instead of hiding a shorter qualifying
+			# sub-stroke inside itself.
+			charged_guard_gesture_spent = true
+	if cursor_moved >= CHARGED_GUARD_GESTURE_MOVE_EPSILON:
+		charged_guard_gesture_still = 0.0
+		if charged_guard_gesture_active and not charged_guard_gesture_spent:
+			charged_guard_gesture_path.append(charged_guard_gesture_cursor)
+		else:
+			charged_guard_gesture_path.clear()
+			charged_guard_gesture_path.append(charged_guard_gesture_cursor)
+			charged_guard_gesture_stroke_time = 0.0
+			charged_guard_gesture_active = true
+			charged_guard_gesture_spent = false
+		charged_guard_gesture_trail_left = CHARGED_GUARD_GESTURE_TRAIL_FADE
+		# Sparks fall off the drawing point as the stroke is made, so the line looks like
+		# it is being cut rather than merely painted.
+		charged_guard_gesture_spark_timer -= delta
+		if charged_guard_gesture_spark_timer <= 0.0:
+			charged_guard_gesture_spark_timer = CHARGED_GUARD_GESTURE_SPARK_INTERVAL
+			_spawn_charged_guard_gesture_sparks(charged_guard_gesture_cursor, 1, 5.0)
+		return
+	charged_guard_gesture_still += delta
+	if not charged_guard_gesture_active or charged_guard_gesture_spent:
+		return
+	if charged_guard_gesture_still < CHARGED_GUARD_GESTURE_SETTLE_TIME:
+		return
+	# One reading per stroke: qualified or not, this stroke is finished.
+	charged_guard_gesture_spent = true
+	# The circle is read first purely because it is the more specific shape. The two can
+	# never both match, so this is a courtesy rather than arbitration.
+	var read_as: String = "nothing"
+	if gesture_circle_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, CHARGED_GUARD_GESTURE_CIRCLE_WINDOW):
+		read_as = "whirlwind"
+		_begin_charged_guard_whirlwind()
+	elif gesture_stroke_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_MIN_SPAN, CHARGED_GUARD_GESTURE_STRAIGHTNESS, CHARGED_GUARD_GESTURE_WINDOW):
+		read_as = "thrust"
+		_begin_charged_guard_thrust()
+	_log_charged_guard_gesture_read(read_as)
+
+## Editor-only, and deliberately blunt: every time a stroke is brought to rest the recogniser
+## prints its own numbers, whether or not that stroke read. Tuning the bars by feel alone meant
+## guessing which one was actually biting, because a rough circle that fails the bars and one
+## that never settled at all look identical from the outside. This says which it was in one
+## line. It is stripped from exported builds, so it can stay in place rather than being torn
+## out again later.
+func _log_charged_guard_gesture_read(read_as: String) -> void:
+	if not OS.is_debug_build():
+		return
+	var radius: float = gesture_mean_radius(charged_guard_gesture_path)
+	print("[gesture] read as %s | sweep %.0f deg | radius %.0f px | spread %.2f | closure %.2f | samples %d | %.2f s" % [
+		read_as,
+		rad_to_deg(gesture_orbit_sweep(charged_guard_gesture_path)),
+		radius,
+		gesture_radius_spread(charged_guard_gesture_path),
+		gesture_chord(charged_guard_gesture_path).length() / maxf(radius, 0.0001),
+		charged_guard_gesture_path.size(),
+		charged_guard_gesture_stroke_time,
+	])
+
+## A read stroke discharges the guard. The direction comes from the stroke's chord,
+## converted with the camera's basis alone, so the thrust goes exactly where the line was
+## drawn however the camera was moving while it was drawn.
+func _begin_charged_guard_thrust() -> void:
+	var chord: Vector2 = gesture_chord(charged_guard_gesture_path)
+	if chord.length_squared() > 0.0001:
+		charged_guard_gesture_direction = get_viewport().get_canvas_transform().basis_xform(chord.normalized())
+	if charged_guard_gesture_direction.length_squared() <= 0.0001:
+		charged_guard_gesture_direction = _current_aim_direction()
+	charged_guard_gesture_direction = charged_guard_gesture_direction.normalized()
+	charged_guard_gesture_hand_radius = combat_hand_radius
+	charged_guard_gesture_state = ChargedGuardGesture.THRUST
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_lunge_armed = false
+	charged_guard_gesture_lunge_left = 0.0
+	charged_guard_gesture_flash_left = CHARGED_GUARD_GESTURE_FLASH_TIME
+	# A short burst on top of the flash, so a stroke that was read pops.
+	_spawn_charged_guard_gesture_sparks(charged_guard_gesture_cursor, CHARGED_GUARD_GESTURE_SPARK_BURST, 11.0)
+	# The stroke stays on screen as the trail while the thrust plays, but it can no
+	# longer be read or extended.
+	charged_guard_gesture_active = false
+	charged_guard_gesture_spent = true
+	# Activation consumes the guard: the ability owns the pose from here, and clearing the
+	# guard hands its glow, ring and afterimages over cleanly.
+	charged_guard_locked = false
+	_clear_charged_guard_attempt()
+	# The thrust is a fresh committed cut, so it must be able to connect even if the
+	# metronome's current stroke has already spent its hit suppression.
+	hit_ids.clear()
+
+func _advance_charged_guard_thrust(delta: float) -> void:
+	charged_guard_gesture_phase_time += delta
+	if not charged_guard_gesture_lunge_armed and charged_guard_gesture_phase_time >= CHARGED_GUARD_THRUST_WINDUP:
+		# The body follows the blade out rather than leading it, so the wind-up never
+		# reads as walking.
+		charged_guard_gesture_lunge_armed = true
+		charged_guard_gesture_lunge_left = CHARGED_GUARD_THRUST_LUNGE_TIME
+	if charged_guard_gesture_phase_time < charged_guard_thrust_total_duration():
+		return
+	# Back to ordinary play: hand the pose back and let the guard be re-acquired from
+	# scratch. The cursor anchor is dropped so the first frame afterwards merely seeds
+	# itself instead of reading the gap as one enormous stroke.
+	charged_guard_gesture_state = ChargedGuardGesture.NONE
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_lunge_armed = false
+	charged_guard_gesture_has_cursor = false
+
+## A drawn circle discharges the guard into a whirlwind instead of a thrust. The whole sword
+## sweeps one turn around the player, going whichever way the circle was drawn, and the
+## ability claims the pose exactly as the thrust does. Nothing else about it is special: the
+## blade still hits through the ordinary contact pipeline, so slides, parries, clashes and
+## being interrupted all behave normally. Only the animation is forced.
+func _begin_charged_guard_whirlwind() -> void:
+	charged_guard_gesture_spin_sign = 1.0 if gesture_orbit_sweep(charged_guard_gesture_path) >= 0.0 else -1.0
+	# The hilt sweeps from where it is now, around the body, back to where it is now: its own
+	# direction out from the body is the base angle and its current distance is the radius, so
+	# one whole turn lands exactly back on the offset it started from.
+	charged_guard_gesture_hand_offset = charged_guard_lock_hand_offset
+	charged_guard_gesture_orbit_angle = charged_guard_lock_hand_offset.angle()
+	# The blade leans ahead of the outward radial in the direction of travel, so the edge
+	# leads the sweep instead of dragging behind it. The lean is read off the angle the blade
+	# is already holding, which makes the first frame identical to the last guard frame, then
+	# capped so a blade sitting well off the radial still ends up reading as pointing outward
+	# rather than sideways.
+	charged_guard_gesture_spin_lead = charged_guard_gesture_spin_sign * clampf(angle_difference(charged_guard_gesture_orbit_angle, charged_guard_lock_angle) * charged_guard_gesture_spin_sign, 0.0, CHARGED_GUARD_WHIRLWIND_LEAD_MAX)
+	charged_guard_gesture_state = ChargedGuardGesture.WHIRLWIND
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_flash_left = CHARGED_GUARD_GESTURE_FLASH_TIME
+	# A short burst on top of the flash, so a stroke that was read pops.
+	_spawn_charged_guard_gesture_sparks(charged_guard_gesture_cursor, CHARGED_GUARD_GESTURE_SPARK_BURST, 11.0)
+	# The circle stays on screen as the trail while the spin plays, but it can no longer be
+	# read or extended.
+	charged_guard_gesture_active = false
+	charged_guard_gesture_spent = true
+	# Activation consumes the guard, exactly as the thrust does.
+	charged_guard_locked = false
+	_clear_charged_guard_attempt()
+	# A fresh swing, so the spin's cut registers even if the metronome's current stroke has
+	# already spent its repeat-hit suppression. Nothing else is cleared or bypassed.
+	hit_ids.clear()
+
+func _advance_charged_guard_whirlwind(delta: float) -> void:
+	charged_guard_gesture_phase_time += delta
+	if charged_guard_gesture_phase_time < charged_guard_whirlwind_total_duration():
+		return
+	# Back to ordinary play. Deliberately no lunge to unwind here: the whirlwind never
+	# touches the body in the first place.
+	charged_guard_gesture_state = ChargedGuardGesture.NONE
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_has_cursor = false
+
 ## True from the moment a guard acquisition starts charging until the lock releases, which
 ## is exactly when the guard's ring, glow and afterimages are on screen. Sole authority for
 ## "the guard is engaged": the draw code and the metronome sheathe timer both read this, so
@@ -3117,6 +3706,13 @@ func _clear_charged_guard_attempt() -> void:
 
 func _update_charged_guard(delta: float) -> void:
 	charged_guard_flash_left = maxf(0.0, charged_guard_flash_left - delta)
+	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
+		# The lunging thrust owns the sword until it finishes. The guard stays released
+		# and inert for the whole sequence, so no pommel drive, sweep or break test can
+		# re-enter or interrupt an attack that is already committed.
+		_clear_charged_guard_attempt()
+		charged_guard_locked = false
+		return
 	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or not _is_metronome_style():
 		_clear_charged_guard_attempt()
 		charged_guard_locked = false
@@ -4709,6 +5305,19 @@ func _draw() -> void:
 		_draw_metronome_indicator_base()
 	_draw_chakram_aim_trail()
 	_draw_dash_aim_preview()
+	# The body is drawn here, ahead of the guard visuals, the sword, its fire and its
+	# trails, so the weapon and everything attached to it always read on top of the player
+	# instead of being cut off by their own torso. The aim previews stay underneath, where
+	# they read as ground guides for where the sword is about to go.
+	#
+	# Body: classic draws its own procedural vector knight; HD mode uses the
+	# layered head/torso/boots profile. The HD shadow is drawn underneath those layers.
+	if visual_style == "hd":
+		draw_set_transform(Vector2(0.0, 25.0), 0.0, Vector2(1.25, 0.38))
+		draw_circle(Vector2.ZERO, 20.0, Color(0.03, 0.05, 0.08, 0.34))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	else:
+		_draw_pixel_knight()
 	if _charged_guard_engaged() and get_combat_contact_setting("charged_guard_enabled") >= 0.5:
 		var guard_transform: Dictionary = _sword_transform()
 		var hand_local: Vector2 = (guard_transform["start"] as Vector2) - global_position
@@ -4901,27 +5510,22 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, nova_radius, Color(0.2, 0.75, 1.0, nova_alpha * 0.16))
 		draw_arc(Vector2.ZERO, nova_radius, 0.0, TAU, 64, Color(0.35, 0.85, 1.0, nova_alpha * 0.9), 5.0, true)
 		draw_arc(Vector2.ZERO, maxf(8.0, nova_radius - 10.0), 0.0, TAU, 64, Color(0.7, 0.95, 1.0, nova_alpha * 0.35), 2.0, true)
+	# Both sword trails breathe with arc energy while the metronome is in play, and draw at
+	# their historical brightness in every other style. One multiplier, one authority.
+	var trail_visibility: float = _sword_trail_visibility_scale()
 	var hilt_points_count: int = hilt_trail_points.size()
 	for index: int in range(hilt_points_count - 1):
 		var h_start: Vector2 = hilt_trail_points[index] - global_position
 		var h_end: Vector2 = hilt_trail_points[index + 1] - global_position
-		var h_alpha: float = 0.55 * (1.0 - float(index) / float(hilt_points_count))
+		var h_alpha: float = 0.55 * (1.0 - float(index) / float(hilt_points_count)) * trail_visibility
 		draw_line(h_start, h_end, Color(1.0, 0.65, 0.1, h_alpha), 3.0, true)
 	var trail_points_count: int = blade_trail_points.size()
 	for index: int in range(trail_points_count - 1):
 		var trail_start: Vector2 = blade_trail_points[index] - global_position
 		var trail_end: Vector2 = blade_trail_points[index + 1] - global_position
-		var trail_alpha: float = 0.45 * (1.0 - float(index) / float(trail_points_count))
+		var trail_alpha: float = 0.45 * (1.0 - float(index) / float(trail_points_count)) * trail_visibility
 		var trail_thickness: float = maxf(2.0, 5.5 - float(index) * (4.0 / float(trail_points_count)))
 		draw_line(trail_start, trail_end, Color(1.0, 0.16, 0.08, trail_alpha), trail_thickness, true)
-	# Body: classic draws its own procedural vector knight; HD mode uses the
-	# layered head/torso/boots profile. The HD shadow is drawn underneath those layers.
-	if visual_style == "hd":
-		draw_set_transform(Vector2(0.0, 25.0), 0.0, Vector2(1.25, 0.38))
-		draw_circle(Vector2.ZERO, 20.0, Color(0.03, 0.05, 0.08, 0.34))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	else:
-		_draw_pixel_knight()
 	var data: Dictionary = _sword_transform()
 	var start: Vector2 = (data["start"] as Vector2) - global_position
 	var sword_angle: float = float(data["angle"])
@@ -4949,6 +5553,49 @@ func _draw() -> void:
 			var blade_hilt: Vector2 = global_position + start - blade_direction * BLADE_HILT_INSET
 			flame_blade_samples = _blade_polyline_samples(blade_hilt, blade_direction)
 		_draw_hd_sword_fire(flame_blade_samples, fire_fade)
+	# The gesture trail: what the player is drawing, drawn. Recognition is measured on the
+	# cursor's own screen positions, so the trail comes from those same points, projected
+	# back through the live camera. The stroke therefore stays exactly where the cursor
+	# went -- camera lead, lag and arena clamp included -- and it lingers through the hit
+	# flash so the picture of the gesture is still on screen as the thrust begins.
+	if get_combat_contact_setting("charged_guard_gestures_enabled") >= 0.5 and (charged_guard_gesture_trail_left > 0.0 or not charged_guard_gesture_sparks.is_empty()):
+		var trail_fade: float = clampf(charged_guard_gesture_trail_left / maxf(0.001, CHARGED_GUARD_GESTURE_TRAIL_FADE), 0.0, 1.0)
+		var trail_flash: float = clampf(charged_guard_gesture_flash_left / maxf(0.001, CHARGED_GUARD_GESTURE_FLASH_TIME), 0.0, 1.0)
+		var trail_shimmer: Color = FlowColorUtils.charged_oscillating_color(float(Time.get_ticks_msec()) * 0.001)
+		# Biased toward the saturated blue end of the shimmer, so the stroke reads as a solid
+		# blue ribbon instead of washing out, while still breathing with the hand glow.
+		var trail_blue: Color = trail_shimmer.lerp(FlowColorUtils.CHARGE_BLUE_TONE, 0.35)
+		var trail_lit: Color = trail_blue.lerp(FlowColorUtils.CHARGE_WHITE_TONE, trail_flash * 0.75)
+		var screen_to_local: Transform2D = get_viewport().get_canvas_transform().affine_inverse()
+		var trail_count: int = charged_guard_gesture_path.size()
+		if charged_guard_gesture_trail_left > 0.0 and trail_count > 1:
+			for trail_index: int in range(trail_count - 1):
+				# Brightest at the cursor and fading back down the stroke, so it is the head
+				# of the drawn line that reads rather than its dusty beginning.
+				var segment_fade: float = float(trail_index + 1) / float(trail_count)
+				var trail_start: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_index]) - global_position
+				var trail_end: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_index + 1]) - global_position
+				var trail_color: Color = trail_lit
+				trail_color.a = (0.55 + trail_flash * 0.4) * trail_fade * segment_fade
+				draw_line(trail_start, trail_end, trail_color, CHARGED_GUARD_GESTURE_TRAIL_WIDTH + trail_flash * 3.0, true)
+		if charged_guard_gesture_trail_left > 0.0 and trail_count > 0:
+			# A soft glow on the drawing point itself, so the stroke has a visible head
+			# instead of stopping dead where the cursor is.
+			var head_position: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_count - 1]) - global_position
+			var head_halo: Color = trail_lit
+			head_halo.a = (0.28 + trail_flash * 0.45) * trail_fade
+			draw_circle(head_position, 7.0 + trail_flash * 3.0, head_halo)
+			var head_core: Color = trail_lit
+			head_core.a = minf(1.0, (0.55 + trail_flash * 0.45) * trail_fade)
+			draw_circle(head_position, 3.0, head_core)
+		for spark: Vector3 in charged_guard_gesture_sparks:
+			var spark_position: Vector2 = (screen_to_local * Vector2(spark.x, spark.y)) - global_position
+			var spark_life: float = clampf(spark.z / CHARGED_GUARD_GESTURE_SPARK_LIFE, 0.0, 1.0)
+			# Sparks cool toward white as they die, so they read as flecks thrown off the
+			# shimmer rather than as separate particles.
+			var spark_color: Color = trail_blue.lerp(FlowColorUtils.CHARGE_WHITE_TONE, 0.25 + 0.6 * (1.0 - spark_life))
+			spark_color.a = spark_life * 0.95
+			draw_circle(spark_position, 1.4 + 1.6 * spark_life, spark_color)
 	# Draw last so the gold needle remains visible over the sword and crowded combat.
 	if not authored_metronome_sheathed:
 		_draw_metronome_indicator_needle(sword_angle)
