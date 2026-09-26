@@ -110,8 +110,7 @@ func _update_live_readout() -> void:
 
 func _short_form_name() -> String:
 	match player_ref.sword_style:
-		Player.SwordStyle.METRONOME_BIND: return "BIND A"
-		Player.SwordStyle.METRONOME_BIND_B: return "BIND B"
+		Player.SwordStyle.BIND: return "BIND"
 		_: return "SWORD"
 
 func _on_combat_debug_event(event_type: String, details: Dictionary) -> void:

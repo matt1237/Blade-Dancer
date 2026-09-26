@@ -72,7 +72,7 @@ func _process(_delta: float) -> void:
 	if not is_instance_valid(player_ref):
 		visible = false
 		return
-	var style_active: bool = player_ref.sword_style in [Player.SwordStyle.METRONOME, Player.SwordStyle.METRONOME_WINDUP] or player_ref.is_experimental_bind_form()
+	var style_active: bool = player_ref.is_experimental_bind_form()
 	visible = display_enabled and player_ref.visible and not get_tree().paused and style_active
 	if visible:
 		_update_visual(Player.metronome_stroke_progress(player_ref.sword_phase))

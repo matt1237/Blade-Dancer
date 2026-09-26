@@ -21,6 +21,9 @@ Prefer targeted inspection and small patches over broad rewrites.
 	- what was ruled out
 	- the next most likely cause
 13. Never add a redundant feature, slider, timer/cooldown, state variable, code path, or helper for behavior an existing system already owns. Locate and extend the canonical implementation instead of creating parallel or duplicated logic/UI. If a behavior is genuinely distinct, explain its distinct lifecycle and purpose before adding a separate authority; ask if that distinction is unclear.
+	- "Redundant" means the SAME mechanism copied twice: same inputs, same authority, same effect (a second slider that sets a value another already sets; a second timer counting a cooldown another already counts; a parallel code path doing what one already does).
+	- It does NOT mean two genuinely distinct mechanisms may never coexist or overlap. When each is the smarter tool for its own job, they should coexist — two unrelated reasons to slow time, to tint the player, to add knockback, and so on. Give each its own state, timers and controls; distinct lifecycle and purpose is the justification, and no permission is needed to be separate.
+	- The one real caveat is a genuinely single shared resource (one `Engine.time_scale`, one global audio bus, one singleton). Its final value must be arbitrated in one place — but that arbitration is plain bookkeeping, not duplication, and it never justifies forcing an unrelated mechanism's logic inside another system.
 
 ## Efficient Investigation Protocol
 For every task:

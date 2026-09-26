@@ -3,20 +3,19 @@ class_name Player extends CharacterBody2D
 signal combat_debug_event(event_type: String, details: Dictionary)
 signal tutorial_action(event_type: String, target: Node)
 
-# New values are appended so persisted integer IDs for every existing form remain stable.
-enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
+# The former forms were all retired for a clean-slate rebuild. Bind is the only
+# surviving Form; new forms simply append here and become reachable via the Z/X
+# cycle. Persisted IDs are intentionally not preserved across this reset.
+enum SwordStyle { BIND }
 enum AuthoredMetronomeState { INACTIVE, READY, ACTIVE, RETURNING, SHEATHED }
 ## The one ability a Charged Guard gesture can discharge into. NONE means the gesture
 ## layer is idle and the guard owns the pose; THRUST means the lunging thrust owns the
 ## pose instead (see the ordered override chain at _apply_charged_guard_gesture_pose).
-enum ChargedGuardGesture { NONE, THRUST, WHIRLWIND, ARC_SLASH }
-const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
-## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
-## Bind B's ID 9 is the one visible, canonical Bind Form.
-## Public presentation order is intentionally independent from persisted enum IDs.
-## Canonical Bind (ID 9) is Form I; the original Metronome (ID 0) now occupies
-## Bind's former third public slot without moving either form's saved profile.
-const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.METRONOME_BIND_B, SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME, SwordStyle.THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4, SwordStyle.THRUST_METRONOME]
+enum ChargedGuardGesture { NONE, THRUST, WHIRLWIND, ARC_SLASH, UNLEASH }
+const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.BIND]
+## Public presentation order. With a single surviving form this resolves to a no-op,
+## but cycling stays live so each newly authored form simply appends here.
+const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.BIND]
 const LEGACY_BIND_SLIDE_SETTING_KEYS: Array[String] = ["bind_slide_contact_tolerance", "bind_slide_angle", "bind_slide_cling", "bind_slide_friction", "bind_slide_speed", "bind_slide_duration"]
 ## Event types printed to the Godot console (gated by debug_print_sword_events)
 ## so bind/wind/beat/release activity can be read from a text log, not just a
@@ -189,6 +188,30 @@ const CHARGED_GUARD_HOLD_LIMIT_MAX: float = 15.0
 ## guard -- or simply still holding the shape it timed out on -- would satisfy the acquisition
 ## gate on the very next frame and hand the guard straight back.
 const CHARGED_GUARD_REACQUIRE_BLOCK: float = 0.5
+## --- Unleash (triangle gesture) ---------------------------------------------
+## A rough triangle drawn in the blue charged state winds the guard into a recorded
+## path. The blade tip snaps to the cursor and flashes, world time drops to a heavy
+## slow-motion while the player sketches a red trail with the cursor, and then the
+## sword replays that world-space path at a tunable speed -- dragging the body along
+## behind the tip and striking whatever the blade crosses through the ordinary
+## contact pipeline. Recognition fits the stroke to a three-cornered hull and demands
+## that all three edges were actually drawn, so a V or a plain line is rejected even
+## though both share two of the corners.
+const CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_EDGE: float = 55.0
+const CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_PERIMETER: float = 210.0
+## Path points may sit this far off the nearest edge, as a ratio of the mean edge
+## length, and still read as "roughly a triangle". Kept tight on purpose: a circle has no
+## straight edges, so a snug bound is what lets the triangle recognizer be read first and
+## still leave genuine circles -- and every other round gesture -- to the whirlwind below.
+const CHARGED_GUARD_UNLEASH_TRIANGLE_MAX_EDGE_DEVIATION: float = 0.18
+## Each edge must be drawn by at least this fraction of the stroke's points.
+const CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_EDGE_COVERAGE: float = 0.12
+const CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_SAMPLES: int = 9
+const CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW: float = 2.5
+## World time scale during the red windup: heavy, deliberate slow motion.
+const CHARGED_GUARD_UNLEASH_WORLD_SCALE: float = 0.10
+## The red the windup draws and glows with. The flash cools it toward white.
+const CHARGED_GUARD_UNLEASH_RED: Color = Color(1.0, 0.24, 0.18, 1.0)
 ## The speed reference the charged hand's slow-reposition scaling compares against. It used to
 ## be the break-speed setting; it is a fixed reference now so the halting only depends on the
 ## sword, not on how the player has tuned the flick.
@@ -210,6 +233,13 @@ const SWORD_TRAIL_MAX_VISIBILITY: float = 1.15
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
+## Counter-Steer Arc Compression: the mirror of directional arc opening. When deliberate
+## input opposes the blade's current travel, only the destination side of that half-stroke
+## shrinks by up to this fraction of its arc. The configured base arc is never changed; the
+## effect resets at every reversal and is smoothed so the apex can never jump behind the blade.
+const COUNTER_STEER_ARC_COMPRESSION_DEFAULT: float = 0.22
+const COUNTER_STEER_ARC_COMPRESSION_MAX: float = 0.40
+const COUNTER_STEER_COMPRESSION_SMOOTH_RATE: float = 12.0
 const STROKE_DRIVE_BUILD_PER_SECOND: float = 3.0
 const STROKE_DRIVE_BUILD_PROGRESS_LIMIT: float = 0.60
 const SWORD_SWING_SFX_DRIVE_THRESHOLD: float = 0.50
@@ -349,20 +379,10 @@ const CONTROLLER_STYLE_NEXT_BUTTON = JOY_BUTTON_DPAD_RIGHT
 @export_category("Sword Speed and Damage")
 ## How quickly the whole sword follows the mouse direction. Higher is snappier.
 @export var metronome_rotation_speed: float = 10.0
-@export var thrust_rotation_speed: float = 10.0
-@export var moulinet_rotation_speed: float = 10.0
 ## Metronome's total swing arc in degrees.
 @export var metronome_arc_degrees: float = 100.0
 ## Metronome back-and-forth cycles per second.
 @export var metronome_swing_frequency: float = 0.6
-## Thrust style total arc — tight inverted piston angle.
-@export var thrust_arc_degrees: float = 38.0
-## Thrust cycles per second.
-@export var thrust_swing_frequency: float = 0.45
-## Moulinet loop spread in degrees.
-@export var moulinet_arc_degrees: float = 75.0
-## Moulinet twirl cycles per second.
-@export var moulinet_swing_frequency: float = 0.85
 ## Dynamic bonus multiplier — the arc widens by this fraction at swing center.
 @export var swing_phase_bonus: float = 0.12
 ## Contacts below this blade speed are treated as weak pushes rather than full swings.
@@ -621,6 +641,9 @@ var metronome_reversal_side: float = 0.0
 var tempo_assist_multiplier: float = 1.0
 var authored_stroke_drive: float = 0.0
 var directional_arc_extension_degrees: float = 0.0
+## Smoothed 0..1 fraction of the active stroke's destination arc removed by counter-steering
+## input this frame. Purely a rendering-geometry value; it never touches sword_phase.
+var counter_steer_compression: float = 0.0
 var authored_apex_hang_left: float = 0.0
 var authored_apex_hang_armed_drive: float = 0.0
 var charged_guard_charge: float = 0.0
@@ -723,6 +746,22 @@ var charged_guard_gesture_spin_lead: float = 0.0
 var charged_guard_gesture_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_gesture_lunge_armed: bool = false
 var charged_guard_gesture_lunge_left: float = 0.0
+## Unleash (triangle gesture) lifecycle. Phase 1 is the tip snap/flash, phase 2 the
+## red windup that records the cursor's world path, phase 3 the replay that tows the
+## body along it. The recorded path is the cursor's own world positions, so it is
+## anchored where the player drew it.
+var charged_guard_unleash_phase: int = 0
+var charged_guard_unleash_flash_left: float = 0.0
+var charged_guard_unleash_windup_left: float = 0.0
+var charged_guard_unleash_path: PackedVector2Array = PackedVector2Array()
+## Cumulative arc length at each recorded point, so the replay can sample by distance.
+var charged_guard_unleash_lengths: PackedFloat32Array = PackedFloat32Array()
+var charged_guard_unleash_total: float = 0.0
+var charged_guard_unleash_distance: float = 0.0
+## Per-frame replay state, shared by the pose, the body tow and the draw.
+var charged_guard_unleash_tip: Vector2 = Vector2.ZERO
+var charged_guard_unleash_tangent: Vector2 = Vector2.RIGHT
+var charged_guard_unleash_speed: float = 0.0
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -734,9 +773,9 @@ var experimental_bind_count: int = 0
 var experimental_wind_count: int = 0
 var experimental_beat_count: int = 0
 var experimental_rejected_beat_count: int = 0
-## New players begin in the canonical public Form I. Persisted IDs stay stable:
-## Bind is ID 9 even though it is presented first.
-var sword_style: SwordStyle = SwordStyle.METRONOME_BIND_B
+## The single surviving Form. New forms append to the enum and become the default
+## here (and in STYLE_CYCLE_ORDER) as they are authored.
+var sword_style: SwordStyle = SwordStyle.BIND
 ## "classic" = original procedural vector knight. "hd" = generated HD sprite body.
 ## Sword/chakram visuals also branch on this. Toggle from Home > Options.
 var visual_style: String = "classic"
@@ -786,9 +825,6 @@ var previous_blade_samples: PackedVector2Array = PackedVector2Array()
 var blade_velocity: Vector2 = Vector2.ZERO
 var blade_trail_points: Array[Vector2] = []
 var hilt_trail_points: Array[Vector2] = []
-var moulinet_aim_direction_sign: float = 1.0
-var moulinet_aim_direction_smoothed: float = 1.0
-var moulinet_continuous_angle: float = 0.0
 var clash_recovery_left: float = 0.0
 ## Current swing phase-advance multiplier (1.0 = full speed). Dips toward 0
 ## on contact via _trigger_contact_drag(), then recovers back to 1.0 over
@@ -1025,38 +1061,48 @@ func _load_saved_combat_settings() -> void:
 	if initialized_form_three:
 		CombatSettingsConfig.save_all(combat_contact_preset, combat_hand_settings, combat_contact_settings, blade_profile_settings, combat_weapon_hand_settings)
 
-## Consolidates the former Bind A/B laboratory into one shared Bind Form profile.
-## Persisted IDs remain valid, but both legacy ID 8 and canonical ID 9 resolve the
-## same ID-9 settings. The Curved Sword's tuned Bind-B profile is promoted first
-## when importing an old save; per-weapon Bind fields are then removed so there is
-## only one authority. Legacy bind_slide_* fields remain inert for file safety.
+## Ensures the single surviving Form (Bind) has a complete shared profile.
+##
+## Every other form was retired for a clean-slate rebuild, so this is also the
+## one-time, idempotent migration that reshapes old per-form tables onto Bind:
+## the legacy canonical Bind profile (persisted ID 9, falling back to retired ID
+## 8 and then the wind-up ID 7) is imported onto Bind's own key, the tuned Curved
+## Sword bind values are promoted into one shared authority, and every removed
+## form's profile is dropped. Running twice is a no-op.
 func ensure_experimental_form_initialized() -> bool:
 	var changed: bool = false
-	var bind_a_id: int = int(SwordStyle.METRONOME_BIND)
-	var bind_id: int = int(SwordStyle.METRONOME_BIND_B)
+	var bind_style: int = int(SwordStyle.BIND)
+	var legacy_source_styles: Array[int] = [9, 8, 7]
 	for preset: int in range(1, 5):
-		var bind_a_key: String = "%d:%d" % [preset, bind_a_id]
-		var bind_key: String = "%d:%d" % [preset, bind_id]
+		var bind_key: String = "%d:%d" % [preset, bind_style]
 		var shared_bind: Dictionary = combat_hand_settings.get(bind_key, {}) as Dictionary
-		if shared_bind.is_empty():
-			var form_two_key: String = "%d:%d" % [preset, int(SwordStyle.METRONOME_WINDUP)]
-			shared_bind = (combat_hand_settings.get(form_two_key, {}) as Dictionary).duplicate(true)
-			changed = true
+		# A pre-refactor "0" profile is the retired Metronome form, which never
+		# carried bind keys. Only a profile that already has bind_enabled is a
+		# real Bind profile; anything else is re-imported from the legacy bind IDs.
+		if not shared_bind.has("bind_enabled"):
+			for source_style: int in legacy_source_styles:
+				var source_profile: Dictionary = combat_hand_settings.get("%d:%d" % [preset, source_style], {}) as Dictionary
+				if not source_profile.is_empty():
+					shared_bind = source_profile.duplicate(true)
+					changed = true
+					break
 		var promoted: Dictionary = {}
 		for preferred_sword: String in ["Basic Curved Sword", "Basic Longsword"]:
 			var preferred_overrides: Dictionary = combat_weapon_hand_settings.get(preferred_sword, {}) as Dictionary
-			var preferred_bind: Dictionary = preferred_overrides.get(bind_key, {}) as Dictionary
-			if not preferred_bind.is_empty():
-				promoted = preferred_bind
+			for source_style: int in legacy_source_styles:
+				var preferred_bind: Dictionary = preferred_overrides.get("%d:%d" % [preset, source_style], {}) as Dictionary
+				if not preferred_bind.is_empty():
+					promoted = preferred_bind
+					break
+			if not promoted.is_empty():
 				break
 		if promoted.is_empty():
 			promoted = shared_bind
-		if promoted.is_empty():
-			var legacy_shared: Dictionary = combat_hand_settings.get(bind_a_key, {}) as Dictionary
-			var fallback_form_two_key: String = "%d:%d" % [preset, int(SwordStyle.METRONOME_WINDUP)]
-			var form_two_shared: Dictionary = combat_hand_settings.get(fallback_form_two_key, {}) as Dictionary
-			promoted = legacy_shared.duplicate(true) if not legacy_shared.is_empty() else form_two_shared.duplicate(true)
-			promoted.merge(BIND_B_INTENDED_PROFILE, true)
+		# Seed every bind key from the intended profile, letting any imported or
+		# weapon-specific values win, so the shared profile is always complete.
+		var bind_seed: Dictionary = BIND_B_INTENDED_PROFILE.duplicate(true)
+		bind_seed.merge(promoted, true)
+		promoted = bind_seed
 		for setting: String in EXPERIMENTAL_BIND_SETTING_KEYS:
 			if promoted.has(setting) and shared_bind.get(setting, null) != promoted[setting]:
 				shared_bind[setting] = promoted[setting]
@@ -1065,30 +1111,22 @@ func ensure_experimental_form_initialized() -> bool:
 			if shared_bind.erase(legacy_slide):
 				changed = true
 		combat_hand_settings[bind_key] = shared_bind
-		var retired_bind: Dictionary = combat_hand_settings.get(bind_a_key, {}) as Dictionary
-		for setting: String in EXPERIMENTAL_BIND_SETTING_KEYS:
-			if retired_bind.erase(setting):
+		# Drop every removed form's profile for this preset (keys() is a snapshot).
+		for raw_key: Variant in combat_hand_settings.keys():
+			var key: String = str(raw_key)
+			if key.begins_with("%d:" % preset) and key != bind_key:
+				combat_hand_settings.erase(raw_key)
 				changed = true
-		for legacy_slide: String in LEGACY_BIND_SLIDE_SETTING_KEYS:
-			if retired_bind.erase(legacy_slide):
-				changed = true
-		if not retired_bind.is_empty():
-			combat_hand_settings[bind_a_key] = retired_bind
+	# Strip per-weapon profile overrides that belonged to a removed form.
 	for raw_sword_id: Variant in combat_weapon_hand_settings.keys():
 		var sword_id: String = str(raw_sword_id)
 		var weapon_values: Dictionary = combat_weapon_hand_settings.get(sword_id, {}) as Dictionary
-		for preset: int in range(1, 5):
-			for style_id: int in [bind_a_id, bind_id]:
-				var key: String = "%d:%d" % [preset, style_id]
-				var values: Dictionary = weapon_values.get(key, {}) as Dictionary
-				for setting: String in EXPERIMENTAL_BIND_SETTING_KEYS:
-					if values.erase(setting):
-						changed = true
-				for legacy_slide: String in LEGACY_BIND_SLIDE_SETTING_KEYS:
-					if values.erase(legacy_slide):
-						changed = true
-				if not values.is_empty():
-					weapon_values[key] = values
+		for raw_key: Variant in weapon_values.keys():
+			var key: String = str(raw_key)
+			var style_part: String = key.get_slice(":", 1)
+			if style_part.is_valid_int() and int(style_part) != bind_style:
+				weapon_values.erase(raw_key)
+				changed = true
 		combat_weapon_hand_settings[sword_id] = weapon_values
 	return changed
 
@@ -1344,8 +1382,9 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(Vector2.ZERO, movement_deceleration * delta)
 		move_and_slide()
 	else:
-		# Bind is the sole player-facing sword form. Other profiles remain internal
-		# for development comparisons and persisted-ID compatibility only.
+		# Z/X cycle the sword form. Bind is currently the only surviving form, so
+		# this is a no-op until new forms are authored into STYLE_CYCLE_ORDER.
+		_handle_style_input()
 		_handle_dash_input()
 		_handle_chakram_input()
 		_handle_movement(delta, grapple_acceleration)
@@ -1697,6 +1736,21 @@ func _handle_movement(delta: float, grapple_acceleration: Vector2 = Vector2.ZERO
 		# as they do for a dash.
 		charged_guard_gesture_lunge_left = maxf(0.0, charged_guard_gesture_lunge_left - delta)
 		velocity = charged_guard_gesture_direction * CHARGED_GUARD_THRUST_LUNGE_SPEED
+	elif charged_guard_gesture_state == ChargedGuardGesture.UNLEASH and charged_guard_unleash_phase == 3:
+		# The unleash owns movement while it replays: ordinary input is suppressed and the
+		# body is towed so the blade tip rides the recorded path. Walls, terrain and the
+		# arena clamp still resolve through move_and_slide exactly as they do for a dash, so
+		# a path driven into geometry simply travels less far.
+		var unleash_direction: Vector2 = charged_guard_unleash_tangent
+		if unleash_direction.length_squared() <= 0.0001:
+			unleash_direction = _current_aim_direction()
+		unleash_direction = unleash_direction.normalized()
+		# The tip leads the body by the blade's reach, so the body trails the recorded path
+		# behind it and the tip lands on the path.
+		var unleash_reach: float = combat_hand_radius + (BLADE_LENGTH - BLADE_HILT_INSET)
+		var unleash_target: Vector2 = charged_guard_unleash_tip - unleash_direction * unleash_reach
+		var unleash_step: Vector2 = (unleash_target - global_position).limit_length(charged_guard_unleash_speed * delta)
+		velocity = unleash_step / maxf(delta, 0.0001)
 	else:
 		var input_direction: Vector2 = _movement_input()
 		var pressure_multiplier: float = body_pressure_speed_multiplier if _is_touching_enemy() and invulnerable <= 0.0 else 1.0
@@ -1840,28 +1894,25 @@ func notify_sword_contact() -> void:
 	pass
 
 func _handle_style_input() -> void:
-	if sword_style == SwordStyle.METRONOME_BIND:
-		sword_style = SwordStyle.METRONOME_BIND_B
 	var previous_down: bool = _controller_button_pressed(CONTROLLER_STYLE_PREVIOUS_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_Z)
 	var next_down: bool = _controller_button_pressed(CONTROLLER_STYLE_NEXT_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_X)
 	if previous_down and not style_previous_was_down:
 		var current_style_index: int = STYLE_CYCLE_ORDER.find(int(sword_style))
-		var previous_style_index: int = posmod(current_style_index - 1, STYLE_CYCLE_ORDER.size())
-		sword_style = STYLE_CYCLE_ORDER[previous_style_index] as SwordStyle
-		if sword_style in [SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]:
-			moulinet_continuous_angle = sword_phase * 2.0 * moulinet_aim_direction_smoothed
-		hit_ids.clear()
-		style_changed.emit(_style_name())
+		_apply_style_cycle(posmod(current_style_index - 1, STYLE_CYCLE_ORDER.size()))
 	if next_down and not style_next_was_down:
 		var current_style_index: int = STYLE_CYCLE_ORDER.find(int(sword_style))
-		var next_style_index: int = posmod(current_style_index + 1, STYLE_CYCLE_ORDER.size())
-		sword_style = STYLE_CYCLE_ORDER[next_style_index] as SwordStyle
-		if sword_style in [SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]:
-			moulinet_continuous_angle = sword_phase * 2.0 * moulinet_aim_direction_smoothed
-		hit_ids.clear()
-		style_changed.emit(_style_name())
+		_apply_style_cycle(posmod(current_style_index + 1, STYLE_CYCLE_ORDER.size()))
 	style_previous_was_down = previous_down
 	style_next_was_down = next_down
+
+## The single point that commits a form switch: keep it here so every future form
+## inherits the same reset of per-form runtime state.
+func _apply_style_cycle(style_index: int) -> void:
+	if style_index < 0 or style_index >= STYLE_CYCLE_ORDER.size():
+		return
+	sword_style = STYLE_CYCLE_ORDER[style_index] as SwordStyle
+	hit_ids.clear()
+	style_changed.emit(_style_name())
 
 func is_experimental_bind_form() -> bool:
 	return int(sword_style) in EXPERIMENTAL_BIND_STYLES
@@ -1877,10 +1928,10 @@ func experimental_overhead_debug_lines() -> PackedStringArray:
 	])
 
 func _is_windup_metronome_style() -> bool:
-	return sword_style == SwordStyle.METRONOME_WINDUP or is_experimental_bind_form()
+	return is_experimental_bind_form()
 
 func _is_metronome_style() -> bool:
-	return sword_style in [SwordStyle.METRONOME, SwordStyle.METRONOME_WINDUP] or is_experimental_bind_form()
+	return is_experimental_bind_form()
 
 func set_metronome_visualizer_counts(value: int) -> void:
 	metronome_visualizer_counts = clampi(value, 1, 4)
@@ -1899,15 +1950,7 @@ func set_metronome_visualizer_palette(value: String) -> void:
 
 func _style_name() -> String:
 	match sword_style:
-		SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B: return "Form I: Bind"
-		SwordStyle.METRONOME_WINDUP: return "Form II: Metronome Wind-up"
-		SwordStyle.METRONOME: return "Form III: Metronome V"
-		SwordStyle.THRUST: return "Form V: Thrusting A"
-		SwordStyle.MOULINET: return "Form VI: Moulinet 1 (Full 8)"
-		SwordStyle.MOULINET_2: return "Form VII: Moulinet 2 (Single Lobe)"
-		SwordStyle.MOULINET_3: return "Form VIII: Moulinet 3 (Aim-Driven)"
-		SwordStyle.MOULINET_4: return "Form IX: Flattened Infinity"
-		SwordStyle.THRUST_METRONOME: return "Form X: Metronome Thrusts"
+		SwordStyle.BIND: return "Form I: Bind"
 		_: return "Unknown Form"
 
 func _is_elbow_style() -> bool:
@@ -1918,11 +1961,6 @@ func _current_elbow_joint_speed() -> float:
 
 func _current_elbow_pivot_distance() -> float:
 	return 0.0
-
-static func moulinet_smoothing_weight(delta: float, rate: float) -> float:
-	# Preserve the original control direction: lower rate is slower, higher is
-	# faster. The extended 0.05 /s low end allows very heavy reversals.
-	return clampf(1.0 - exp(-maxf(rate, 0.05) * maxf(delta, 0.0)), 0.0, 1.0)
 
 ## Returns whether a newly detected player aim turn opposes the sword's
 ## current tangential motion. This is deliberately event-shaped: callers must
@@ -2100,15 +2138,6 @@ func _update_aim(delta: float) -> void:
 			var flow_boost: float = maxf(1.0, get_combat_contact_setting("rebound_flow_boost"))
 			diff *= flow_boost
 	var desired_step: float = diff * clampf(rot_speed * delta, 0.0, 1.0)
-	# Forms V and VI own their aim-driven direction and continuous accumulator.
-	if sword_style in [SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]:
-		if absf(diff) > 0.005:
-			moulinet_aim_direction_sign = 1.0 if diff > 0.0 else -1.0
-		var smoothing_rate: float = clampf(get_combat_hand_setting("moulinet_aim_smoothing"), 0.05, 30.0)
-		var smoothing_weight: float = moulinet_smoothing_weight(delta, smoothing_rate)
-		moulinet_aim_direction_smoothed = lerpf(moulinet_aim_direction_smoothed, moulinet_aim_direction_sign, smoothing_weight)
-		var spin_speed: float = _sword_cycle_frequency() * TAU * 2.0
-		moulinet_continuous_angle += spin_speed * moulinet_aim_direction_smoothed * delta
 	# If max_turn_speed is configured (> 0), cap the maximum angular turn per second
 	if max_turn_deg > 0.0:
 		var max_step_rad: float = deg_to_rad(max_turn_deg) * delta
@@ -2226,11 +2255,7 @@ func _update_authored_metronome_state(delta: float) -> void:
 	authored_metronome_sheathe_alpha = move_toward(authored_metronome_sheathe_alpha, target_sheathe_alpha, AUTHORED_METRONOME_SHEATHE_FADE_RATE * delta)
 
 func _style_default_swing_frequency() -> float:
-	match sword_style:
-		SwordStyle.THRUST: return thrust_swing_frequency
-		SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4: return moulinet_swing_frequency
-		SwordStyle.THRUST_METRONOME: return thrust_swing_frequency
-		_: return metronome_swing_frequency
+	return metronome_swing_frequency
 
 func _sword_cycle_frequency() -> float:
 	var base_freq: float = get_combat_hand_setting("frequency")
@@ -2253,21 +2278,13 @@ func _sword_cycle_frequency() -> float:
 	return base_freq
 
 func _style_default_rotation_speed() -> float:
-	match sword_style:
-		SwordStyle.THRUST: return thrust_rotation_speed
-		SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4: return moulinet_rotation_speed
-		SwordStyle.THRUST_METRONOME: return thrust_rotation_speed
-		_: return metronome_rotation_speed
+	return metronome_rotation_speed
 
 func _current_rotation_speed() -> float:
 	return get_combat_hand_setting("rotation")
 
 func _style_default_arc_degrees() -> float:
-	match sword_style:
-		SwordStyle.THRUST: return thrust_arc_degrees
-		SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4: return moulinet_arc_degrees
-		SwordStyle.THRUST_METRONOME: return thrust_arc_degrees
-		_: return metronome_arc_degrees
+	return metronome_arc_degrees
 
 func _current_sword_arc_degrees() -> float:
 	var arc: float = get_combat_hand_setting("arc")
@@ -2342,11 +2359,9 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		sword_style = style_idx as SwordStyle
 		for hand_key: String in [
 			"min", "max", "scale", "mouse_drag", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end",
-			"radial_response", "rotation", "arc", "frequency", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks",
+			"radial_response", "rotation", "arc", "frequency", "tempo_assist_enabled", "directional_arc_opening_enabled", "counter_steer_arc_enabled", "counter_steer_arc_compression", "authored_step_enabled", "swing_gesture_gearing_degrees", "slide_sparks", "clash_sparks", "parry_sparks",
 			"bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug", "bind_slide_contact_tolerance", "bind_slide_angle", "bind_slide_cling", "bind_slide_friction", "bind_slide_speed", "bind_slide_duration"
 		]:
-			if hand_key in EXPERIMENTAL_BIND_SETTING_KEYS and style_idx != int(SwordStyle.METRONOME_BIND_B):
-				continue
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
 		sword_style = saved_style
@@ -2354,17 +2369,15 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		combat_hand_settings[tgt_hand_key] = copied_hand
 
 func _combat_hand_key() -> String:
-	var resolved_style: int = int(SwordStyle.METRONOME_BIND_B) if sword_style == SwordStyle.METRONOME_BIND else int(sword_style)
-	return "%d:%d" % [combat_contact_preset, resolved_style]
+	return "%d:%d" % [combat_contact_preset, int(sword_style)]
 
+## Bind is the only surviving form, so its canonical hand key is the active key.
 func _canonical_bind_hand_key() -> String:
-	return "%d:%d" % [combat_contact_preset, int(SwordStyle.METRONOME_BIND_B)]
+	return _combat_hand_key()
 
 func _default_hand_ranges() -> Vector2:
 	if combat_contact_preset >= 2 and _is_metronome_style():
 		return Vector2(5.0, 70.0)
-	if sword_style == SwordStyle.THRUST: return Vector2(15.0, 63.0)
-	if sword_style in [SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3]: return Vector2(20.0, 50.0)
 	return Vector2(30.0, 30.0)
 
 func get_combat_hand_setting_for_sword(sword_id: String, setting: String) -> float:
@@ -2387,7 +2400,7 @@ func set_combat_hand_setting_for_sword(sword_id: String, setting: String, value:
 	if not weapon_overrides.has(key):
 		weapon_overrides[key] = {}
 	var values: Dictionary = weapon_overrides[key] as Dictionary
-	values[setting] = float(clampi(roundi(value), 2, 15)) if setting == "thrusts_per_cycle" else value
+	values[setting] = value
 
 func get_combat_hand_setting(setting: String) -> float:
 	if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS:
@@ -2415,6 +2428,8 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"swing_commitment_duration": return float(values.get("swing_commitment_duration", SWING_COMMITMENT_DURATION_DEFAULT))
 		"tempo_assist_enabled": return float(values.get("tempo_assist_enabled", 0.0))
 		"directional_arc_opening_enabled": return float(values.get("directional_arc_opening_enabled", 0.0))
+		"counter_steer_arc_enabled": return float(values.get("counter_steer_arc_enabled", 1.0))
+		"counter_steer_arc_compression": return float(values.get("counter_steer_arc_compression", COUNTER_STEER_ARC_COMPRESSION_DEFAULT))
 		"authored_step_enabled": return float(values.get("authored_step_enabled", 0.0))
 		"backstep_enabled": return float(values.get("backstep_enabled", 0.0))
 		"swing_gesture_gearing_degrees": return float(values.get("swing_gesture_gearing_degrees", 60.0))
@@ -2437,8 +2452,6 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"rotation": return float(values.get("rotation", 9.5 if (distinct and is_metro) else _style_default_rotation_speed()))
 		"arc": return float(values.get("arc", 105.0 if (distinct and is_metro) else _style_default_arc_degrees()))
 		"frequency": return float(values.get("frequency", 0.65 if (distinct and is_metro) else _style_default_swing_frequency()))
-		"thrusts_per_cycle": return float(clampi(roundi(float(values.get("thrusts_per_cycle", 7.0))), 2, 15))
-		"moulinet_aim_smoothing": return float(values.get("moulinet_aim_smoothing", 6.0))
 		"slide_sparks": return float(values.get("slide_sparks", 6.0))
 		"clash_sparks": return float(values.get("clash_sparks", 9.0 if distinct else 6.0))
 		"parry_sparks": return float(values.get("parry_sparks", 9.0))
@@ -2482,7 +2495,7 @@ func set_combat_hand_setting(setting: String, value: float) -> void:
 	var values: Dictionary = combat_hand_settings[key]
 	var current_minimum: float = get_combat_hand_setting("min")
 	var current_maximum: float = get_combat_hand_setting("max")
-	values[setting] = float(clampi(roundi(value), 2, 15)) if setting == "thrusts_per_cycle" else value
+	values[setting] = value
 	if setting == "min" and current_maximum < value: values["max"] = value
 	if setting == "max" and current_minimum > value: values["min"] = value
 
@@ -2650,6 +2663,11 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_pommel_entry_enabled": result = 1.0
 		"charged_guard_dual_click_entry_enabled": result = 1.0
 		"charged_guard_dual_click_hold_time": result = 0.20
+		"charged_guard_unleash_enabled": result = 1.0
+		"charged_guard_unleash_windup_time": result = 2.0
+		"charged_guard_unleash_flash_time": result = 1.0
+		"charged_guard_unleash_speed_bonus": result = 0.5
+		"charged_guard_unleash_triangle_sensitivity": result = 1.0
 		"charged_guard_hold_duration": result = 0.20
 		"charged_guard_awaken_duration": result = 0.35
 		"charged_guard_break_speed": result = 600.0
@@ -2711,81 +2729,14 @@ func _sword_transform() -> Dictionary:
 	var arc: float = _current_sword_arc_degrees()
 	var raw_sine: float = sin(sword_phase if sword_phase != 0.0 or swing_time == 0.0 else swing_time * TAU * _sword_cycle_frequency())
 
-	# --- PRESET 4: FORM EVOLUTION (Stage 1: A-Thrust -> Stage 2: Metronome V -> Stage 3: Moulinet ∞) ---
-	if combat_contact_preset == 4:
-		var blend_progress: float = clampf(p4_form_blend, 0.0, 1.0)
-		var s1_end: float = clampf(get_combat_contact_setting("p4_stage1_end") / 100.0, 0.1, 0.5)
-		var s2_end: float = clampf(get_combat_contact_setting("p4_stage2_end") / 100.0, s1_end + 0.1, 0.9)
-
-		var t_data_thrust: Dictionary = _calculate_form_thrust(base_angle, radius, arc, raw_sine)
-		var t_data_metro: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
-		var t_data_moulinet: Dictionary = _calculate_form_moulinet(base_angle, radius, arc)
-
-		var result_start: Vector2 = Vector2.ZERO
-		var result_angle: float = 0.0
-
-		if blend_progress <= s1_end:
-			# Morph from pure Thrusting A toward Metronome V
-			var blend: float = blend_progress / s1_end
-			result_start = (t_data_thrust["start"] as Vector2).lerp(t_data_metro["start"] as Vector2, blend)
-			# Both forms are continuous offsets around the same aim angle; avoid shortest-arc branch snaps.
-			result_angle = lerp_angle(float(t_data_thrust["angle"]), float(t_data_metro["angle"]), blend)
-		elif blend_progress <= s2_end:
-			# Morph from Metronome V toward Moulinet ∞
-			var blend: float = (blend_progress - s1_end) / (s2_end - s1_end)
-			result_start = (t_data_metro["start"] as Vector2).lerp(t_data_moulinet["start"] as Vector2, blend)
-			result_angle = lerp_angle(float(t_data_metro["angle"]), float(t_data_moulinet["angle"]), blend)
-		else:
-			# High flow: Moulinet ∞ Overdrive
-			result_start = (t_data_moulinet["start"] as Vector2)
-			result_angle = float(t_data_moulinet["angle"])
-
-		if blade_freeze_left > 0.0:
-			result_angle = frozen_blade_world_angle
-		return _apply_authored_metronome_pose({"start": result_start, "angle": result_angle, "arc_degrees": arc})
-
-	# --- INDIVIDUAL FORMS (Presets 1, 2, 3) ---
-	match sword_style:
-		SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B:
-			var t_windup: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
-			if blade_freeze_left > 0.0:
-				t_windup["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_windup)
-		SwordStyle.THRUST:
-			var t_thrust: Dictionary = _calculate_form_thrust(base_angle, radius, arc, raw_sine)
-			if blade_freeze_left > 0.0:
-				t_thrust["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_thrust)
-		SwordStyle.MOULINET:
-			var t_moul: Dictionary = _calculate_form_moulinet(base_angle, radius, arc)
-			if blade_freeze_left > 0.0:
-				t_moul["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_moul)
-		SwordStyle.MOULINET_2:
-			var t_moul2: Dictionary = _calculate_form_moulinet_2(base_angle, radius, arc)
-			if blade_freeze_left > 0.0:
-				t_moul2["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_moul2)
-		SwordStyle.MOULINET_3:
-			var t_moul3: Dictionary = _calculate_form_moulinet_3(base_angle, radius, arc)
-			if blade_freeze_left > 0.0:
-				t_moul3["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_moul3)
-		SwordStyle.MOULINET_4:
-			var t_moul4: Dictionary = _calculate_form_moulinet_4(base_angle, radius, arc)
-			if blade_freeze_left > 0.0:
-				t_moul4["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_moul4)
-		SwordStyle.THRUST_METRONOME:
-			var t_metro_thrust: Dictionary = _calculate_form_thrust_metronome(base_angle, radius, arc)
-			if blade_freeze_left > 0.0:
-				t_metro_thrust["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_metro_thrust)
-		_:
-			var t_metro: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
-			if blade_freeze_left > 0.0:
-				t_metro["angle"] = frozen_blade_world_angle
-			return _apply_authored_metronome_pose(t_metro)
+	# --- SINGLE FORM ---
+	# Every preset and the one surviving form share the metronome geometry. Preset
+	# 4's former A-Thrust -> Metronome -> Moulinet morph is gone with those forms;
+	# its "evolution" now lives entirely in the frequency/arc scaling above.
+	var t_metro: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
+	if blade_freeze_left > 0.0:
+		t_metro["angle"] = frozen_blade_world_angle
+	return _apply_authored_metronome_pose(t_metro)
 
 func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 	if _authored_metronome_mode_applies():
@@ -2818,6 +2769,8 @@ func _apply_charged_guard_gesture_pose(transform_data: Dictionary) -> Dictionary
 		return _apply_charged_guard_whirlwind_pose(transform_data)
 	if charged_guard_gesture_state == ChargedGuardGesture.ARC_SLASH:
 		return _apply_charged_guard_arc_slash_pose(transform_data)
+	if charged_guard_gesture_state == ChargedGuardGesture.UNLEASH:
+		return _apply_charged_guard_unleash_pose(transform_data)
 	return transform_data
 
 func _apply_charged_guard_arc_slash_pose(transform_data: Dictionary) -> Dictionary:
@@ -2841,6 +2794,34 @@ func _apply_charged_guard_arc_slash_pose(transform_data: Dictionary) -> Dictiona
 			hand_offset = hand_offset.lerp((transform_data["start"] as Vector2) - global_position, recover_ratio)
 	transform_data["angle"] = angle
 	transform_data["start"] = global_position + hand_offset
+	return transform_data
+
+## The unleash's claim on the pose. The blade is held out from the body at the hand radius
+## and, while the path is being chosen, aimed along the recorded path's tangent (toward the
+## cursor while the player draws it). Once the replay begins, the metronome keeps flowing:
+## the blade swings its own arc around the direction of travel rather than locking rigidly to
+## the tangent, so the sword goes about the drawn path the way it goes about any stroke. The
+## body tow in the movement step still drives the body along the path off the tangent, so the
+## swinging blade sweeps around a body that is faithfully tracing the route.
+func _apply_charged_guard_unleash_pose(transform_data: Dictionary) -> Dictionary:
+	var direction: Vector2 = charged_guard_unleash_tangent
+	if direction.length_squared() <= 0.0001:
+		direction = _current_aim_direction()
+	direction = direction.normalized()
+	var base_angle: float = direction.angle()
+	if charged_guard_unleash_phase == 3:
+		# The metronome form, read around the travel direction instead of the aim, so the
+		# flowing swing is the sword's own -- the same geometry, and the same energy blend,
+		# as an ordinary stroke. A resting blade sits on the tangent; a driven one swings.
+		var flowing_pose: Dictionary = _calculate_form_metronome(base_angle, combat_hand_radius, _current_sword_arc_degrees(), sin(_form_phase()))
+		var swing_offset: float = angle_difference(base_angle, float(flowing_pose["angle"]))
+		if _authored_metronome_mode_applies():
+			swing_offset *= clampf(authored_metronome_swing_blend, 0.0, 1.0)
+		transform_data["angle"] = base_angle + swing_offset
+		transform_data["start"] = global_position + direction * combat_hand_radius
+		return transform_data
+	transform_data["angle"] = base_angle
+	transform_data["start"] = global_position + direction * combat_hand_radius
 	return transform_data
 
 ## The whirlwind's claim on the pose: the whole sword sweeps one turn around the player,
@@ -2875,273 +2856,34 @@ func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw
 	# shaped travel amount keeps the extension continuous from reversal to apex.
 	if directional_arc_extension_degrees > 0.0 and not is_zero_approx(shaped_sine):
 		offset += signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(directional_arc_extension_degrees)
+	# Counter-steer compression: the exact mirror of the extension above, on the
+	# destination side only. Scaling by |sine| eases it in from the reversal, and the
+	# sign term guarantees the compressed apex stays on the same side as the blade,
+	# so it can never jump behind the current angle.
+	if counter_steer_compression > 0.0 and not is_zero_approx(shaped_sine):
+		offset -= signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(arc) * counter_steer_compression
 	var result_angle: float = base_angle + offset + sword_hit_recoil_offset
 	return {"start": global_position + Vector2.RIGHT.rotated(base_angle) * radius, "angle": result_angle, "arc_degrees": arc}
+
+## Target compression fraction (0..COUNTER_STEER_ARC_COMPRESSION_MAX) for the active
+## stroke, derived from how strongly deliberate input opposes the blade's current travel.
+## aim_turn_sign is the authored aim-turn direction; travel_sign is the metronome's own
+## travel direction. The single source for the counter-steer gate and strength curve.
+func _counter_steer_compression_target(aim_turn_sign: float, travel_sign: float) -> float:
+	if get_combat_hand_setting("counter_steer_arc_enabled") < 0.5:
+		return 0.0
+	if aim_turn_sign == 0.0 or aim_turn_sign == travel_sign:
+		return 0.0
+	if authored_sword_engagement < TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN:
+		return 0.0
+	var strength: float = smoothstep(TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN, 1.0, clampf(authored_sword_engagement, 0.0, 1.0))
+	return clampf(get_combat_hand_setting("counter_steer_arc_compression"), 0.0, COUNTER_STEER_ARC_COMPRESSION_MAX) * strength
 
 func _form_phase() -> float:
 	return sword_phase if sword_phase != 0.0 or swing_time == 0.0 else swing_time * TAU * _sword_cycle_frequency()
 
-func _thrust_stroke_index(phase: float) -> int:
-	# One complete out-and-back motion is one actual thrust stroke.
-	var count: int = maxi(2, int(get_combat_hand_setting("thrusts_per_cycle")))
-	return floori((phase / TAU) * float(count))
-
-func _thrust_meridian_point(south_pole: Vector2, north_pole: Vector2, longitude: float, progress: float) -> Vector2:
-	# Orthographic globe projection with the poles laid onto the aim axis.
-	# Every longitude has the same two endpoints and bows most at the equator.
-	var t: float = clampf(progress, 0.0, 1.0)
-	var pole_axis: Vector2 = north_pole - south_pole
-	var pole_distance: float = pole_axis.length()
-	if pole_distance < 0.001:
-		return south_pole
-	var lateral_axis: Vector2 = pole_axis.normalized().orthogonal()
-	var globe_radius: float = pole_distance * 0.5
-	var lateral_offset: float = globe_radius * sin(longitude) * sin(PI * t)
-	return south_pole.lerp(north_pole, t) + lateral_axis * lateral_offset
-
-func _thrust_retracted_tip_progress(south_pole: Vector2, north_pole: Vector2, longitude: float) -> float:
-	# Start with the hilt at the south pole and one complete sword already in
-	# front of it. This keeps a rigid weapon while reserving the rest of the
-	# meridian for the actual thrust.
-	if south_pole.distance_to(north_pole) <= BLADE_LENGTH:
-		return 0.0
-	var low: float = 0.0
-	var high: float = 1.0
-	for _iteration: int in range(16):
-		var middle: float = (low + high) * 0.5
-		var point: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, middle)
-		if south_pole.distance_to(point) < BLADE_LENGTH:
-			low = middle
-		else:
-			high = middle
-	return high
-
-func _thrust_hilt_for_tip(south_pole: Vector2, north_pole: Vector2, longitude: float, tip_progress: float, tip: Vector2) -> Vector2:
-	# Find the earlier point on this same longitude one sword-length behind the
-	# tip. The final normalization keeps the rendered/collision sword perfectly
-	# rigid despite the finite binary-search precision.
-	if south_pole.distance_to(tip) < BLADE_LENGTH:
-		var initial_tangent: Vector2 = south_pole.direction_to(_thrust_meridian_point(south_pole, north_pole, longitude, 0.001))
-		if initial_tangent == Vector2.ZERO:
-			initial_tangent = south_pole.direction_to(north_pole)
-		return tip - initial_tangent * BLADE_LENGTH
-	var low: float = 0.0
-	var high: float = tip_progress
-	for _iteration: int in range(16):
-		var middle: float = (low + high) * 0.5
-		var candidate: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, middle)
-		if candidate.distance_to(tip) > BLADE_LENGTH:
-			low = middle
-		else:
-			high = middle
-	var meridian_hilt: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, high)
-	var sword_direction: Vector2 = meridian_hilt.direction_to(tip)
-	return tip - sword_direction * BLADE_LENGTH
-
-func _calculate_form_thrust(base_angle: float, radius: float, arc: float, _raw_sine: float) -> Dictionary:
-	# Form II maps the player and target reach to a globe's south and north poles.
-	# The distance between poles is governed directly by the player's controlled
-	# hand reach radius (combat_hand_radius), ensuring distance/reach control
-	# tracks mouse proximity smoothly instead of jumping all over the screen.
-	var south_pole: Vector2 = global_position
-	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var reach_distance: float = maxf(radius + BLADE_LENGTH, BLADE_LENGTH + 4.0)
-	var north_pole: Vector2 = south_pole + aim_dir * reach_distance
-
-	var count: int = maxi(2, int(get_combat_hand_setting("thrusts_per_cycle")))
-	var phase: float = _form_phase()
-	var stroke_position: float = fposmod(phase / TAU, 1.0) * float(count)
-	var stroke_index: int = mini(floori(stroke_position), count - 1)
-	var stroke_fraction: float = fposmod(stroke_position, 1.0)
-	var next_stroke_index: int = (stroke_index + 1) % count
-	var lane_ratio: float = float(stroke_index) / float(count - 1)
-	var next_lane_ratio: float = float(next_stroke_index) / float(count - 1)
-	# Keep one longitude for the actual stab, then blend toward the next lane
-	# only near full retraction. This removes one-frame lane snaps and fake
-	# swept-blade velocity while preserving the shared polar endpoints.
-	var lane_handoff: float = smoothstep(0.82, 1.0, stroke_fraction)
-	var lane_coordinate: float = lerpf(lerpf(-1.0, 1.0, lane_ratio), lerpf(-1.0, 1.0, next_lane_ratio), lane_handoff)
-	var max_longitude: float = minf(deg_to_rad(arc), PI * 0.48)
-	var longitude: float = lane_coordinate * max_longitude
-
-	var local_phase: float = stroke_fraction * TAU
-	var thrust_amount: float = 0.5 * (1.0 - cos(local_phase))
-	var retracted_tip_progress: float = _thrust_retracted_tip_progress(south_pole, north_pole, longitude)
-	var tip_progress: float = lerpf(retracted_tip_progress, 1.0, thrust_amount)
-	var tip_world: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, tip_progress)
-	# The meridian bow can otherwise push the tip farther from the player than
-	# the configured hand reach. Keep the entire Form II envelope bounded while
-	# preserving the authored thrust path inside that envelope.
-	var maximum_tip_distance: float = radius + BLADE_LENGTH
-	var tip_offset: Vector2 = south_pole.direction_to(tip_world) * maximum_tip_distance
-	if south_pole.distance_to(tip_world) > maximum_tip_distance:
-		tip_world = south_pole + tip_offset
-	var hilt_world: Vector2 = _thrust_hilt_for_tip(south_pole, north_pole, longitude, tip_progress, tip_world)
-	var blade_direction: Vector2 = hilt_world.direction_to(tip_world)
-	if blade_direction == Vector2.ZERO:
-		blade_direction = aim_dir
-	# Recoil rotates around the tip so convergence remains exact.
-	blade_direction = blade_direction.rotated(sword_hit_recoil_offset)
-	hilt_world = tip_world - blade_direction * BLADE_LENGTH
-	var active_blade_angle: float = blade_direction.angle()
-	var anchor: Vector2 = hilt_world + blade_direction * BLADE_HILT_INSET
-	return {"start": anchor, "angle": active_blade_angle, "arc_degrees": arc}
-
 func _uses_hilt_trail() -> bool:
-	return _is_moulinet_style() or _is_metronome_style()
-
-func _is_moulinet_style() -> bool:
-	return sword_style in [SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]
-
-func _calculate_form_moulinet(base_angle: float, radius: float, arc: float) -> Dictionary:
-	# Form III: Moulinet 1 (Full Figure-8 Ping-Pong):
-	# Completes a full figure-8 (right lobe then left lobe) with a +720° spin,
-	# then smoothly reverses and completes the next figure-8 with a -720° spin.
-	# Phase mapping: t = phase * 0.5 (period 4*PI), u = PI * (1 - cos(t))
-	var phase: float = _form_phase()
-	var t: float = fposmod(phase * 0.5, TAU)
-	var u: float = PI * (1.0 - cos(t))
-
-	# Aim center follows the true hand radius.
-	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var forward_dist: float = radius
-	var center: Vector2 = global_position + aim_dir * forward_dist
-
-	# Lobe dimensions: lateral width and forward height
-	var spread_factor: float = clampf(arc / 75.0, 0.5, 2.0)
-	var lateral_width: float = 32.0 * spread_factor
-	var forward_height: float = 20.0 * spread_factor
-
-	# 1. Hilt Lissajous position
-	var local_forward: float = forward_height * sin(2.0 * u)
-	var local_lateral: float = lateral_width * sin(u)
-	var local_hilt: Vector2 = Vector2(local_forward, local_lateral)
-	var hilt_world: Vector2 = center + local_hilt.rotated(base_angle)
-
-	# 2. Smooth ping-pong rotation: 0 -> +720° -> 0
-	var result_angle: float = base_angle + (2.0 * u) + sword_hit_recoil_offset
-
-	# start is the rendering pivot (start = hilt + dir * BLADE_HILT_INSET)
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
-	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
-
-func _calculate_form_moulinet_2(base_angle: float, radius: float, arc: float) -> Dictionary:
-	# Form IV: Moulinet 2 (Single-Lobe Alternating — Chat's Formula):
-	# Right lobe = rotate Clockwise (+360°). Cross center.
-	# Left lobe = rotate Counter-Clockwise (-360°). Cross center. Repeat.
-	# Formula:
-	#   hilt = (forward_height * sin(2*phi), lateral_width * sin(phi))
-	#   rotation = PI * (1.0 - cos(phi))
-	# Angular velocity is proportional to sin(phi) which is EXACTLY 0 at the crossover!
-	# The hilt translation carries the blade through the center without any stutter.
-	var phase: float = _form_phase()
-	var phi: float = fposmod(phase, TAU)
-
-	# Aim center follows player reach
-	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var forward_dist: float = maxf(radius + 15.0, 35.0)
-	var center: Vector2 = global_position + aim_dir * forward_dist
-
-	# Lobe dimensions
-	var spread_factor: float = clampf(arc / 75.0, 0.5, 2.0)
-	var lateral_width: float = 32.0 * spread_factor
-	var forward_height: float = 20.0 * spread_factor
-
-	# 1. Hilt Lissajous position
-	var local_forward: float = forward_height * sin(2.0 * phi)
-	var local_lateral: float = lateral_width * sin(phi)
-	var local_hilt: Vector2 = Vector2(local_forward, local_lateral)
-	var hilt_world: Vector2 = center + local_hilt.rotated(base_angle)
-
-	# 2. Alternating rotation (CW on right lobe, CCW on left lobe)
-	var blade_rot: float = PI * (1.0 - cos(phi))
-	var result_angle: float = base_angle + blade_rot + sword_hit_recoil_offset
-
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
-	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
-
-func _calculate_form_moulinet_3(base_angle: float, radius: float, arc: float) -> Dictionary:
-	# Form V: Moulinet 3 (Aim-Driven Direction):
-	# Spin direction dynamically aligns with the player's mouse/stick swing:
-	# - Swiping aim to the right -> spins Clockwise (+cuts).
-	# - Swiping aim to the left -> spins Counter-Clockwise (+cuts).
-	# Uses continuous angular integration (moulinet_continuous_angle) so reversing direction
-	# smoothly decelerates and flows the other way without ANY rubber-banding or angle snapping.
-	var phase: float = _form_phase()
-	var phi: float = fposmod(phase, TAU)
-
-	# Aim center follows the true hand radius.
-	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var forward_dist: float = radius
-	var center: Vector2 = global_position + aim_dir * forward_dist
-
-	# Lobe dimensions
-	var spread_factor: float = clampf(arc / 75.0, 0.5, 2.0)
-	var lateral_width: float = 32.0 * spread_factor
-	var forward_height: float = 20.0 * spread_factor
-
-	# Direction scale (-1.0 for CCW left-swing, +1.0 for CW right-swing)
-	var spin_dir: float = moulinet_aim_direction_smoothed
-
-	# 1. Hilt Lissajous position (mirrored laterally when sweeping left)
-	var local_forward: float = forward_height * sin(2.0 * phi)
-	var local_lateral: float = lateral_width * sin(phi) * spin_dir
-	var local_hilt: Vector2 = Vector2(local_forward, local_lateral)
-	var hilt_world: Vector2 = center + local_hilt.rotated(base_angle)
-
-	# 2. Blade rotation integrated smoothly over time
-	var active_rot: float = moulinet_continuous_angle
-	var result_angle: float = base_angle + active_rot + sword_hit_recoil_offset
-
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
-	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
-
-func _calculate_form_moulinet_4(base_angle: float, radius: float, arc: float) -> Dictionary:
-	# Form VI: a deliberately flattened infinity flourish. The hilt traces a
-	# horizontal figure-eight while the blade follows the path tangent, keeping
-	# the flourish readable instead of spinning independently like Form V.
-	var phi: float = _form_phase()
-	var spread_factor: float = clampf(arc / 75.0, 0.5, 1.5)
-	var lateral_width: float = 46.0 * spread_factor
-	var forward_height: float = 11.0 * spread_factor
-	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var center: Vector2 = global_position + aim_dir * radius
-	var spin_dir: float = moulinet_aim_direction_smoothed
-	var local_forward: float = forward_height * sin(2.0 * phi)
-	var local_lateral: float = lateral_width * sin(phi) * spin_dir
-	var local_hilt: Vector2 = center + Vector2(local_forward, local_lateral).rotated(base_angle)
-	var tangent_local: Vector2 = Vector2(2.0 * forward_height * cos(2.0 * phi), lateral_width * cos(phi) * spin_dir)
-	# Form VI mirrors its infinity when the player's aim sweep reverses, just like Form V.
-	var tangent: Vector2 = tangent_local.rotated(base_angle)
-	if tangent.length_squared() < 0.01: tangent = aim_dir
-	var result_angle: float = tangent.angle() + sword_hit_recoil_offset
-	var anchor: Vector2 = local_hilt + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
-	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
-
-func _calculate_form_thrust_metronome(base_angle: float, radius: float, arc: float) -> Dictionary:
-	# Form VII: discrete-feeling thrust lanes inside a metronome arc. The blade
-	# starts on the right, thrusts left, then thrusts right again; it retracts
-	# before changing lane, so it stabs rather than sweeping between lanes.
-	var phase: float = _form_phase()
-	var lane_sequence: Array[float] = [1.0, -1.0, 1.0]
-	var count: int = lane_sequence.size()
-	var stroke_position: float = fposmod(phase / TAU, 1.0) * float(count)
-	var stroke_index: int = mini(floori(stroke_position), count - 1)
-	var stroke_fraction: float = fposmod(stroke_position, 1.0)
-	var lane: float = lane_sequence[stroke_index]
-	var next_lane: float = lane_sequence[(stroke_index + 1) % count]
-	var retraction: float = smoothstep(0.68, 0.92, stroke_fraction)
-	var lane_value: float = lerpf(lane, next_lane, retraction)
-	var stab_progress: float = smoothstep(0.05, 0.58, stroke_fraction)
-	stab_progress = 1.0 - smoothstep(0.58, 0.96, stroke_fraction) if stroke_fraction > 0.58 else stab_progress
-	var result_angle: float = base_angle + lane_value * deg_to_rad(minf(arc, 48.0)) + sword_hit_recoil_offset
-	var blade_dir: Vector2 = Vector2.RIGHT.rotated(result_angle)
-	var minimum_hilt_distance: float = maxf(8.0, radius - 24.0)
-	var maximum_hilt_distance: float = maxf(minimum_hilt_distance + 8.0, radius + 18.0)
-	var hilt_distance: float = lerpf(maximum_hilt_distance, minimum_hilt_distance, stab_progress)
-	var hilt_world: Vector2 = global_position + blade_dir * hilt_distance
-	var anchor: Vector2 = hilt_world + blade_dir * BLADE_HILT_INSET
-	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
+	return _is_metronome_style()
 
 ## Default mid-point t used as the starting slider value for a sword whose
 ## BLADE_PROFILES entry has no interior control point (e.g. Basic Longsword).
@@ -3566,6 +3308,88 @@ static func gesture_bounds(path: PackedVector2Array) -> Rect2:
 		high = high.max(point)
 	return Rect2(low, high - low)
 
+## Perpendicular/endpoint distance from a point to a segment. Shared by the triangle
+## fit so a stroke can be tested for hugging each of its three edges.
+static func gesture_point_segment_distance(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab: Vector2 = b - a
+	var length_squared: float = ab.length_squared()
+	if length_squared <= 0.0001:
+		return point.distance_to(a)
+	var t: float = clampf((point - a).dot(ab) / length_squared, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
+
+## Rough triangle read. The stroke is fitted to its three extremities: the corner
+## farthest from the centre of mass, the corner farthest from that one, and the corner
+## farthest from the line joining them. It then checks the three edges are substantial,
+## that the path stays close to the triangle's outline, and -- crucially -- that every
+## edge was actually drawn. A V or a bare line shares two of those corners but leaves
+## one edge empty, so they fail the last check while a loosely drawn triangle passes.
+## Sensitivity scales the tolerances: higher accepts rougher, smaller triangles.
+static func gesture_triangle_qualified(path: PackedVector2Array, stroke_time: float, sensitivity: float, window: float) -> bool:
+	if path.size() < CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_SAMPLES:
+		return false
+	if stroke_time > window:
+		return false
+	var looseness: float = clampf(sensitivity, 0.3, 3.0)
+	var minimum_edge: float = CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_EDGE / looseness
+	var minimum_perimeter: float = CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_PERIMETER / looseness
+	var maximum_deviation_ratio: float = CHARGED_GUARD_UNLEASH_TRIANGLE_MAX_EDGE_DEVIATION * looseness
+	var centroid: Vector2 = gesture_centroid(path)
+	var first_corner: Vector2 = path[0]
+	var best: float = -1.0
+	for point: Vector2 in path:
+		var distance_squared: float = point.distance_squared_to(centroid)
+		if distance_squared > best:
+			best = distance_squared
+			first_corner = point
+	var second_corner: Vector2 = path[0]
+	best = -1.0
+	for point: Vector2 in path:
+		var distance_squared: float = point.distance_squared_to(first_corner)
+		if distance_squared > best:
+			best = distance_squared
+			second_corner = point
+	var axis: Vector2 = second_corner - first_corner
+	if axis.length() < minimum_edge:
+		return false
+	var normal: Vector2 = axis.normalized().orthogonal()
+	var third_corner: Vector2 = path[0]
+	best = -1.0
+	for point: Vector2 in path:
+		var depth: float = absf((point - first_corner).dot(normal))
+		if depth > best:
+			best = depth
+			third_corner = point
+	var edge_a: float = first_corner.distance_to(second_corner)
+	var edge_b: float = second_corner.distance_to(third_corner)
+	var edge_c: float = third_corner.distance_to(first_corner)
+	if minf(edge_a, minf(edge_b, edge_c)) < minimum_edge:
+		return false
+	var perimeter: float = edge_a + edge_b + edge_c
+	if perimeter < minimum_perimeter:
+		return false
+	var edge_tolerance: float = (perimeter / 3.0) * maximum_deviation_ratio
+	var cover_needed: int = maxi(3, int(ceil(float(path.size()) * CHARGED_GUARD_UNLEASH_TRIANGLE_MIN_EDGE_COVERAGE)))
+	var edges: Array = [first_corner, second_corner, third_corner]
+	var cover: PackedInt32Array = PackedInt32Array([0, 0, 0])
+	for point: Vector2 in path:
+		var nearest_index: int = 0
+		var nearest: float = INF
+		for edge_index: int in range(3):
+			var edge_start: Vector2 = edges[edge_index] as Vector2
+			var edge_end: Vector2 = edges[(edge_index + 1) % 3] as Vector2
+			var distance: float = gesture_point_segment_distance(point, edge_start, edge_end)
+			if distance < nearest:
+				nearest = distance
+				nearest_index = edge_index
+		if nearest > edge_tolerance:
+			return false
+		cover[nearest_index] += 1
+	for edge_index: int in range(3):
+		if cover[edge_index] < cover_needed:
+			return false
+	return true
+
 static func gesture_subpath(path: PackedVector2Array, first: int, last: int) -> PackedVector2Array:
 	var part: PackedVector2Array = PackedVector2Array()
 	for index: int in range(first, last + 1):
@@ -3866,8 +3690,14 @@ func _update_charged_guard_gesture(delta: float) -> void:
 	charged_guard_gesture_flash_left = maxf(0.0, charged_guard_gesture_flash_left - delta)
 	charged_guard_gesture_trail_left = maxf(0.0, charged_guard_gesture_trail_left - delta)
 	_decay_charged_guard_gesture_sparks(delta)
+	if charged_guard_gesture_state != ChargedGuardGesture.UNLEASH:
+		# Any ability that is not the unleash owns the pose: release the unleash's time
+		# dilation and drop its stale state, so nothing it set can outlive it.
+		_clear_charged_guard_unleash_state()
 	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
-		if charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
+		if charged_guard_gesture_state == ChargedGuardGesture.UNLEASH:
+			_advance_charged_guard_unleash(delta)
+		elif charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
 			_advance_charged_guard_whirlwind(delta)
 		elif charged_guard_gesture_state == ChargedGuardGesture.ARC_SLASH:
 			_advance_charged_guard_arc_slash(delta)
@@ -3919,10 +3749,16 @@ func _update_charged_guard_gesture(delta: float) -> void:
 		return
 	# One reading per stroke: qualified or not, this stroke is finished.
 	charged_guard_gesture_spent = true
-	# The circle is read first purely because it is the more specific shape. The two can
-	# never both match, so this is a courtesy rather than arbitration.
+	# Read most-specific first. The triangle demands straight edges, so a circle can never
+	# satisfy it and is left to the whirlwind below; that ordering is what keeps a rough
+	# triangle -- which would otherwise also satisfy the looser circle bars -- from being
+	# swallowed as a spin. The triangle likewise precedes the V, since it carries two
+	# V-like corners of its own.
 	var read_as: String = "nothing"
-	if gesture_circle_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, CHARGED_GUARD_GESTURE_CIRCLE_WINDOW):
+	if get_combat_contact_setting("charged_guard_unleash_enabled") >= 0.5 and gesture_triangle_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, get_combat_contact_setting("charged_guard_unleash_triangle_sensitivity"), CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW):
+		read_as = "unleash"
+		_begin_charged_guard_unleash()
+	elif gesture_circle_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, CHARGED_GUARD_GESTURE_CIRCLE_WINDOW):
 		read_as = "whirlwind"
 		_begin_charged_guard_whirlwind()
 	elif gesture_v_vertex_index(charged_guard_gesture_path, charged_guard_gesture_stroke_time) >= 0:
@@ -4088,6 +3924,156 @@ func _advance_charged_guard_arc_slash(delta: float) -> void:
 	charged_guard_gesture_phase_time += delta
 	if charged_guard_gesture_phase_time < CHARGED_GUARD_ARC_SLASH_WINDUP + CHARGED_GUARD_ARC_SLASH_SWEEP + CHARGED_GUARD_ARC_SLASH_RECOVER:
 		return
+	charged_guard_gesture_state = ChargedGuardGesture.NONE
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_has_cursor = false
+
+## The cursor's world position: the gesture cursor is captured in screen space (camera-free),
+## so the recorded path is projected back through the live camera and anchored in the world
+## exactly where the player drew it.
+func _charged_guard_unleash_cursor_world() -> Vector2:
+	return get_viewport().get_canvas_transform().affine_inverse() * charged_guard_gesture_cursor
+
+func _charged_guard_unleash_cursor_direction() -> Vector2:
+	var to_cursor: Vector2 = _charged_guard_unleash_cursor_world() - global_position
+	return to_cursor.normalized() if to_cursor.length_squared() > 0.0001 else _current_aim_direction()
+
+## The un-scaled frame time. The windup runs while world time is dialed down, so its own
+## flash and windup must be counted in real seconds and the stroke must keep sampling the
+## cursor every frame -- only the world is slow, not the drawing.
+func _charged_guard_unleash_real_delta(delta: float) -> float:
+	return delta / maxf(Engine.time_scale, 0.001)
+
+func _set_charged_guard_unleash_slowmo(active: bool) -> void:
+	if get_tree() == null:
+		return
+	var main_scene: Node = get_tree().current_scene
+	if main_scene != null and main_scene.has_method("set_charged_guard_unleash_slowmo"):
+		main_scene.call("set_charged_guard_unleash_slowmo", active, CHARGED_GUARD_UNLEASH_WORLD_SCALE)
+
+## A rough triangle discharges the guard into the unleash: the tip snaps to the cursor and
+## flashes, time drops while a red trail is drawn, and then the sword replays that path.
+func _begin_charged_guard_unleash() -> void:
+	charged_guard_unleash_phase = 1
+	charged_guard_unleash_flash_left = maxf(0.1, get_combat_contact_setting("charged_guard_unleash_flash_time"))
+	charged_guard_unleash_windup_left = maxf(0.0, get_combat_contact_setting("charged_guard_unleash_windup_time"))
+	charged_guard_unleash_path.clear()
+	charged_guard_unleash_lengths.clear()
+	charged_guard_unleash_total = 0.0
+	charged_guard_unleash_distance = 0.0
+	charged_guard_unleash_speed = 0.0
+	charged_guard_unleash_tangent = _charged_guard_unleash_cursor_direction()
+	charged_guard_unleash_tip = _charged_guard_unleash_cursor_world()
+	charged_guard_gesture_state = ChargedGuardGesture.UNLEASH
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_flash_left = CHARGED_GUARD_GESTURE_FLASH_TIME
+	# The triangle stroke is consumed: it stays on screen through the flash as the trail,
+	# but can no longer be read or extended, exactly as the other abilities consume theirs.
+	charged_guard_gesture_active = false
+	charged_guard_gesture_spent = true
+	charged_guard_gesture_break_pending = false
+	_spawn_charged_guard_gesture_sparks(charged_guard_gesture_cursor, CHARGED_GUARD_GESTURE_SPARK_BURST, 11.0)
+	# Activation consumes the guard.
+	charged_guard_locked = false
+	_clear_charged_guard_attempt()
+	hit_ids.clear()
+
+func _advance_charged_guard_unleash(delta: float) -> void:
+	var real_delta: float = _charged_guard_unleash_real_delta(delta)
+	charged_guard_gesture_phase_time += real_delta
+	match charged_guard_unleash_phase:
+		1:
+			charged_guard_unleash_flash_left -= real_delta
+			charged_guard_unleash_tangent = _charged_guard_unleash_cursor_direction()
+			charged_guard_unleash_tip = _charged_guard_unleash_cursor_world()
+			if charged_guard_unleash_flash_left <= 0.0:
+				_begin_charged_guard_unleash_windup()
+		2:
+			charged_guard_unleash_windup_left -= real_delta
+			var cursor_world: Vector2 = _charged_guard_unleash_cursor_world()
+			charged_guard_unleash_tangent = _charged_guard_unleash_cursor_direction()
+			charged_guard_unleash_tip = cursor_world
+			if charged_guard_unleash_path.is_empty() or cursor_world.distance_to(charged_guard_unleash_path[charged_guard_unleash_path.size() - 1]) >= CHARGED_GUARD_GESTURE_MOVE_EPSILON:
+				charged_guard_unleash_path.append(cursor_world)
+			# The red trail tracks the whole windup.
+			charged_guard_gesture_trail_left = CHARGED_GUARD_GESTURE_TRAIL_FADE
+			if charged_guard_unleash_windup_left <= 0.0:
+				_begin_charged_guard_unleash_replay()
+		3:
+			_advance_charged_guard_unleash_replay(real_delta)
+
+func _begin_charged_guard_unleash_windup() -> void:
+	charged_guard_unleash_phase = 2
+	charged_guard_unleash_path.clear()
+	charged_guard_unleash_path.append(_charged_guard_unleash_cursor_world())
+	# Time drops while the player draws the red path.
+	_set_charged_guard_unleash_slowmo(true)
+
+## Precompute the path's cumulative arc length and the traverse speed, then begin running
+## the body along it. A path too short to play just ends the ability cleanly.
+func _begin_charged_guard_unleash_replay() -> void:
+	charged_guard_unleash_phase = 3
+	_set_charged_guard_unleash_slowmo(false)
+	charged_guard_unleash_distance = 0.0
+	# The body travels at the player's own move speed plus the tuned bonus, so the feel of
+	# the unleash does not depend on how fast the cursor happened to be dragged.
+	charged_guard_unleash_speed = maxf(1.0, move_speed * (1.0 + get_combat_contact_setting("charged_guard_unleash_speed_bonus")))
+	charged_guard_unleash_lengths.clear()
+	charged_guard_unleash_total = 0.0
+	if charged_guard_unleash_path.size() >= 2:
+		charged_guard_unleash_lengths.append(0.0)
+		for index: int in range(1, charged_guard_unleash_path.size()):
+			charged_guard_unleash_total += charged_guard_unleash_path[index].distance_to(charged_guard_unleash_path[index - 1])
+			charged_guard_unleash_lengths.append(charged_guard_unleash_total)
+	if charged_guard_unleash_total < 1.0:
+		_finish_charged_guard_unleash()
+		return
+	_cache_charged_guard_unleash_sample(0.0)
+	# A fresh swing, so the unleash's cuts land even if the metronome's current stroke has
+	# already spent its repeat-hit suppression.
+	hit_ids.clear()
+
+func _advance_charged_guard_unleash_replay(real_delta: float) -> void:
+	charged_guard_unleash_distance += charged_guard_unleash_speed * real_delta
+	if charged_guard_unleash_distance >= charged_guard_unleash_total:
+		_finish_charged_guard_unleash()
+		return
+	_cache_charged_guard_unleash_sample(charged_guard_unleash_distance)
+
+## Sample the recorded path at the given arc length, setting the tip and its tangent.
+func _cache_charged_guard_unleash_sample(distance: float) -> void:
+	var count: int = charged_guard_unleash_path.size()
+	if count < 2:
+		return
+	var segment: int = 0
+	while segment < count - 2 and charged_guard_unleash_lengths[segment + 1] < distance:
+		segment += 1
+	var segment_start: float = charged_guard_unleash_lengths[segment]
+	var segment_length: float = charged_guard_unleash_lengths[segment + 1] - segment_start
+	var ratio: float = 0.0 if segment_length <= 0.0001 else clampf((distance - segment_start) / segment_length, 0.0, 1.0)
+	var a: Vector2 = charged_guard_unleash_path[segment]
+	var b: Vector2 = charged_guard_unleash_path[segment + 1]
+	charged_guard_unleash_tip = a.lerp(b, ratio)
+	var direction: Vector2 = b - a
+	if direction.length_squared() > 0.0001:
+		charged_guard_unleash_tangent = direction.normalized()
+
+## Clear the unleash's own state and, above all, release the world time dilation it may
+## still be holding. Safe to call when nothing is active.
+func _clear_charged_guard_unleash_state() -> void:
+	if charged_guard_unleash_phase == 0 and charged_guard_unleash_path.is_empty():
+		return
+	_set_charged_guard_unleash_slowmo(false)
+	charged_guard_unleash_phase = 0
+	charged_guard_unleash_path.clear()
+	charged_guard_unleash_lengths.clear()
+	charged_guard_unleash_total = 0.0
+	charged_guard_unleash_distance = 0.0
+	charged_guard_unleash_flash_left = 0.0
+	charged_guard_unleash_windup_left = 0.0
+
+func _finish_charged_guard_unleash() -> void:
+	_clear_charged_guard_unleash_state()
 	charged_guard_gesture_state = ChargedGuardGesture.NONE
 	charged_guard_gesture_phase_time = 0.0
 	charged_guard_gesture_has_cursor = false
@@ -4368,6 +4354,13 @@ func _update_sword(delta: float) -> void:
 		directional_arc_extension_degrees = authored_stroke_drive * DIRECTIONAL_ARC_OPENING_DEGREES
 	else:
 		directional_arc_extension_degrees = 0.0
+	# Counter-Steer Arc Compression: deliberate input pointing against the blade's
+	# current travel compresses the destination side of the active stroke. Direction
+	# comes from player_aim_turn_sign, strength from authored_sword_engagement, so no
+	# new swing-direction or input system is introduced. The value is smoothed by one
+	# rate and never touches sword_delta/sword_phase, so the metronome cadence is exact.
+	var counter_steer_target: float = _counter_steer_compression_target(player_aim_turn_sign, autonomous_travel_sign)
+	counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 	sword_delta *= tempo_assist_multiplier
 	var windup_profile: float = get_combat_hand_setting("windup_profile") if _is_windup_metronome_style() else 0.0
 	if windup_profile > 0.0:
@@ -4387,16 +4380,9 @@ func _update_sword(delta: float) -> void:
 	var transform_data: Dictionary = _sword_transform()
 	var current_angle: float = float(transform_data["angle"])
 
-	# Keep Form I reversal timing unchanged. Form II resets once per actual stab.
-	# Preset 4 uses the dominant stage's cadence (thrust in the first half of its blend).
-	var thrust_cadence: bool = sword_style in [SwordStyle.THRUST, SwordStyle.THRUST_METRONOME]
-	if combat_contact_preset == 4:
-		var thrust_stage_end: float = clampf(get_combat_contact_setting("p4_stage1_end") / 100.0, 0.1, 0.5)
-		thrust_cadence = p4_form_blend < thrust_stage_end * 0.5
+	# A stroke boundary is a metronome reversal: the sine's sign change.
 	var stroke_boundaries: int = 0
-	if thrust_cadence:
-		stroke_boundaries = _thrust_stroke_index(previous_phase + sword_delta * swing_frequency * TAU) - _thrust_stroke_index(previous_phase)
-	elif (cos(previous_phase) >= 0.0) != (cos(sword_phase) >= 0.0):
+	if (cos(previous_phase) >= 0.0) != (cos(sword_phase) >= 0.0):
 		stroke_boundaries = 1
 	for _stroke_index: int in range(stroke_boundaries):
 		var completed_stroke_drive: float = authored_stroke_drive
@@ -4408,6 +4394,7 @@ func _update_sword(delta: float) -> void:
 		tempo_assist_multiplier = 1.0
 		authored_stroke_drive = 0.0
 		directional_arc_extension_degrees = 0.0
+		counter_steer_compression = 0.0
 		# Preserve bonuses and per-stroke hit suppression, including phase wrap.
 		hit_ids.clear()
 		swing_count += 1
@@ -4478,7 +4465,7 @@ func _update_sword(delta: float) -> void:
 	# point is exactly that, for any blade shape. The hilt trail is already
 	# correct as-is: every profile's t=0 point has offset 0 by construction.
 	blade_trail_points.push_front(current_blade_samples[current_blade_samples.size() - 1])
-	var max_trail_len: int = 42 if _is_moulinet_style() else 12
+	var max_trail_len: int = 12
 	if blade_trail_points.size() > max_trail_len: blade_trail_points.pop_back()
 	if _uses_hilt_trail():
 		hilt_trail_points.push_front(current_start)
@@ -6065,6 +6052,31 @@ func _draw() -> void:
 			var blade_hilt: Vector2 = global_position + start - blade_direction * BLADE_HILT_INSET
 			flame_blade_samples = _blade_polyline_samples(blade_hilt, blade_direction)
 		_draw_hd_sword_fire(flame_blade_samples, fire_fade)
+	# The unleash's red: a grounded aura around the body while the path is drawn, and the
+	# blue/white flash where the tip snapped on activation. Deliberately distinct from the
+	# guard's blue ring -- this is the windup, not the guard.
+	if charged_guard_gesture_state == ChargedGuardGesture.UNLEASH:
+		var unleash_flash: float = clampf(charged_guard_gesture_flash_left / maxf(0.001, CHARGED_GUARD_GESTURE_FLASH_TIME), 0.0, 1.0)
+		if charged_guard_unleash_phase == 2:
+			# Pulsing red heat under the player as the recorded path is drawn.
+			var heat: float = 0.5 + 0.5 * sin(float(Time.get_ticks_msec()) * 0.012)
+			var aura: Color = CHARGED_GUARD_UNLEASH_RED
+			aura.a = 0.18 + 0.14 * heat
+			draw_circle(Vector2.ZERO, 30.0 + 4.0 * heat, aura)
+			var rim: Color = CHARGED_GUARD_UNLEASH_RED
+			rim.a = 0.5
+			draw_arc(Vector2.ZERO, 34.0 + 3.0 * heat, 0.0, TAU, 40, rim, 2.0, true)
+		if unleash_flash > 0.0:
+			# The snap: a white-hot bloom at the blade tip that cools back toward red.
+			var unleash_sword_data: Dictionary = _sword_transform()
+			var unleash_tip_direction: Vector2 = Vector2.RIGHT.rotated(float(unleash_sword_data["angle"]))
+			var unleash_tip_local: Vector2 = (unleash_sword_data["start"] as Vector2) - global_position + unleash_tip_direction * (BLADE_LENGTH - BLADE_HILT_INSET)
+			var flash_glow: Color = CHARGED_GUARD_UNLEASH_RED.lerp(FlowColorUtils.CHARGE_WHITE_TONE, unleash_flash)
+			flash_glow.a = 0.5 * unleash_flash
+			draw_circle(unleash_tip_local, 22.0 * unleash_flash + 6.0, flash_glow)
+			var flash_core: Color = FlowColorUtils.CHARGE_WHITE_TONE
+			flash_core.a = unleash_flash
+			draw_circle(unleash_tip_local, 6.0 * unleash_flash + 2.0, flash_core)
 	# The gesture trail: what the player is drawing, drawn. Recognition is measured on the
 	# cursor's own screen positions, so the trail comes from those same points, projected
 	# back through the live camera. The stroke therefore stays exactly where the cursor
@@ -6079,24 +6091,37 @@ func _draw() -> void:
 		# Biased toward the saturated blue end of the shimmer, so the stroke reads as a solid
 		# blue ribbon instead of washing out, while still breathing with the hand glow.
 		var trail_blue: Color = trail_shimmer.lerp(FlowColorUtils.CHARGE_BLUE_TONE, 0.35)
+		# The unleash's trail is red -- the colour of the windup and the recorded cut.
+		if charged_guard_gesture_state == ChargedGuardGesture.UNLEASH:
+			trail_blue = CHARGED_GUARD_UNLEASH_RED
 		var trail_lit: Color = trail_blue.lerp(FlowColorUtils.CHARGE_WHITE_TONE, trail_flash * 0.75)
 		var screen_to_local: Transform2D = get_viewport().get_canvas_transform().affine_inverse()
-		var drawn_gesture_path: PackedVector2Array = charged_guard_entry_path if drawing_entry else charged_guard_gesture_path
-		var trail_count: int = drawn_gesture_path.size()
+		# While the unleash is flashing it has not recorded a path yet, so the triangle stroke
+		# it was fired from stays on screen; once the red path has two points, that recorded
+		# path takes over and is drawn as it is being sketched.
+		var drawing_unleash: bool = charged_guard_gesture_state == ChargedGuardGesture.UNLEASH and charged_guard_unleash_path.size() >= 2
+		var drawn_gesture_path: PackedVector2Array = charged_guard_entry_path if drawing_entry else (charged_guard_unleash_path if drawing_unleash else charged_guard_gesture_path)
+		# The unleash records the cursor's world positions, so its path is already in world
+		# space; every other stroke is measured on the cursor's screen positions and is
+		# projected back through the live camera here. Either way it ends up player-local.
+		var drawn_local_path: PackedVector2Array = PackedVector2Array()
+		for path_point: Vector2 in drawn_gesture_path:
+			drawn_local_path.append((path_point if drawing_unleash else screen_to_local * path_point) - global_position)
+		var trail_count: int = drawn_local_path.size()
 		if charged_guard_gesture_trail_left > 0.0 and trail_count > 1:
 			for trail_index: int in range(trail_count - 1):
 				# Brightest at the cursor and fading back down the stroke, so it is the head
 				# of the drawn line that reads rather than its dusty beginning.
 				var segment_fade: float = float(trail_index + 1) / float(trail_count)
-				var trail_start: Vector2 = (screen_to_local * drawn_gesture_path[trail_index]) - global_position
-				var trail_end: Vector2 = (screen_to_local * drawn_gesture_path[trail_index + 1]) - global_position
+				var trail_start: Vector2 = drawn_local_path[trail_index]
+				var trail_end: Vector2 = drawn_local_path[trail_index + 1]
 				var trail_color: Color = trail_lit
 				trail_color.a = (0.55 + trail_flash * 0.4) * trail_fade * segment_fade
 				draw_line(trail_start, trail_end, trail_color, CHARGED_GUARD_GESTURE_TRAIL_WIDTH + trail_flash * 3.0, true)
 		if charged_guard_gesture_trail_left > 0.0 and trail_count > 0:
 			# A soft glow on the drawing point itself, so the stroke has a visible head
 			# instead of stopping dead where the cursor is.
-			var head_position: Vector2 = (screen_to_local * drawn_gesture_path[trail_count - 1]) - global_position
+			var head_position: Vector2 = drawn_local_path[trail_count - 1]
 			var head_halo: Color = trail_lit
 			head_halo.a = (0.28 + trail_flash * 0.45) * trail_fade
 			draw_circle(head_position, 7.0 + trail_flash * 3.0, head_halo)

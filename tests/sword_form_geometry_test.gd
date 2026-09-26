@@ -13,60 +13,35 @@ func _grip(pose: Dictionary) -> Vector2:
 func _tip(pose: Dictionary) -> Vector2:
 	return _grip(pose) + Vector2.RIGHT.rotated(float(pose["angle"])) * Player.BLADE_LENGTH
 
-func test_bind_ids_remain_save_safe_but_only_the_canonical_bind_is_selectable() -> void:
+func test_bind_is_the_only_surviving_sword_form() -> void:
+	assert(Player.SwordStyle.size() == 1, "Only the Bind form should survive the clean slate.")
+	assert(int(Player.SwordStyle.BIND) == 0, "Bind must be the canonical zero-indexed form for the rebuild.")
+	assert(Player.STYLE_CYCLE_ORDER == [Player.SwordStyle.BIND], "The Z/X cycle must contain only the surviving form.")
 	var fresh_player: Player = PLAYER_SCENE.instantiate() as Player
-	assert(fresh_player.sword_style == Player.SwordStyle.METRONOME_BIND_B, "New players must start in canonical public Form I Bind.")
+	assert(fresh_player.sword_style == Player.SwordStyle.BIND, "New players must start in Form I: Bind.")
+	assert(fresh_player._style_name() == "Form I: Bind")
 	fresh_player.free()
-	assert(int(Player.SwordStyle.METRONOME_WINDUP) == 7)
-	assert(int(Player.SwordStyle.METRONOME_BIND) == 8, "Retired Bind A ID must remain load-safe.")
-	assert(int(Player.SwordStyle.METRONOME_BIND_B) == 9, "Canonical Bind ID must remain load-safe.")
-	assert(Player.SwordStyle.METRONOME_BIND not in Player.STYLE_CYCLE_ORDER)
-	assert(Player.STYLE_CYCLE_ORDER.slice(0, 3) == [Player.SwordStyle.METRONOME_BIND_B, Player.SwordStyle.METRONOME_WINDUP, Player.SwordStyle.METRONOME])
-	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.sword_style = Player.SwordStyle.METRONOME_BIND_B
-	assert(player._style_name() == "Form I: Bind")
-	player.sword_style = Player.SwordStyle.METRONOME
-	assert(player._style_name() == "Form III: Metronome V")
-	player.free()
 
 func test_old_curved_bind_profile_is_promoted_to_one_shared_authority() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	player.combat_contact_settings = {"2":{"slide_contact_tolerance":16.0, "slide_angle":30.0}}
-	player.combat_hand_settings = {"2:7":{"arc":93.0}, "2:9":{"arc":61.0, "bind_pressure_min":12.0}}
+	player.combat_hand_settings = {"2:0":{"arc":88.0}, "2:7":{"arc":93.0}, "2:9":{"arc":61.0, "bind_pressure_min":12.0}}
 	player.combat_weapon_hand_settings = {
 		"Basic Curved Sword":{"2:9":{"rotation":13.5, "bind_pressure_min":30.0, "bind_sword_speed":0.10, "bind_slide_angle":44.0}},
 		"Basic Longsword":{"2:9":{"rotation":8.0, "bind_pressure_min":12.0}}
 	}
-	assert(player.ensure_experimental_form_initialized())
-	assert(is_equal_approx(float((player.combat_hand_settings["2:9"] as Dictionary)["bind_pressure_min"]), 30.0), "The latest Curved Sword Bind profile must become the shared canonical profile.")
-	for weapon: String in ["Basic Curved Sword", "Basic Longsword"]:
-		var bind_values: Dictionary = ((player.combat_weapon_hand_settings[weapon] as Dictionary)["2:9"] as Dictionary)
-		assert(not bind_values.has("bind_pressure_min") and not bind_values.has("bind_slide_angle"), "Per-weapon Bind authorities must be removed.")
+	assert(player.ensure_experimental_form_initialized(), "The first migration must report a change.")
+	assert(is_equal_approx(float((player.combat_hand_settings["2:0"] as Dictionary)["bind_pressure_min"]), 30.0), "The latest Curved Sword Bind profile must become the shared canonical profile.")
+	assert((player.combat_hand_settings["2:0"] as Dictionary).has("bind_enabled"), "The migrated profile must carry Bind's own marker.")
+	assert(is_equal_approx(float((player.combat_hand_settings["2:0"] as Dictionary).get("arc", 88.0)), 61.0), "The retired Metronome profile at index 0 must be replaced by the legacy Bind profile, not kept.")
+	assert(not player.combat_hand_settings.has("2:9") and not player.combat_hand_settings.has("2:7"), "Retired form profiles must be dropped.")
+	assert(not player.ensure_experimental_form_initialized(), "Re-running the migration must be a no-op.")
 	player.combat_contact_preset = 2
-	for style: Player.SwordStyle in [Player.SwordStyle.METRONOME_BIND, Player.SwordStyle.METRONOME_BIND_B]:
-		player.sword_style = style
-		player.set_equipped_sword("Basic Curved Sword")
-		assert(is_equal_approx(player.get_combat_hand_setting("bind_pressure_min"), 30.0))
-		player.set_equipped_sword("Basic Longsword")
-		assert(is_equal_approx(player.get_combat_hand_setting("bind_pressure_min"), 30.0))
-		assert(is_equal_approx(player.get_combat_contact_setting("slide_angle"), 30.0), "Both legacy Bind IDs must use the one shared Slide profile.")
-	player.free()
-
-func test_form_two_and_new_form_three_share_identical_baseline_geometry() -> void:
-	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.combat_contact_preset = 2
-	player.combat_hand_settings = {"2:7":{"arc":87.0, "max":66.0, "frequency":0.71}}
-	player.ensure_experimental_form_initialized()
-	player.global_position = Vector2(240.0, 180.0)
-	player.aim_angle = 0.42
-	player.combat_hand_radius = 54.0
-	for phase: float in [0.0, 0.7, 1.8, 3.2, 5.4]:
-		player.sword_style = Player.SwordStyle.METRONOME_WINDUP
-		var form_two: Dictionary = _pose(player, phase)
-		player.sword_style = Player.SwordStyle.METRONOME_BIND
-		var form_three: Dictionary = _pose(player, phase)
-		assert((form_two["start"] as Vector2).is_equal_approx(form_three["start"] as Vector2))
-		assert(is_equal_approx(float(form_two["angle"]), float(form_three["angle"])))
+	player.set_equipped_sword("Basic Curved Sword")
+	assert(is_equal_approx(player.get_combat_hand_setting("bind_pressure_min"), 30.0))
+	player.set_equipped_sword("Basic Longsword")
+	assert(is_equal_approx(player.get_combat_hand_setting("bind_pressure_min"), 30.0))
+	assert(is_equal_approx(player.get_combat_contact_setting("slide_angle"), 30.0), "The one shared Slide profile must be used.")
 	player.free()
 
 func test_every_weapon_uses_travel_driven_rollover_orientation() -> void:
@@ -76,67 +51,6 @@ func test_every_weapon_uses_travel_driven_rollover_orientation() -> void:
 		assert(is_equal_approx(Player.blade_roll_target_for_travel(edge_side, -1.0), -Player.blade_roll_target_for_travel(edge_side, 1.0)), "Every weapon must flip rollover when travel reverses.")
 	assert(is_equal_approx(Player.blade_roll_target_for_travel(1.0, 1.0), 1.0), "The authored edge orientation should preserve the current forward pose.")
 	assert(is_equal_approx(Player.blade_roll_target_for_travel(1.0, -1.0), -1.0), "Opposing travel must request the opposite edge orientation.")
-
-func test_thrust_lanes_follow_globe_meridians_and_converge_on_aim() -> void:
-	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.combat_contact_preset = 1
-	player.sword_style = Player.SwordStyle.THRUST
-	player.global_position = Vector2(40.0, 70.0)
-	player.virtual_aim_point = Vector2(360.0, 190.0)
-	player.aim_angle = player.global_position.direction_to(player.virtual_aim_point).angle()
-	player.combat_hand_radius = 45.0
-	var expected_pole: Vector2 = player.global_position + Vector2.RIGHT.rotated(player.aim_angle) * (player.combat_hand_radius + Player.BLADE_LENGTH)
-
-	for count: int in [2, 7, 15]:
-		player.set_combat_hand_setting("thrusts_per_cycle", float(count))
-		for stroke: int in range(count):
-			# Each outward thrust reaches its north pole exactly. The hilt trails
-			# behind the tip on that stroke's longitude instead of orbiting it.
-			var apex_phase: float = (float(stroke) + 0.5) * TAU / float(count)
-			var pose: Dictionary = _pose(player, apex_phase)
-			var hilt: Vector2 = _grip(pose)
-			var tip: Vector2 = _tip(pose)
-			assert(tip.distance_to(expected_pole) < 0.01, "Every longitude must converge on the reach pole.")
-			assert(absf(hilt.distance_to(tip) - Player.BLADE_LENGTH) < 0.001, "Sword must remain rigid.")
-			assert((tip - hilt).dot(expected_pole - player.global_position) > 0.0, "Tip must lead the hilt toward the target.")
-
-		for sample: int in range(120):
-			var pose: Dictionary = _pose(player, TAU * float(sample) / 120.0)
-			assert(absf(_grip(pose).distance_to(_tip(pose)) - Player.BLADE_LENGTH) < 0.001)
-	player.free()
-
-func test_thrust_lane_handoffs_are_continuous() -> void:
-	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.combat_contact_preset = 1
-	player.sword_style = Player.SwordStyle.THRUST
-	player.global_position = Vector2(100.0, 200.0)
-	player.virtual_aim_point = Vector2(520.0, 260.0)
-	player.aim_angle = player.global_position.direction_to(player.virtual_aim_point).angle()
-	player.set_combat_hand_setting("thrusts_per_cycle", 7.0)
-	var previous_pose: Dictionary = _pose(player, 0.0)
-	for sample: int in range(1, 1401):
-		var pose: Dictionary = _pose(player, TAU * float(sample) / 1400.0)
-		var angle_step: float = absf(angle_difference(float(previous_pose["angle"]), float(pose["angle"])))
-		var tip_step: float = _tip(previous_pose).distance_to(_tip(pose))
-		assert(angle_step < deg_to_rad(12.0), "Form II longitude handoff must not snap the blade angle.")
-		assert(tip_step < 18.0, "Form II longitude handoff must not create a fake swept hit.")
-		previous_pose = pose
-	player.free()
-
-func test_thrust_setting_copy_rounding_and_stroke_counts() -> void:
-	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.sword_style = Player.SwordStyle.THRUST
-	player.combat_contact_preset = 1
-	assert(player.get_combat_hand_setting("thrusts_per_cycle") == 7.0)
-	player.set_combat_hand_setting("thrusts_per_cycle", 8.6)
-	assert(player.get_combat_hand_setting("thrusts_per_cycle") == 9.0)
-	player.copy_preset_settings(1, 4)
-	player.combat_contact_preset = 4
-	assert(player.get_combat_hand_setting("thrusts_per_cycle") == 9.0)
-	for count: int in [2, 7, 15]:
-		player.set_combat_hand_setting("thrusts_per_cycle", float(count))
-		assert(player._thrust_stroke_index(TAU) - player._thrust_stroke_index(0.0) == count)
-	player.free()
 
 func test_all_forms_and_preset_four_are_rigid() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
@@ -152,15 +66,6 @@ func test_all_forms_and_preset_four_are_rigid() -> void:
 					var pose: Dictionary = _pose(player, TAU * sample / 200.0)
 					assert(absf(_grip(pose).distance_to(_tip(pose)) - 84.0) < 0.001, "Sword must remain rigid 84px.")
 	player.free()
-
-func test_form_v_smoothing_restores_lower_is_slower_rate_direction() -> void:
-	var frame_delta: float = 1.0 / 60.0
-	var very_slow_weight: float = Player.moulinet_smoothing_weight(frame_delta, 0.05)
-	var one_rate_weight: float = Player.moulinet_smoothing_weight(frame_delta, 1.0)
-	var fast_weight: float = Player.moulinet_smoothing_weight(frame_delta, 6.0)
-	assert(very_slow_weight < one_rate_weight)
-	assert(one_rate_weight < fast_weight)
-	assert(very_slow_weight > 0.0 and very_slow_weight < 0.001, "The 0.05 /s low end must support extremely slow Form V reversals.")
 
 func test_swing_commitment_only_resists_opposing_input() -> void:
 	var blade_direction: Vector2 = Vector2.RIGHT
@@ -208,62 +113,67 @@ func test_action_commitment_defaults_are_neutral_and_late() -> void:
 	assert(is_equal_approx(Player.metronome_action_commitment_scale(0.50, 1.0, 0.60, 0.90), 1.0), "Before the action window, aim must remain redirectable.")
 	assert(is_equal_approx(Player.metronome_action_commitment_scale(0.75, 1.0, 0.60, 0.90), 0.0), "Full action commitment must remove aim authority inside the window.")
 	assert(is_equal_approx(Player.metronome_action_commitment_scale(0.95, 1.0, 0.60, 0.90), 1.0), "After the action window, recovery must restore aim authority.")
-	assert(player.windup_step_mode == Player.ForwardStepMode.OFF, "Forward Step should begin disabled.")
-	player.sword_style = Player.SwordStyle.METRONOME_WINDUP
-	player.windup_step_mode = Player.ForwardStepMode.SWORD_CONTACT
-	player.notify_player_damage_dealt(false)
-	assert(is_zero_approx(player.windup_step_active_left), "Sword-contact mode must ignore non-sword damage.")
-	player.notify_sword_contact()
-	assert(is_equal_approx(player.windup_step_active_left, Player.FORWARD_STEP_COMBAT_WINDOW), "Sword-contact mode should arm for three seconds.")
-	player.windup_step_mode = Player.ForwardStepMode.ANY_DAMAGE
-	player.notify_player_damage_dealt(false)
-	assert(is_equal_approx(player.windup_step_active_left, Player.FORWARD_STEP_COMBAT_WINDOW), "Any-damage mode should arm from non-sword damage.")
 	assert(is_equal_approx(player.get_combat_hand_setting("backstep_impulse"), 0.0), "Backstep should default to no impulse.")
 	assert(is_equal_approx(player.get_combat_hand_setting("backstep_impulse_timing"), 0.30), "Backstep timing should share the safe 30% default.")
 	player.free()
 
-func test_moulinet_true_looping_and_sweeps() -> void:
+func test_counter_steer_compression_shrinks_only_the_active_side_and_never_jumps_behind() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
-	player.combat_contact_preset = 1
+	player.combat_contact_preset = 2
 	player.aim_angle = 0.0
 	player.combat_hand_radius = 45.0
+	var compression: float = 0.22
+	# Right half-stroke: sin > 0, so the destination apex sits on the +side of base.
+	player.counter_steer_compression = 0.0
+	var right_base: float = float(_pose(player, PI * 0.5)["angle"])
+	var arc: float = player._current_sword_arc_degrees()
+	player.counter_steer_compression = compression
+	var right_compressed: float = float(_pose(player, PI * 0.5)["angle"])
+	var right_delta: float = right_base - right_compressed
+	assert(is_equal_approx(right_delta, deg_to_rad(arc) * compression), "Compression must remove exactly the configured fraction of the active side's arc.")
+	assert(right_compressed > player.aim_angle, "The compressed apex must stay on the same side of base; it can never jump behind the current angle.")
+	# Left half-stroke: the exact mirror, pulled toward base from the -side.
+	player.counter_steer_compression = 0.0
+	var left_base: float = float(_pose(player, PI * 1.5)["angle"])
+	player.counter_steer_compression = compression
+	var left_compressed: float = float(_pose(player, PI * 1.5)["angle"])
+	assert(is_equal_approx(left_compressed - left_base, deg_to_rad(arc) * compression), "Compression must mirror on the opposing side.")
+	assert(left_compressed < player.aim_angle, "The compressed apex must remain on the same side of base on the opposing stroke too.")
+	player.free()
 
-	# Test all Moulinet forms: MOULINET, MOULINET_2, MOULINET_3
-	for style: Player.SwordStyle in [Player.SwordStyle.MOULINET, Player.SwordStyle.MOULINET_2, Player.SwordStyle.MOULINET_3]:
-		player.sword_style = style
+func test_counter_steer_compression_geometry_is_continuous_across_the_cycle() -> void:
+	var player: Player = PLAYER_SCENE.instantiate() as Player
+	player.combat_contact_preset = 2
+	player.aim_angle = 0.0
+	player.combat_hand_radius = 45.0
+	player.counter_steer_compression = Player.COUNTER_STEER_ARC_COMPRESSION_MAX
+	var previous: float = float(_pose(player, 0.0001)["angle"])
+	var max_step: float = 0.0
+	for sample: int in range(1, 400):
+		var angle: float = float(_pose(player, TAU * float(sample) / 400.0)["angle"])
+		max_step = maxf(max_step, absf(angle - previous))
+		previous = angle
+	assert(max_step < deg_to_rad(3.0), "A constant compression must not step the blade; the geometry stays continuous.")
+	assert(player.sword_phase != 0.0, "Sampling geometry must never reset the sacred metronome clock.")
+	player.free()
 
-		# 1. Hilt symmetry: at phase=0 and phase=PI, hilt is at center
-		var hilt_0: Vector2 = _grip(_pose(player, 0.0))
-		var hilt_pi: Vector2 = _grip(_pose(player, PI))
-		assert(hilt_0.distance_to(hilt_pi) < 0.01, "Hilt must cross exactly at center.")
-
-		# 2. Smooth angular continuity across cycle: no snapping jumps > 15 deg
-		var prev_angle: float = float(_pose(player, 0.0)["angle"])
-		for i in range(1, 360):
-			var p_angle: float = float(_pose(player, TAU * float(i) / 360.0)["angle"])
-			var step: float = absf(wrapf(p_angle - prev_angle, -PI, PI))
-			assert(step < deg_to_rad(15.0), "No angular jumping or snaps in style %d." % int(style))
-			prev_angle = p_angle
-
-		# 3. Sword rigidity (always exactly 84px)
-		for i in range(60):
-			var pose: Dictionary = _pose(player, TAU * float(i) / 60.0)
-			assert(absf(_grip(pose).distance_to(_tip(pose)) - 84.0) < 0.001)
-
-	# 4. Moulinet 2 (Chat Formula) alternating rotation verification:
-	player.sword_style = Player.SwordStyle.MOULINET_2
-	# In right lobe (0 -> PI), angle increases (clockwise rotation)
-	var ang_0: float = float(_pose(player, 0.0)["angle"])
-	var ang_half_right: float = float(_pose(player, PI * 0.5)["angle"])
-	var ang_cross: float = float(_pose(player, PI)["angle"])
-	assert(ang_half_right > ang_0, "Right lobe rotates clockwise.")
-	assert(ang_cross > ang_half_right, "Right lobe completes clockwise rotation.")
-
-	# In left lobe (PI -> 2*PI), angle decreases (counter-clockwise rotation)
-	var ang_half_left: float = float(_pose(player, PI * 1.5)["angle"])
-	var ang_end: float = float(_pose(player, TAU)["angle"])
-	assert(ang_half_left < ang_cross, "Left lobe rotates counter-clockwise.")
-	assert(ang_end < ang_half_left, "Left lobe completes counter-clockwise rotation.")
-
+func test_counter_steer_compression_target_gates_on_opposing_strength() -> void:
+	var player: Player = PLAYER_SCENE.instantiate() as Player
+	assert(is_equal_approx(player.get_combat_hand_setting("counter_steer_arc_enabled"), 1.0), "Counter-steer should ship enabled for the A/B test.")
+	assert(is_equal_approx(player.get_combat_hand_setting("counter_steer_arc_compression"), Player.COUNTER_STEER_ARC_COMPRESSION_DEFAULT), "Counter-steer compression should default to the mid value.")
+	assert(is_equal_approx(Player.COUNTER_STEER_ARC_COMPRESSION_DEFAULT, 0.22), "The experiment starts around 0.22.")
+	assert(is_equal_approx(Player.COUNTER_STEER_ARC_COMPRESSION_MAX, 0.40), "The exposed range tops out at 0.40.")
+	player.authored_sword_engagement = 0.60
+	assert(is_equal_approx(player._counter_steer_compression_target(1.0, 1.0), 0.0), "Input aligned with travel must not compress the arc.")
+	assert(is_equal_approx(player._counter_steer_compression_target(0.0, 1.0), 0.0), "No authored turn must not compress the arc.")
+	assert(player._counter_steer_compression_target(1.0, -1.0) > 0.0, "Opposing input must compress the active side.")
+	player.authored_sword_engagement = 0.04
+	assert(is_equal_approx(player._counter_steer_compression_target(1.0, -1.0), 0.0), "Weak input noise below the engagement floor must be ignored.")
+	player.authored_sword_engagement = 1.0
+	assert(is_equal_approx(player._counter_steer_compression_target(1.0, -1.0), Player.COUNTER_STEER_ARC_COMPRESSION_DEFAULT), "Full opposing strength must reach the configured fraction.")
+	player.set_combat_hand_setting("counter_steer_arc_compression", 0.90)
+	assert(is_equal_approx(player._counter_steer_compression_target(1.0, -1.0), Player.COUNTER_STEER_ARC_COMPRESSION_MAX), "The fraction must clamp to the 0.40 ceiling.")
+	player.set_combat_hand_setting("counter_steer_arc_enabled", 0.0)
+	assert(is_equal_approx(player._counter_steer_compression_target(1.0, -1.0), 0.0), "Disabled must produce identical, unmodified geometry.")
 	player.free()
 

@@ -8,9 +8,8 @@ func test_global_library_has_three_complete_slots() -> void:
 		var state: Dictionary = GlobalPresetConfig.get_slot(slot)
 		assert(not state.is_empty(), "global preset %d should exist" % slot)
 		assert(int(state.get("schema", 0)) == GlobalPresetConfig.VERSION, "global preset %d should use the current schema" % slot)
-		# Retired Bind A remains a save-safe enum value; the canonical Bind Form is
-		# consolidated in memory when a package is loaded.
-		assert((state.get("combat_hand_settings", {}) as Dictionary).size() >= (Player.SwordStyle.size() - 1) * 4, "global preset %d should retain complete save-compatible sword/style data" % slot)
+		# Every surviving form keeps one complete hand profile per combat preset.
+		assert((state.get("combat_hand_settings", {}) as Dictionary).size() >= Player.SwordStyle.size() * 4, "global preset %d should retain complete save-compatible sword/style data" % slot)
 		assert((state.get("combat_contact_settings", {}) as Dictionary).size() >= 4, "global preset %d should include every combat preset" % slot)
 		assert(state.has("combat_weapon_hand_settings"), "global preset %d should include the weapon tuning section" % slot)
 		assert((state.get("grapple", {}) as Dictionary).size() >= 18, "global preset %d must preserve legacy Grapple data; newly saved slots use every canonical tuner" % slot)
@@ -53,7 +52,7 @@ func test_weapon_hand_overrides_are_independent() -> void:
 	var player: Player = player_scene.instantiate() as Player
 	add_child(player)
 	player.combat_contact_preset = 2
-	player.sword_style = Player.SwordStyle.METRONOME
+	player.sword_style = Player.SwordStyle.BIND
 	player.combat_weapon_hand_settings = {
 		"Basic Longsword": {"2:0": {"arc": 105.0, "max": 70.0}},
 		"Basic Curved Sword": {"2:0": {"arc": 90.0, "max": 30.0}}

@@ -7,7 +7,7 @@ func _new_player() -> Player:
 	add_child(player)
 	player.set_physics_process(false)
 	player.combat_contact_preset = 2
-	player.sword_style = Player.SwordStyle.METRONOME
+	player.sword_style = Player.SwordStyle.BIND
 	return player
 
 func test_disabled_mode_preserves_existing_metronome_transform() -> void:

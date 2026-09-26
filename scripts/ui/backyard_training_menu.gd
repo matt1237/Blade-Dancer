@@ -453,10 +453,15 @@ func _build_charged_guard_tab(tabs: TabContainer) -> void:
 
 	var gesture_section: VBoxContainer = _create_section_header(box, "GESTURES", true)
 	var gesture_note: Label = Label.new()
-	gesture_note.text = "While the blue charged state is up, draw a gesture with the mouse and bring it to rest to discharge Guard as an attack. A long straight stroke thrusts; a circle spins a whirlwind. A V slashes through the lower half around you; >, ^, and < slash through the right, upper, and left halves. The first and last arms set the slash direction. A fast sideways stroke waits until drawing finishes: a valid technique wins, while an unrecognized hard flick releases Guard. Smaller unrecognized strokes leave Guard in place."
+	gesture_note.text = "While the blue charged state is up, draw a gesture with the mouse and bring it to rest to discharge Guard as an attack. A long straight stroke thrusts; a circle spins a whirlwind. A V slashes through the lower half around you; >, ^, and < slash through the right, upper, and left halves. The first and last arms set the slash direction. A fast sideways stroke waits until drawing finishes: a valid technique wins, while an unrecognized hard flick releases Guard. Smaller unrecognized strokes leave Guard in place. A rough triangle drawn quickly winds the guard into the Unleash instead: the blade snaps to your cursor and flashes, the whole world slows while you sketch a red path, and then the sword flies along that path, dragging you with it and cutting anything it crosses. Its settings are at the bottom of this tab."
 	gesture_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	gesture_section.add_child(gesture_note)
 	_create_contact_slider(gesture_section, "charged_guard_gestures_enabled", "Gestures Enabled (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Allow deliberately drawn cursor gestures, made while the blue charged state is up, to discharge the guard as an attack.", "Off. No gesture attacks or drawing trail.", "On. Straight strokes thrust, circles whirl, and V-shaped strokes slash through their pointed half of the player.", "Draw V for a lower slash, > for right, ^ for upper, or < for left. Reverse the stroke to reverse the sword's travel. Bring the stroke to rest to fire. Whirlwind accepts rough loops within 3 seconds; V shapes have a 2-second window."))
+	_create_contact_slider(gesture_section, "charged_guard_unleash_enabled", "Triangle Unleash (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a rough triangle drawn in the blue charged state wind the guard into the Unleash.", "The triangle is not read; the other gestures are unaffected.", "A quick rough triangle snaps the blade to your cursor, flashes, slows the world into a red windup, then replays the drawn path.", "Draw the triangle quickly and make sure all three sides are actually drawn; a V or a plain line is not enough. The blade then flies along the path you drew, dragging you with it and cutting anything it crosses. Default on."))
+	_create_contact_slider(gesture_section, "charged_guard_unleash_flash_time", "Unleash Flash Time", 0.2, 2.0, 0.1, " s", _form_three_feel_tip("How long the blue/white flash holds at the blade tip before the red windup begins.", "A quick blink straight into the windup.", "A long, held snap before the world slows.", "Default 1.0 second. Counted in real time, so the slowed world does not stretch it."))
+	_create_contact_slider(gesture_section, "charged_guard_unleash_windup_time", "Unleash Windup Time", 0.5, 5.0, 0.1, " s", _form_three_feel_tip("How long the world stays slowed while you draw the red path the sword will replay.", "A short window to sketch a path.", "A long, deliberate window to draw a wide path.", "Default 2.0 seconds, counted in real time. What you draw here is the blade's route: a longer path simply takes longer to replay at the same speed."))
+	_create_contact_slider(gesture_section, "charged_guard_unleash_speed_bonus", "Unleash Speed Bonus", 0.0, 2.0, 0.05, "×", _form_three_feel_tip("How much faster than your normal move speed the sword replays the drawn path.", "The blade retraces your path at walking pace.", "The blade tears along the path far faster than you can run.", "Default +0.5. Playback is your move speed times (1 + this value), so the feel does not depend on how fast you happened to drag the cursor."))
+	_create_contact_slider(gesture_section, "charged_guard_unleash_triangle_sensitivity", "Triangle Sensitivity", 0.4, 3.0, 0.05, "×", _form_three_feel_tip("How rough and small a triangle may be and still be read as the Unleash.", "Only neat, full-size triangles qualify.", "Loose, small, sketchy triangles qualify.", "Default 1.0. Raise this if triangles are not registering; lower it if stray strokes set it off."))
 
 func _build_authored_metronome_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()
@@ -484,7 +489,7 @@ func _build_authored_metronome_tab(tabs: TabContainer) -> void:
 
 func _build_windup_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()
-	scroll.name = "Metronome Wind-up"
+	scroll.name = "Stroke Timing"
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	tabs.add_child(scroll)
 	var box: VBoxContainer = VBoxContainer.new()
@@ -492,11 +497,11 @@ func _build_windup_tab(tabs: TabContainer) -> void:
 	box.add_theme_constant_override("separation", 10)
 	scroll.add_child(box)
 	var title: Label = Label.new()
-	title.text = "METRONOME WIND-UP LAB (EXPERIMENTAL)"
+	title.text = "STROKE TIMING LAB"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	var note: Label = Label.new()
-	note.text = "Currently affects Form II: Metronome Wind-up only. Form I: Metronome V remains the untouched comparison stance. Fractions choose when phases happen; relative speed sliders choose how distinct they feel while total timing stays normalized."
+	note.text = "Tunes the Bind form's metronome stroke. Fractions choose when phases happen; relative speed sliders choose how distinct they feel while total timing stays normalized."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(note)
 	var timing_section: VBoxContainer = _create_section_header(box, "STROKE TIMING", true)
@@ -518,7 +523,7 @@ func _build_windup_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(action_section, "action_commitment_start", "Action Phase Start", 0.30, 0.90, 0.01, "", "Default 0.60 begins the no-cancel window around 60% through the stroke.")
 	_create_hand_slider(action_section, "action_commitment_end", "Action Phase End", 0.70, 1.0, 0.01, "", "Default 0.90 releases aim authority into the final recovery before reversal.")
 	var warning: Label = Label.new()
-	warning.text = "Wind-up timing, forward step, and Action Commitment are active only in Form II: Metronome Wind-up."
+	warning.text = "Wind-up timing, forward step, and Action Commitment shape the Bind form's metronome stroke."
 	warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	warning.modulate = Color(1.0, 0.78, 0.35)
 	box.add_child(warning)
@@ -821,15 +826,15 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(core_section, "swing_commitment_duration", "Swing Commitment Duration", 0.0, 0.50, 0.01, "s", "How long opposing player input remains heavy after an intentional reversal. Default 0.16s.")
 	_create_hand_slider(core_section, "tempo_assist_enabled", "Swing Tempo Assist", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Lets deliberate hand motion accelerate the current metronome stroke when both travel in the same direction.", "Original fixed sword rhythm.", "The blade catches up with deliberate same-direction input.", "Assistance resets at every reversal, so each stroke must be physically reinforced."))
 	_create_hand_slider(core_section, "directional_arc_opening_enabled", "Directional Arc Opening", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Deliberate hand movement with the blade progressively opens the destination of the active stroke.", "Every stroke uses the normal symmetric arc.", "Driven strokes gain up to 10° of directional follow-through.", "The earned extension remains until reversal; each return stroke must earn its own opening."))
+	_create_hand_slider(core_section, "counter_steer_arc_enabled", "Counter-Steer Arc Compression", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Deliberate input against the active swing shrinks the destination side of that stroke, so the blade acknowledges your change of intent sooner.", "Off: every stroke uses the full configured arc.", "On: counter-steering compresses the active side's arc.", "The mirror of Directional Arc Opening. Only the active half-stroke is affected; the configured arc is never changed."))
+	_create_hand_slider(core_section, "counter_steer_arc_compression", "Counter-Steer Compression Amount", 0.0, 0.40, 0.01, "", _form_three_feel_tip("How much of the destination side's arc hard counter-steering may remove.", "The sword barely yields; the reversal still runs out nearly full.", "The sword yields strongly; a hard counter-steer turns it around much closer to center.", "Scales with how strongly your input opposes the blade; weak jitter does nothing. Default 0.22."))
 	_create_hand_slider(core_section, "swing_gesture_gearing_degrees", "Swing Gesture Gearing", 15.0, 360.0, 1.0, "°", _form_three_feel_tip("Aligned, intentional hand travel required to fully drive one metronome stroke; faster travel counts more.", "Short, slow movements add little drive.", "Long, fast straight flicks build drive rapidly.", "Gesture pace matters too; merely tracing a long slow arc does not max the stroke."))
 	_create_hand_slider(core_section, "radial_response", "Radial Response (In/Out Drag)", 0.05, 1.0, 0.05, "", "How quickly hand reach responds to mouse distance.")
 	_create_hand_slider(core_section, "scale", "Mouse Reach Scale (Spatial Gearing)", 1.0, 10.0, 0.1, "×", "How much mouse travel is required to reach maximum hand range.")
 	_create_hand_slider(core_section, "min", "Min Hand Range", 5.0, 140.0, 1.0, " px")
 	_create_hand_slider(core_section, "max", "Max Hand Range", 5.0, 200.0, 1.0, " px")
 	_create_hand_slider(core_section, "arc", "Arc Degrees", 5.0, 120.0, 1.0, "°")
-	_create_hand_slider(core_section, "frequency", "Swing Frequency", 0.2, 3.0, 0.05, " Hz", "Form II: one cycle includes all thrusts sweeping across the longitudinal arcs. Form III-VI: one cycle includes the figure-eight lobes. Form VII uses repeated thrusts.")
-	_create_hand_slider(core_section, "thrusts_per_cycle", "Form II — Thrusts per Sweep", 2.0, 15.0, 1.0, "", "Evenly spaced longitudinal thrust strokes across each half-cycle sweep, default 7. Thrusts bow out along meridian arcs converging at target X.")
-	_create_hand_slider(core_section, "moulinet_aim_smoothing", "Form V — Aim Direction Smoothing", 0.05, 30.0, 0.05, " /s", "Original direction restored: lower values are slower and heavier; higher values reverse faster. The 0.05 /s minimum supports very slow momentum changes.")
+	_create_hand_slider(core_section, "frequency", "Swing Frequency", 0.2, 3.0, 0.05, " Hz", "One full back-and-forth metronome cycle per second.")
 
 	var grapple_section: VBoxContainer = _create_section_header(box, "GRAPPLE V1 (Global)")
 	grapple_status_label = Label.new()
@@ -1033,8 +1038,8 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(p3_section, "p3_min_turn_scale", "0% Flow Aim Turn Scale", 0.20, 1.0, 0.05, "×", "At 0% flow turn responsiveness scales down to this fraction, feeling heavier until flow builds.")
 
 	var p4_section: VBoxContainer = _create_section_header(box, "PRESET 4: FORM EVOLUTION")
-	_create_contact_slider(p4_section, "p4_stage1_end", "Stage 1 (Thrusting A) End Flow", 10.0, 50.0, 5.0, "%", "Flow percentage where Form II: Thrusting A finishes morphing into Form I: Metronome V.")
-	_create_contact_slider(p4_section, "p4_stage2_end", "Stage 2 (Metronome V) End Flow", 40.0, 90.0, 5.0, "%", "Flow percentage where Form I: Metronome V finishes morphing into Form III: Moulinet ∞.")
+	_create_contact_slider(p4_section, "p4_stage1_end", "Stage 1 End Flow", 10.0, 50.0, 5.0, "%", "Flow percentage where the first form-blend stage completes.")
+	_create_contact_slider(p4_section, "p4_stage2_end", "Stage 2 End Flow", 40.0, 90.0, 5.0, "%", "Flow percentage where the second form-blend stage completes.")
 	_create_contact_slider(p4_section, "form_blend_smoothing", "Form Blend Smoothing Rate", 1.0, 25.0, 0.5, " /s", "Smoothing filter rate for Preset 4 form transitions so sudden flow spikes or drops do not jerk geometry.")
 
 func _build_global_presets_tab(tabs: TabContainer) -> void:
@@ -1471,7 +1476,7 @@ func _update_hand_control_label(key: String, value: float) -> void:
 		return
 	if key == "max_turn_speed":
 		value_label.text = "Unlimited" if is_zero_approx(value) else "%.0f%s" % [value, suffix]
-	elif suffix == "°" or suffix == " px" or key.ends_with("sparks") or key == "thrusts_per_cycle":
+	elif suffix == "°" or suffix == " px" or key.ends_with("sparks"):
 		value_label.text = "%.0f%s" % [value, suffix]
 	else:
 		value_label.text = "%.2f%s" % [value, suffix]
@@ -1543,11 +1548,11 @@ func _sync_combat_controls() -> void:
 
 	var p_desc: String = "Preset 1: Safe Baseline (Untouched fallback)"
 	if player.combat_contact_preset == 2:
-		p_desc = "Preset 2: Distinct Contacts (Flat feel • Tuned Metronome V)"
+		p_desc = "Preset 2: Distinct Contacts (Flat feel • Tuned Metronome)"
 	elif player.combat_contact_preset == 3:
-		p_desc = "Preset 3: Dynamic Metronome (Flow-scaled speed, arc & response • Form stays Metronome V)"
+		p_desc = "Preset 3: Dynamic Metronome (Flow-scaled speed, arc & response)"
 	elif player.combat_contact_preset == 4:
-		p_desc = "Preset 4: Form Evolution (Thrusting A -> Metronome V -> Moulinet ∞ as Flow rises)"
+		p_desc = "Preset 4: Form Evolution (flow-scaled form blend)"
 	combat_status.text = "ACTIVE TESTING: %s\nSword Form: %s" % [p_desc, player._style_name()]
 	if experimental_bind_section != null:
 		experimental_bind_section.visible = player.is_experimental_bind_form()
@@ -1570,14 +1575,14 @@ func _sync_combat_controls() -> void:
 		(row["slider"] as HSlider).set_value_no_signal(value)
 		if key == "max_turn_speed":
 			(row["label"] as Label).text = "Unlimited" if is_zero_approx(value) else "%.0f%s" % [value, suffix]
-		elif suffix == "°" or suffix == " px" or key.ends_with("sparks") or key == "thrusts_per_cycle":
+		elif suffix == "°" or suffix == " px" or key.ends_with("sparks"):
 			(row["label"] as Label).text = "%.0f%s" % [value, suffix]
 		else:
 			(row["label"] as Label).text = "%.2f%s" % [value, suffix]
 
 	for key: String in contact_controls:
 		var row: Dictionary = contact_controls[key]
-		# This section is explicitly Per Preset. Bind A/B may resolve six slide
+		# This section is explicitly Per Preset. Bind may resolve six slide
 		# values through their separate Form-Local Slide Entry controls, but that
 		# must not make the shared preset slider display a different value than it edits.
 		var value: float = player.get_base_combat_contact_setting(key)

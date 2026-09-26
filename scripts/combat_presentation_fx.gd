@@ -180,6 +180,12 @@ var zoom_position_offset: Vector2 = Vector2.ZERO
 # bind qualification; this node owns only presentation and world time scale.
 var bind_focus_active: bool = false
 var bind_focus_world_scale: float = 1.0
+## The charged-guard unleash's red windup asks for a heavy world slow-down. Like the bind
+## focus, this node is the single settle point for Engine.time_scale: the ability exposes a
+## request and the value is arbitrated here in one place, so two reasons to slow time can
+## never fight over the global scale.
+var gesture_windup_active: bool = false
+var gesture_windup_world_scale: float = 1.0
 var bind_focus_zoom_amount: float = 0.0
 var bind_focus_zoom_current: float = 0.0
 var bind_focus_response: float = 8.0
@@ -218,7 +224,15 @@ func set_bind_focus(active: bool, world_scale: float = 1.0, zoom_amount: float =
 	bind_focus_world_scale = clampf(world_scale, 0.2, 1.0)
 	bind_focus_zoom_amount = clampf(zoom_amount, 0.0, 0.30)
 	bind_focus_response = clampf(response, 1.0, 20.0)
-	if not active and time_slow_left <= 0.0 and (world_root == null or not bool(world_root.get("hitstop_active"))):
+	if not active and time_slow_left <= 0.0 and not gesture_windup_active and (world_root == null or not bool(world_root.get("hitstop_active"))):
+		Engine.time_scale = 1.0
+
+## The charged-guard unleash's windup requests a world slow-down (a request, not a write):
+## the value is folded into the single time-scale arbitration in _update_impact_time_slow.
+func set_gesture_windup(active: bool, world_scale: float = 1.0) -> void:
+	gesture_windup_active = active
+	gesture_windup_world_scale = clampf(world_scale, 0.02, 1.0)
+	if not active and not bind_focus_active and time_slow_left <= 0.0 and (world_root == null or not bool(world_root.get("hitstop_active"))):
 		Engine.time_scale = 1.0
 
 func trigger(impact_position: Vector2, travel_direction: Vector2, strength: float = 1.0, request_blur: bool = false, contact_quality: float = 0.0) -> void:
@@ -607,6 +621,11 @@ func _update_blur() -> void:
 
 func _update_impact_time_slow(delta: float) -> void:
 	if world_root != null and bool(world_root.get("hitstop_active")): return
+	if gesture_windup_active:
+		# The unleash's windup is the deepest slow, and it deliberately swallows the other
+		# sustained scalers while it is held: it is a dramatic, authored moment.
+		Engine.time_scale = gesture_windup_world_scale
+		return
 	if enabled and enable_impact_time_slow and time_slow_left > 0.0:
 		Engine.time_scale = impact_time_scale
 		var real_delta: float = delta / maxf(impact_time_scale, 0.001)

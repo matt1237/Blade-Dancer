@@ -7,7 +7,7 @@ func _new_player() -> Player:
 	add_child(player)
 	player.set_physics_process(false)
 	player.combat_contact_preset = 2
-	player.sword_style = Player.SwordStyle.METRONOME
+	player.sword_style = Player.SwordStyle.BIND
 	return player
 
 func test_sword_stays_above_body_while_flow_afterimages_stay_behind() -> void:
@@ -1394,4 +1394,158 @@ func test_a_lone_left_press_never_blocks_the_chakram() -> void:
 	player.chakram_key_was_down = true
 	player._handle_chakram_input()
 	assert(not player.active_chakrams.is_empty(), "A lone left tap must still throw the chakram.")
+	player.free()
+
+## Steps the cursor through a triangle's three edges in screen space, one sample per frame,
+## exactly as _physics_process feeds the shared cursor anchor.
+func _draw_triangle_stroke(player: Player, corners: Array[Vector2]) -> void:
+	player.charged_guard_gesture_cursor = corners[0]
+	player._update_charged_guard_gesture(1.0 / 60.0)
+	for edge: int in range(corners.size()):
+		var from: Vector2 = corners[edge]
+		var to: Vector2 = corners[(edge + 1) % corners.size()]
+		for step: int in range(1, 13):
+			player.charged_guard_gesture_cursor = from.lerp(to, float(step) / 12.0)
+			player._update_charged_guard_gesture(1.0 / 60.0)
+
+## Builds a triangle path with no duplicated corners. A non-zero wobble pushes each edge's
+## interior off the straight line, so a test can draw a deliberately rough shape.
+func _triangle_path(corners: Array[Vector2], samples_per_edge: int, wobble: float = 0.0) -> PackedVector2Array:
+	var path: PackedVector2Array = PackedVector2Array()
+	for edge: int in range(corners.size()):
+		var from: Vector2 = corners[edge]
+		var to: Vector2 = corners[(edge + 1) % corners.size()]
+		var edge_direction: Vector2 = (to - from).normalized()
+		var edge_normal: Vector2 = edge_direction.orthogonal()
+		for step: int in range(samples_per_edge):
+			var ratio: float = float(step) / float(samples_per_edge)
+			var wobble_amount: float = 0.0 if step == 0 else wobble * sin(ratio * PI)
+			path.append(from.lerp(to, ratio) + edge_normal * wobble_amount)
+	return path
+
+func test_triangle_recognition_accepts_a_rough_triangle_and_rejects_v_and_line() -> void:
+	var corners: Array[Vector2] = [Vector2(700.0, 300.0), Vector2(900.0, 300.0), Vector2(800.0, 470.0)]
+	var clean: PackedVector2Array = _triangle_path(corners, 12)
+	assert(Player.gesture_triangle_qualified(clean, 0.6, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A clear triangle must read as the unleash.")
+	assert(Player.gesture_triangle_qualified(_triangle_path(corners, 12, 12.0), 0.6, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A loosely drawn triangle must still read; the shape is meant to be rough, not neat.")
+	# A V shares two of the three corners but leaves an edge empty; the recognizer demands all
+	# three edges were actually drawn, so a V must not masquerade as a triangle.
+	var v_path: PackedVector2Array = PackedVector2Array()
+	for step: int in range(13):
+		v_path.append(Vector2(700.0, 300.0).lerp(Vector2(900.0, 470.0), float(step) / 12.0))
+	for step: int in range(13):
+		v_path.append(Vector2(900.0, 470.0).lerp(Vector2(700.0, 640.0), float(step) / 12.0))
+	assert(not Player.gesture_triangle_qualified(v_path, 0.6, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A V must not read as a triangle, or every slash would unleash.")
+	var line: PackedVector2Array = PackedVector2Array()
+	for step: int in range(20):
+		line.append(Vector2(700.0, 400.0) + Vector2(20.0, 0.0) * float(step))
+	assert(not Player.gesture_triangle_qualified(line, 0.6, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A straight line is degenerate and must not read as a triangle.")
+	assert(not Player.gesture_triangle_qualified(clean, 3.0, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A triangle drawn outside the window must not fire.")
+	var small_corners: Array[Vector2] = [Vector2(700.0, 300.0), Vector2(730.0, 300.0), Vector2(715.0, 326.0)]
+	assert(not Player.gesture_triangle_qualified(_triangle_path(small_corners, 8), 0.6, 1.0, Player.CHARGED_GUARD_UNLEASH_TRIANGLE_WINDOW), "A tiny triangle must be too small to read.")
+
+func test_gesture_triangle_fires_an_unleash_that_flashes_winds_up_and_replays() -> void:
+	var player: Player = _blue_guard_player()
+	player.global_position = Vector2(640.0, 360.0)
+	var corners: Array[Vector2] = [Vector2(700.0, 300.0), Vector2(900.0, 300.0), Vector2(800.0, 470.0)]
+	_draw_triangle_stroke(player, corners)
+	for _frame: int in range(6):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.UNLEASH, "A rough triangle brought to rest should discharge the guard into the unleash.")
+	assert(not player.charged_guard_locked, "Activation must consume the guard.")
+	assert(player.charged_guard_unleash_phase == 1, "The unleash must open on its flash phase.")
+	assert(player.charged_guard_unleash_flash_left > 0.0, "The activation flash must still be running right after the read.")
+	# Flash runs its full tuned time before the red windup begins.
+	var steps: int = 0
+	while player.charged_guard_unleash_phase == 1 and steps < 600:
+		player._update_charged_guard_gesture(1.0 / 60.0)
+		steps += 1
+	assert(player.charged_guard_unleash_phase == 2, "Finishing the flash must hand the unleash into its red windup.")
+	# The windup records the cursor's own travel, so what is drawn is what will be replayed.
+	while player.charged_guard_unleash_phase == 2 and steps < 1200:
+		player.charged_guard_gesture_cursor += Vector2(4.0, 0.0)
+		player._update_charged_guard_gesture(1.0 / 60.0)
+		steps += 1
+	assert(player.charged_guard_unleash_phase == 3, "Finishing the windup must start the replay.")
+	assert(player.charged_guard_unleash_total > 100.0, "The recorded path must carry the travel the cursor drew.")
+	assert(is_equal_approx(player.charged_guard_unleash_speed, player.move_speed * (1.0 + player.get_combat_contact_setting("charged_guard_unleash_speed_bonus"))), "The replay must travel at the player's move speed plus the tuned bonus, not at the cursor's draw speed.")
+	# The replay runs the body along the path and hands the sword back when the path is spent.
+	var start_x: float = player.global_position.x
+	var replay_steps: int = 0
+	while player.charged_guard_gesture_state == Player.ChargedGuardGesture.UNLEASH and replay_steps < 3000:
+		player._update_charged_guard_gesture(1.0 / 60.0)
+		player._handle_movement(1.0 / 60.0)
+		replay_steps += 1
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE, "The unleash must end and hand the sword back to ordinary play.")
+	assert(player.charged_guard_unleash_phase == 0, "The unleash must release its phase when it ends.")
+	assert(player.velocity.x > 100.0, "The replay must tow the body along the drawn path rather than leave it standing.")
+	assert(player.global_position.x > start_x + 50.0, "The body must actually be dragged along the path.")
+	player.free()
+
+func test_unleash_pose_points_the_blade_along_the_path_tangent() -> void:
+	var player: Player = _new_player()
+	player.charged_guard_gesture_state = Player.ChargedGuardGesture.UNLEASH
+	player.combat_hand_radius = 30.0
+	player.charged_guard_unleash_tangent = Vector2(0.0, 1.0)
+	var pose: Dictionary = player._apply_charged_guard_unleash_pose({"start": Vector2(9.0, 9.0), "angle": 0.0})
+	assert(is_equal_approx(float(pose["angle"]), PI * 0.5), "The unleash must point the blade along the path's tangent.")
+	assert(((pose["start"] as Vector2) - player.global_position).is_equal_approx(Vector2(0.0, 30.0)), "The blade must be held out from the body at the combat hand radius, so the tip leads the body by the blade's reach.")
+	# A degenerate tangent falls back to the live aim rather than collapsing to a zero angle.
+	player.charged_guard_unleash_tangent = Vector2.ZERO
+	player.virtual_aim_point = player.global_position + Vector2.RIGHT * 100.0
+	var fallback: Dictionary = player._apply_charged_guard_unleash_pose({"start": Vector2.ZERO, "angle": 0.0})
+	assert(is_equal_approx(float(fallback["angle"]), 0.0), "A degenerate tangent must fall back to the live aim instead of freezing the blade.")
+	player.free()
+
+func test_unleash_replay_keeps_the_metronome_flowing_around_the_travel_direction() -> void:
+	var player: Player = _new_player()
+	player.charged_guard_gesture_state = Player.ChargedGuardGesture.UNLEASH
+	player.combat_hand_radius = 30.0
+	player.charged_guard_unleash_tangent = Vector2.RIGHT
+	player.sword_hit_recoil_offset = 0.0
+	player.directional_arc_extension_degrees = 0.0
+	player.authored_metronome_swing_blend = 1.0
+	# While the path is still being chosen the blade sits cleanly on the tangent.
+	player.charged_guard_unleash_phase = 0
+	var choosing: Dictionary = player._apply_charged_guard_unleash_pose({"start": Vector2.ZERO, "angle": 99.0})
+	assert(is_zero_approx(float(choosing["angle"])), "Choosing the path must hold the blade on the tangent, not swing it.")
+	# Through the replay the metronome keeps flowing: the blade swings its own arc about the
+	# direction of travel instead of locking rigidly to the tangent.
+	player.charged_guard_unleash_phase = 3
+	player.sword_phase = PI * 0.5
+	var swung: Dictionary = player._apply_charged_guard_unleash_pose({"start": Vector2.ZERO, "angle": 99.0})
+	var swung_angle: float = float(swung["angle"])
+	assert(absf(swung_angle) > 0.5, "With the metronome at full swing the blade must be well off the travel tangent.")
+	assert(((swung["start"] as Vector2) - player.global_position).is_equal_approx(Vector2(30.0, 0.0)), "The swing must move the blade, not the hilt: the hold stays on the tangent at the hand radius.")
+	player.sword_phase = PI * 1.5
+	var opposite: Dictionary = player._apply_charged_guard_unleash_pose({"start": Vector2.ZERO, "angle": 99.0})
+	assert(signf(float(opposite["angle"])) != signf(swung_angle), "The blade must swing to both sides of the travel direction as the metronome flows.")
+	player.free()
+
+func test_unleash_requests_a_heavy_slowdown_and_releases_it() -> void:
+	var fx: CombatPresentationFX = CombatPresentationFX.new()
+	add_child(fx)
+	var previous_scale: float = Engine.time_scale
+	fx.set_gesture_windup(true, Player.CHARGED_GUARD_UNLEASH_WORLD_SCALE)
+	fx._update_impact_time_slow(1.0 / 60.0)
+	assert(is_equal_approx(Engine.time_scale, Player.CHARGED_GUARD_UNLEASH_WORLD_SCALE), "While the windup is held it must be the authority writing Engine.time_scale.")
+	fx.set_gesture_windup(false, Player.CHARGED_GUARD_UNLEASH_WORLD_SCALE)
+	fx._update_impact_time_slow(1.0 / 60.0)
+	assert(is_equal_approx(Engine.time_scale, 1.0), "Releasing the windup must restore ordinary time.")
+	Engine.time_scale = previous_scale
+	fx.free()
+
+func test_unleash_sliders_and_defaults_are_wired() -> void:
+	var expected: Dictionary = {
+		"charged_guard_unleash_enabled": 1.0,
+		"charged_guard_unleash_windup_time": 2.0,
+		"charged_guard_unleash_flash_time": 1.0,
+		"charged_guard_unleash_speed_bonus": 0.5,
+		"charged_guard_unleash_triangle_sensitivity": 1.0,
+	}
+	for key: String in expected.keys():
+		assert(CombatSettingsConfig.CHARGED_GUARD_TUNING_KEYS.has(key), "Every unleash setting must be exposed as a charged-guard tuning key: %s" % key)
+	var player: Player = _new_player()
+	for key: String in expected.keys():
+		assert(is_equal_approx(player.get_combat_contact_setting(key), expected[key]), "The unleash setting %s must ship with its tuned default." % key)
 	player.free()
