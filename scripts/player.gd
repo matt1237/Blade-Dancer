@@ -489,7 +489,7 @@ static func charged_guard_thrust_damage_multiplier(sword_damage_multiplier: floa
 @export var clash_flow_penalty: float = 0.0
 ## Time before the same enemy may receive another sword hit.
 ## Increasing this reduces repeated hits during one continuous swing.
-@export var enemy_rehit_cooldown_duration: float = 0.3
+@export var enemy_rehit_cooldown_duration: float = 0.2
 ## Universal blade-cling tuning lives in res://scripts/parry_rules.gd.
 
 @export_category("Sword Batting Chakram")
@@ -632,6 +632,9 @@ var charged_guard_candidate_angle: float = 0.0
 var charged_guard_pommel_travel: float = 0.0
 var charged_guard_pommel_time: float = 0.0
 var charged_guard_input_gap: float = 0.0
+## Set for one frame when a metronome half-stroke reversal discarded unearned Guard
+## evidence. Diagnostic only; read once by the acquisition log.
+var charged_guard_acquisition_evidence_reset: bool = false
 var charged_guard_candidate_latch_left: float = 0.0
 ## Blue time banked toward the hold limit.
 var charged_guard_hold_time: float = 0.0
@@ -670,6 +673,19 @@ var charged_guard_entry_spent: bool = false
 var charged_guard_entry_has_cursor: bool = false
 var charged_guard_entry_previous_cursor: Vector2 = Vector2.ZERO
 var charged_guard_entry_grace_left: float = 0.0
+## Dual mouse-button Guard entry: whether the pair is currently held (which also suppresses
+## the chakram and grapple for that click) and how long it has been held continuously.
+var charged_guard_dual_click_held: bool = false
+var charged_guard_dual_click_hold_left: float = 0.0
+## When the right mouse button is pressed alone, the left is given this long to join before
+## the lone press is released to the grapple. The grapple fires on the right-button press
+## edge, so without it a right press that arrives a frame or two ahead of the left one would
+## fire the grapple before the pair could ever be recognised. The chakram needs no such
+## window: it fires on release, so a lone left press can never misfire from this.
+const CHARGED_GUARD_DUAL_CLICK_JOIN_WINDOW: float = 0.08
+var charged_guard_dual_click_join_left: float = 0.0
+## Previous-frame right-button state, so the join window only starts on a genuine press edge.
+var charged_guard_dual_click_right_was_down: bool = false
 var charged_guard_gesture_stroke_time: float = 0.0
 var charged_guard_gesture_still: float = 0.0
 var charged_guard_gesture_active: bool = false
@@ -1258,6 +1274,7 @@ func _physics_process(delta: float) -> void:
 		if current_scene != null and current_scene.has_method("try_spawn_resonant_glyph"):
 			current_scene.call("try_spawn_resonant_glyph", resonant_glyph_rank)
 		resonant_glyph_spawn_left = BonusConfig.resonant_glyph_cooldown(resonant_glyph_rank)
+	_update_charged_guard_dual_click(delta)
 	grapple_controller.mastery_range_multiplier = BonusConfig.grapple_range_multiplier(grapple_mastery_rank)
 	var grapple_can_start: bool = grapple_charges > 0 and grapple_cooldown_left <= 0.0
 	var grapple_acceleration: Vector2 = Vector2.ZERO
@@ -1279,12 +1296,20 @@ func _physics_process(delta: float) -> void:
 		# Mobile grapple fires on release and remains attached until the next tap.
 		grapple_acceleration = grapple_controller.update_and_get_player_acceleration(false, get_mobile_grapple_aim_point(), delta)
 	else:
-		var grapple_button_down: bool = _grapple_button_pressed() and not training_menu_input_locked
+		var raw_grapple_down: bool = _grapple_button_pressed() and not training_menu_input_locked
+		# The dual mouse-button Guard combo owns RMB while the pair is held (or a lone RMB press
+		# is still inside its pair-join window), so it must not also latch a grapple. A lone RMB
+		# press is only held back for that short window; if the left button never joins, the
+		# latch is left clear so the grapple still fires the moment the window lapses.
+		var combo_owns_rmb: bool = _charged_guard_dual_click_holds_grapple()
+		var grapple_button_down: bool = raw_grapple_down and not combo_owns_rmb
 		# Cooldown blocks only new shots. An already-fired tether must continue receiving
 		# held input, otherwise the cooldown would immediately release it on the next frame.
 		var grapple_held: bool = grapple_button_down and (grapple_can_start or grapple_controller.active or grapple_controller.firing)
 		var grapple_started: bool = grapple_button_down and grapple_can_start and not grapple_controller.input_was_down
 		grapple_acceleration = grapple_controller.update_and_get_player_acceleration(grapple_held, get_global_mouse_position(), delta)
+		if charged_guard_dual_click_held:
+			grapple_controller.input_was_down = raw_grapple_down
 		# Spend a charge only after _begin_shot() accepted a real flight. Bosses
 		# may intentionally block V1 grapples; rejected/zero-distance shots must
 		# not silently consume the charge and start cooldown.
@@ -1788,6 +1813,11 @@ func _throw_chakram() -> void:
 
 func _handle_chakram_input() -> void:
 	var down: bool = mobile_chakram_held if mobile_input_enabled else (_controller_button_pressed(CONTROLLER_CHAKRAM_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	if charged_guard_dual_click_held:
+		# The dual mouse-button Guard combo owns LMB while the pair is held: it must not also
+		# throw the chakram, and releasing half the combo must not leave a phantom press behind.
+		chakram_key_was_down = down
+		return
 	if mobile_input_enabled:
 		if down and not chakram_key_was_down and chakram_charges > 0:
 			_preview_chakram_aim()
@@ -2290,7 +2320,8 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		"blade_roll_speed",
 		"hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage",
 		"p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale",
-		"p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"
+		"p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled",
+		"charged_guard_dual_click_entry_enabled", "charged_guard_dual_click_hold_time"
 	]:
 		if not copied_contact.has(setting_name):
 			copied_contact[setting_name] = get_combat_contact_setting(setting_name)
@@ -2617,6 +2648,8 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_entry_g_enabled": result = 0.0
 		"charged_guard_entry_z_enabled": result = 0.0
 		"charged_guard_pommel_entry_enabled": result = 1.0
+		"charged_guard_dual_click_entry_enabled": result = 1.0
+		"charged_guard_dual_click_hold_time": result = 0.20
 		"charged_guard_hold_duration": result = 0.20
 		"charged_guard_awaken_duration": result = 0.35
 		"charged_guard_break_speed": result = 600.0
@@ -3708,9 +3741,10 @@ func _clear_charged_guard_entry_stroke() -> void:
 	charged_guard_entry_active = false
 	charged_guard_entry_spent = false
 
-func _charged_guard_entry_armed() -> bool:
-	if get_combat_contact_setting("charged_guard_entry_g_enabled") < 0.5 and get_combat_contact_setting("charged_guard_entry_z_enabled") < 0.5:
-		return false
+## Conditions shared by every deliberate Guard entry route (G, Z, and the dual mouse-button
+## click): Guard and its blue state on, metronome only, no ability/block/stagger in the way,
+## desktop mouse input, and the tuned Arc Energy floor reached.
+func _charged_guard_entry_ready() -> bool:
 	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or get_combat_contact_setting("charged_guard_position_charge_enabled") < 0.5:
 		return false
 	if charged_guard_locked or charged_guard_gesture_state != ChargedGuardGesture.NONE or charged_guard_reacquire_block_left > 0.0 or not _is_metronome_style():
@@ -3718,6 +3752,55 @@ func _charged_guard_entry_armed() -> bool:
 	if mobile_input_enabled or input_mode == INPUT_MODE_CONTROLLER or training_menu_input_locked or hit_stagger_left > 0.0:
 		return false
 	return not _authored_metronome_mode_applies() or authored_metronome_energy + 0.0001 >= clampf(get_combat_contact_setting("charged_guard_min_arc_energy"), 0.0, 100.0) / 100.0
+
+func _charged_guard_entry_armed() -> bool:
+	if get_combat_contact_setting("charged_guard_entry_g_enabled") < 0.5 and get_combat_contact_setting("charged_guard_entry_z_enabled") < 0.5:
+		return false
+	return _charged_guard_entry_ready()
+
+## The dual mouse-button Guard entry. LMB and RMB must be held together for the tuned hold
+## time before Guard locks, so a fast click can never acquire it by accident. While the pair is
+## held it owns both buttons, so the chakram and the grapple do not also fire from the same
+## press. Runs before the grapple and chakram input so the suppression flag is current.
+func _update_charged_guard_dual_click(delta: float) -> void:
+	var pair_possible: bool = not mobile_input_enabled and input_mode != INPUT_MODE_CONTROLLER
+	var left_down: bool = pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
+	var right_down: bool = pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	_update_charged_guard_dual_click_from_state(left_down, right_down, delta)
+
+## The dual-click rule, split from the raw button read so it can be driven directly. See
+## _update_charged_guard_dual_click for the behavior.
+func _update_charged_guard_dual_click_from_state(left_down: bool, right_down: bool, delta: float) -> void:
+	var combo_enabled: bool = get_combat_contact_setting("charged_guard_dual_click_entry_enabled") >= 0.5 and get_combat_contact_setting("charged_guard_enabled") >= 0.5 and _is_metronome_style()
+	var both_down: bool = combo_enabled and left_down and right_down
+	charged_guard_dual_click_held = both_down
+	if both_down:
+		charged_guard_dual_click_join_left = 0.0
+		charged_guard_dual_click_hold_left += delta
+		if charged_guard_dual_click_hold_left >= maxf(0.0, get_combat_contact_setting("charged_guard_dual_click_hold_time")):
+			_try_charged_guard_dual_click_entry()
+	else:
+		charged_guard_dual_click_hold_left = 0.0
+		# A lone right-button press starts the short pair-join window: the left button has that
+		# long to arrive before the press is released to the grapple. The chakram is left alone,
+		# because it fires on release and so cannot misfire from a lone left press.
+		var lone_right_press: bool = combo_enabled and right_down and not left_down and not charged_guard_dual_click_right_was_down
+		if lone_right_press:
+			charged_guard_dual_click_join_left = CHARGED_GUARD_DUAL_CLICK_JOIN_WINDOW
+		charged_guard_dual_click_join_left = maxf(0.0, charged_guard_dual_click_join_left - delta)
+	charged_guard_dual_click_right_was_down = right_down
+
+## True while the dual-click combo owns the grapple -- either the pair is held, or a lone
+## right-button press is inside its pair-join window. The grapple must not fire while this is
+## true. It is deliberately not gated on _charged_guard_entry_ready(), so a held pair never
+## falls through to a stray grapple.
+func _charged_guard_dual_click_holds_grapple() -> bool:
+	return charged_guard_dual_click_held or charged_guard_dual_click_join_left > 0.0
+
+func _try_charged_guard_dual_click_entry() -> void:
+	if not _charged_guard_entry_ready():
+		return
+	_activate_charged_guard_from_entry_gesture("dual_click")
 
 func _update_charged_guard_entry_gesture(delta: float) -> void:
 	if not _charged_guard_entry_armed():
@@ -4032,14 +4115,15 @@ func _clear_charged_guard_attempt() -> void:
 
 ## Temporary debug-build acquisition trace, throttled during ordinary play but always printed
 ## at lock. All values come from the live acquisition path.
-func _log_charged_guard_acquisition(alignment: float, speed: float, phase_valid: bool, travel: float, intent: float, candidate_age: float, candidate: bool, shape_valid: bool, event: String = "") -> void:
+func _log_charged_guard_acquisition(alignment: float, speed: float, phase_valid: bool, travel: float, intent: float, candidate_age: float, candidate: bool, shape_valid: bool, event: String = "", required_travel: float = 0.0, raw_delta: float = 0.0, pommel_delta: float = 0.0, reversal_reset: bool = false) -> void:
 	if not OS.is_debug_build():
 		return
 	if event.is_empty():
 		if charged_guard_acquisition_log_cooldown > 0.0 or (speed < 5.0 and not candidate and travel <= 0.0):
 			return
 	charged_guard_acquisition_log_cooldown = CHARGED_GUARD_ACQUISITION_LOG_INTERVAL
-	print("[guard] %s | alignment %.2f speed %.0f px/s phase/window %s travel %.1f px intent %.3f s candidate_age %.3f s candidate %s shape %s%s" % ["acquiring" if event.is_empty() else event, alignment, speed, phase_valid, travel, intent, candidate_age, candidate, shape_valid, " LOCK" if event == "lock" else ""])
+	var half_stroke_sign: int = 1 if cos(sword_phase) >= 0.0 else -1
+	print("[guard] %s | half-stroke %+d window %s reset %s | raw_mouse %.1f px pommel_delta %+.2f px travel %.1f/%.1f px | alignment %.2f speed %.0f px/s intent %.3f s candidate_age %.3f s candidate %s shape %s%s" % ["acquiring" if event.is_empty() else event, half_stroke_sign, phase_valid, reversal_reset, raw_delta, pommel_delta, travel, required_travel, alignment, speed, intent, candidate_age, candidate, shape_valid, " LOCK" if event == "lock" else ""])
 
 ## Ends a held guard cleanly, and is the only way out of one. A flick, the hold limit
 ## running out and the feature being switched off all come through here, so no exit can leave
@@ -4057,6 +4141,10 @@ func _update_charged_guard(delta: float) -> void:
 	charged_guard_entry_grace_left = maxf(0.0, charged_guard_entry_grace_left - delta)
 	charged_guard_acquisition_log_cooldown = maxf(0.0, charged_guard_acquisition_log_cooldown - delta)
 	charged_guard_reacquire_block_left = maxf(0.0, charged_guard_reacquire_block_left - delta)
+	# Consume the one-frame reversal-reset flag so the log can report it. The flag is
+	# set by _update_sword and reflects a reset since the previous acquisition update.
+	var acquisition_evidence_reset: bool = charged_guard_acquisition_evidence_reset
+	charged_guard_acquisition_evidence_reset = false
 	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
 		# An ability owns the sword until it finishes. The guard stays released and inert for
 		# the whole sequence, so no pull or fresh acquisition can interrupt an attack that is
@@ -4157,9 +4245,13 @@ func _update_charged_guard(delta: float) -> void:
 		charged_guard_pommel_time = 0.0
 		charged_guard_input_gap = 0.0
 		return
+	var pommel_travel_increment: float = 0.0
 	if deliberate_pommel_drive and phase_valid:
 		charged_guard_input_gap = 0.0
-		charged_guard_pommel_travel = minf(travel_needed, charged_guard_pommel_travel + authored_speed * pommel_alignment * delta)
+		# Qualifying authored displacement this frame: the pommel-axis component of the
+		# real per-frame aim delta (authored_speed * delta * alignment). Never negative.
+		pommel_travel_increment = authored_speed * pommel_alignment * delta
+		charged_guard_pommel_travel = minf(travel_needed, maxf(0.0, charged_guard_pommel_travel + pommel_travel_increment))
 		charged_guard_pommel_time += delta
 	else:
 		charged_guard_input_gap += delta
@@ -4168,11 +4260,11 @@ func _update_charged_guard(delta: float) -> void:
 			charged_guard_pommel_time = 0.0
 	var banked: bool = charged_guard_pommel_travel >= travel_needed and charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
 	if not banked:
-		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, false)
+		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, false, "", travel_needed, charged_guard_cursor_motion.length(), pommel_travel_increment, acquisition_evidence_reset)
 		return
 	# The timed, sustained axial pull is the action. It catches the blade
 	# immediately; no separate stillness test is required of the player.
-	_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, true, "lock")
+	_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, true, "lock", travel_needed, charged_guard_cursor_motion.length(), pommel_travel_increment, acquisition_evidence_reset)
 	charged_guard_pommel_travel = 0.0
 	charged_guard_pommel_time = 0.0
 	charged_guard_input_gap = 0.0
@@ -4319,6 +4411,14 @@ func _update_sword(delta: float) -> void:
 		# Preserve bonuses and per-stroke hit suppression, including phase wrap.
 		hit_ids.clear()
 		swing_count += 1
+		# One metronome half-stroke = one Guard acquisition attempt. Any unearned
+		# Guard pull is discarded at the reversal, so partial evidence from one
+		# swing can never combine with another. A locked guard is untouched.
+		if not charged_guard_locked:
+			charged_guard_pommel_travel = 0.0
+			charged_guard_pommel_time = 0.0
+			charged_guard_input_gap = 0.0
+			charged_guard_acquisition_evidence_reset = true
 		_begin_metronome_reversal_pulse(current_angle)
 		if _is_windup_metronome_style():
 			windup_forward_step_fired = false

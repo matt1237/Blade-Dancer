@@ -50,55 +50,43 @@ func test_ensure_day_preset_slots_is_additive_not_destructive() -> void:
 	assert(float((stored["Noon"] as Dictionary)["grass_brightness"]) == 1.35, "ensure_day_preset_slots must not touch a phase that already exists.")
 	_clear_test_files()
 
-## Simulates the tuner: tune phase A, switch to B, tune B, switch back to A —
-## A's edits must still be there (this is the exact bug the user reported).
+## The tuner edits the one bundle main owns: tune phase A, switch to B, tune B,
+## switch back to A -- A's edits must still be there and B's must be committed.
 func test_tuner_phase_switch_preserves_untouched_phase_edits() -> void:
-	_clear_test_files()
 	var settings: ForestVisualSettings = ForestVisualSettings.new()
 	var tuner: ForestVisualTuner = ForestVisualTuner.new()
-	tuner.library = _make_library()
 	tuner.settings = settings
-	tuner.preset_slots = [{}, {}, {}]
-	tuner.dirty_phases = [{}, {}, {}]
-	tuner.selected_preset_slot = 1
-	tuner.selected_phase = "Noon"
-	tuner._refresh_day_presets()
+	var bundle: Dictionary = {
+		"Noon": {"grass_brightness": 1.0},
+		"Morning": {"grass_brightness": 0.8},
+		"Dusk": {},
+		"Night": {}
+	}
+	tuner.attach_day_bundle(bundle, "Noon")
 
 	settings.set_value("grass_brightness", 1.3)
-	tuner._on_settings_changed_for_dirty_tracking()
+	tuner._on_settings_changed()
 	tuner._select_day_phase("Morning")
-	assert(is_equal_approx(float(settings.get_value("grass_brightness")), float((tuner.preset_slots[0]["Morning"] as Dictionary).get("grass_brightness", -1.0))), "Morning should now be the live profile.")
+	assert(is_equal_approx(float(settings.get_value("grass_brightness")), 0.8), "Morning should now be the live profile.")
 
 	settings.set_value("grass_brightness", 0.7)
-	tuner._on_settings_changed_for_dirty_tracking()
-	# Simulate a stray reconfigure/panel-reopen while Morning still has unsaved edits.
-	tuner._refresh_day_presets()
-	assert(is_equal_approx(float((tuner.preset_slots[0]["Morning"] as Dictionary).get("grass_brightness", -1.0)), 0.7), "Unsaved Morning edit must survive a refresh.")
-
+	tuner._on_settings_changed()
 	tuner._select_day_phase("Noon")
-	assert(is_equal_approx(float(settings.get_value("grass_brightness")), 1.3), "Switching back to Noon must restore Noon's own tuned value, not Morning's.")
+	assert(is_equal_approx(float(settings.get_value("grass_brightness")), 1.3), "Switching back to Noon must restore Noon's own tuned value.")
+	assert(is_equal_approx(float((bundle["Morning"] as Dictionary).get("grass_brightness", -1.0)), 0.7), "Morning edit must be committed into the shared bundle.")
+	assert(tuner.dirty_phases.has("Noon") and tuner.dirty_phases.has("Morning"), "Both edited phases should be flagged dirty.")
+	tuner.mark_global_save_complete()
+	assert(tuner.dirty_phases.is_empty(), "Global Save All must clear every dirty marker.")
 	tuner.free()
-	_clear_test_files()
 
-## Save/reload round trip through the full tuner save path.
-func test_save_and_reload_round_trip() -> void:
-	_clear_test_files()
+## The tuner writes straight into the bundle main persists; commit must land there.
+func test_tuner_commit_writes_into_the_owned_bundle() -> void:
 	var settings: ForestVisualSettings = ForestVisualSettings.new()
 	var tuner: ForestVisualTuner = ForestVisualTuner.new()
-	tuner.library = _make_library()
 	tuner.settings = settings
-	tuner.preset_slots = [{}, {}, {}]
-	tuner.dirty_phases = [{}, {}, {}]
-	tuner.selected_preset_slot = 1
-	tuner.selected_phase = "Noon"
-	tuner._refresh_day_presets()
+	var bundle: Dictionary = {"Noon": {}, "Morning": {}, "Dusk": {}, "Night": {}}
+	tuner.attach_day_bundle(bundle, "Noon")
 	settings.set_value("sunlight_warmth", 0.55)
-	tuner._on_settings_changed_for_dirty_tracking()
-	tuner._save_day_preset()
-	assert(not tuner._slot_has_dirty_phase(0), "Saving should clear the dirty marker for the whole slot.")
-
-	var reloaded: ForestVisualProfileLibrary = _make_library()
-	var stored: Dictionary = reloaded.get_day_preset(1)
-	assert(is_equal_approx(float((stored["Noon"] as Dictionary)["sunlight_warmth"]), 0.55), "Saved value should round-trip from disk.")
+	tuner._on_settings_changed()
+	assert(is_equal_approx(float((tuner.get_day_bundle()["Noon"] as Dictionary).get("sunlight_warmth", -1.0)), 0.55), "A tuned value must land in the owned bundle.")
 	tuner.free()
-	_clear_test_files()

@@ -7,7 +7,6 @@ var preview_ready: bool = false
 var preview_mood_name: String = ""
 
 func _load_forest_visual_settings() -> void:
-	forest_visual_settings_persistence_enabled = false
 	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
 	var hazey: Dictionary = library.find_latest_named_snapshot("Hazey")
 	if not hazey.is_empty():
@@ -31,13 +30,10 @@ func _create_backyard_training_menu() -> void:
 	pass
 
 func _apply_forest_visual_settings() -> void:
-	# Guard even if Main or a future caller re-enables persistence.
-	forest_visual_settings_persistence_enabled = false
 	super._apply_forest_visual_settings()
 
 func _ready() -> void:
 	super._ready()
-	forest_visual_settings_persistence_enabled = false
 	visual_style = "hd"
 	player.set_visual_style("hd")
 	forest_floor.set_visual_style("hd")
@@ -69,7 +65,7 @@ func select_preview_mood(index: int) -> void:
 	assert(result == OK)
 	preview_mood_name = str(variant["name"])
 	($CanvasLayer/PreviewCaption as Label).text = "PREVIEW / " + preview_mood_name + "   [1 Noon | 2 Morning | 3 Dusk | 4 Night]   NO SAVES"
-	print("PREVIEW mood=", preview_mood_name, " night=", forest_visual_settings.get_value("night_strength"), " persistence=", forest_visual_settings_persistence_enabled)
+	print("PREVIEW mood=", preview_mood_name, " night=", forest_visual_settings.get_value("night_strength"))
 
 func _input(event: InputEvent) -> void:
 	# Do not forward Main's menu/save shortcuts; Player handles gameplay itself.

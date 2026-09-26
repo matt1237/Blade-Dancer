@@ -40,6 +40,10 @@ const RESONANCE_RUSH_SCENE: PackedScene = preload("res://scenes/minigames/resona
 const MUSIC_BUS: StringName = &"Music"
 const SFX_BUS: StringName = &"SFX"
 const SILENT_AUDIO_DB: float = -80.0
+## SFX is authored hotter than music, so even at a 100% slider it is too loud
+## for comfortable defaults. Trim the whole SFX bus by this linear factor at the
+## bus authority below; the Settings slider still reads 0-100% for the player.
+const SFX_DEFAULT_TRIM: float = 0.80
 
 @export_category("Screen Shake")
 ## Global multiplier for all world shake. Set to 0 to disable screen shake.
@@ -194,9 +198,12 @@ var test_turkey_enabled: bool = false
 var combat_debug_tracker: CombatDebugTracker = null
 var tutorial_overlay: TutorialOverlay = null
 var forest_visual_settings: ForestVisualSettings = ForestVisualSettings.new()
-var forest_visual_settings_persistence_enabled: bool = false
 var active_forest_time_phase: String = "Morning"
 var active_global_forest_day_presets: Dictionary = {}
+## The four day phases of the active Global Preset's day cycle -- the single
+## owner of every forest day visual. The tuner edits this exact dictionary and
+## Global Presets -> SAVE ALL is the only writer that persists it.
+var active_global_day_phases: Dictionary = {}
 ## Morning -> Noon -> Dusk -> Night -> loop. One step per wave (after wave 1,
 ## so Morning is actually seen before the first advance) and one step per
 ## minigame closed -- see _advance_forest_time_phase() and _on_wave_started().
@@ -206,32 +213,10 @@ func get_forest_visual_settings() -> ForestVisualSettings:
 	return forest_visual_settings
 
 func _load_forest_visual_settings() -> void:
-	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
-	# Load the active visual-only file first, then use it to seed the named
-	# Hazey baseline only when an older project has no named baseline yet.
+	# Visuals are owned entirely by Global Presets. The legacy live file is only
+	# read as a first-run fallback so a brand-new install has sane values before
+	# the Global Preset applies; it is never written back.
 	var preset_error: Error = forest_visual_settings.load_preset()
-	var hazey_snapshot: Dictionary = library.find_latest_named_snapshot("Hazey")
-	if hazey_snapshot.is_empty():
-		var hazey_created: Dictionary = library.create_snapshot("Hazey", forest_visual_settings)
-		hazey_snapshot = hazey_created
-	# Named visual profiles remain available to the Backyard tuner, but they are
-	# not a source for the runtime day cycle. Global Presets own every phase.
-	library.ensure_time_of_day_profiles(forest_visual_settings)
-	library.ensure_time_of_day_visual_upgrades()
-	var startup_snapshot_id: String = library.get_startup_snapshot_id()
-	var startup_snapshot: Dictionary = library.get_snapshot(startup_snapshot_id) if not startup_snapshot_id.is_empty() else {}
-	if startup_snapshot.is_empty():
-		# Preserve the established Hazey startup behavior when no explicit choice
-		# exists, while keeping all named variants independent from gameplay saves.
-		startup_snapshot = hazey_snapshot
-		startup_snapshot_id = str(startup_snapshot.get("id", ""))
-		if not startup_snapshot_id.is_empty():
-			library.set_startup_snapshot_id(startup_snapshot_id)
-	if not startup_snapshot.is_empty():
-		var startup_error: Error = forest_visual_settings.apply_snapshot_values(startup_snapshot.get("values", {}) as Dictionary)
-		if startup_error == OK:
-			forest_visual_settings.save_preset()
-			return
 	if preset_error != OK and preset_error != ERR_FILE_NOT_FOUND:
 		push_warning("Forest visual profile could not load; using clean defaults: " + error_string(preset_error))
 
@@ -250,10 +235,6 @@ func _apply_forest_visual_settings() -> void:
 	combat_presentation_fx.forest_screen_blur_allowed = forest_visual_settings.effect_enabled("blur_enabled")
 	combat_presentation_fx._update_blur()
 	_update_presentation_environment()
-	if forest_visual_settings_persistence_enabled:
-		var save_error: Error = forest_visual_settings.save_preset()
-		if save_error != OK:
-			push_warning("Active forest visual profile could not save: " + error_string(save_error))
 
 
 func get_gameplay_arena_rect() -> Rect2:
@@ -365,9 +346,6 @@ func _ready() -> void:
 	home_menu.call("set_cauldron_catch_high_score", cauldron_catch_high_score)
 	home_menu.call("set_time_of_day", active_forest_time_phase)
 	_create_boss_arena_border()
-	# From this point onward, live tuner edits are the active visual baseline.
-	# This file remains visual-only and never touches gameplay/progression saves.
-	forest_visual_settings_persistence_enabled = true
 	zone_transition_fade.modulate.a = 0.0
 	end_run_hub.visible = false
 	# New sessions begin safely at Home so food and developer tools are available.
@@ -571,7 +549,7 @@ func _apply_audio_settings() -> void:
 	var music_bus_index: int = AudioServer.get_bus_index(MUSIC_BUS)
 	var sfx_bus_index: int = AudioServer.get_bus_index(SFX_BUS)
 	if music_bus_index >= 0: AudioServer.set_bus_volume_db(music_bus_index, _audio_volume_db(music_volume))
-	if sfx_bus_index >= 0: AudioServer.set_bus_volume_db(sfx_bus_index, _audio_volume_db(sfx_volume))
+	if sfx_bus_index >= 0: AudioServer.set_bus_volume_db(sfx_bus_index, _audio_volume_db(sfx_volume * SFX_DEFAULT_TRIM))
 	if is_instance_valid(music_director): music_director.call("set_music_volume", music_volume)
 
 func _on_enable_music_requested() -> void:
@@ -782,11 +760,33 @@ func set_forest_time_phase(phase: String) -> void:
 		population.set_time_phase(active_forest_time_phase)
 	if is_instance_valid(home_menu):
 		home_menu.call("set_time_of_day", active_forest_time_phase)
-	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
-	library.set_current_time_phase(active_forest_time_phase)
+	# The clock lives in the Global Preset library so it survives a relaunch
+	# without being written into any tuning package.
+	GlobalPresetConfig.set_current_time_phase(active_forest_time_phase)
 
 func get_forest_time_phase() -> String:
 	return active_forest_time_phase
+
+## Applies a day phase from the active Global Preset bundle to the live view and
+## moves the world clock. The apply is bracketed so the tuner does not mistake it
+## for a user edit and commit the values back into the wrong phase.
+func _apply_time_phase_values(phase: String) -> void:
+	var tuner: ForestVisualTuner = _get_forest_visual_tuner()
+	var values: Variant = active_global_day_phases.get(phase, null)
+	if values is Dictionary:
+		if tuner != null:
+			tuner.set_suppress_commit(true)
+			forest_visual_settings.apply_snapshot_values(values as Dictionary)
+			tuner.set_suppress_commit(false)
+			tuner.sync_external_phase(phase)
+		else:
+			forest_visual_settings.apply_snapshot_values(values as Dictionary)
+	set_forest_time_phase(phase)
+
+func _get_forest_visual_tuner() -> ForestVisualTuner:
+	if is_instance_valid(backyard_training_menu):
+		return backyard_training_menu.forest_visual_tuner
+	return null
 
 ## Steps the day-cycle "world clock" one phase forward (Morning -> Noon ->
 ## Dusk -> Night -> loop), applying the matching phase from the currently
@@ -796,14 +796,7 @@ func _advance_forest_time_phase() -> void:
 	var current_index: int = DAY_CYCLE_ORDER.find(active_forest_time_phase)
 	if current_index < 0: current_index = 0
 	var next_phase: String = DAY_CYCLE_ORDER[(current_index + 1) % DAY_CYCLE_ORDER.size()]
-	var day_preset: Dictionary = active_global_forest_day_presets.get(str(global_preset_slot), {}) as Dictionary
-	if day_preset.get(next_phase, null) is Dictionary:
-		# The live settings are a temporary view of the selected Global Preset
-		# phase. Do not persist them as an independent visual source of truth.
-		forest_visual_settings.apply_snapshot_values(day_preset[next_phase] as Dictionary)
-		if is_instance_valid(backyard_training_menu) and backyard_training_menu.forest_visual_tuner != null:
-			backyard_training_menu.forest_visual_tuner.sync_external_phase(next_phase)
-	set_forest_time_phase(next_phase)
+	_apply_time_phase_values(next_phase)
 
 func refresh_population_navigation() -> void:
 	if arena_generator != null: arena_generator.refresh_population_navigation()
@@ -1579,13 +1572,12 @@ func capture_global_preset_state() -> Dictionary:
 	var materialized: Dictionary = _materialize_combat_settings()
 	var grapple: GrappleController = player.grapple_controller
 	var population: ArenaPopulation = get_arena_population()
-	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
-	var day_presets: Dictionary = {}
-	if is_instance_valid(backyard_training_menu) and backyard_training_menu.forest_visual_tuner != null:
-		day_presets = backyard_training_menu.forest_visual_tuner.get_global_day_presets()
-	for slot: int in range(1, 4):
-		if not day_presets.has(str(slot)):
-			day_presets[str(slot)] = library.get_day_preset(slot)
+	# Flush any in-progress tuning into the owned bundle before snapshotting it.
+	var tuner: ForestVisualTuner = _get_forest_visual_tuner()
+	if tuner != null:
+		tuner.commit_current_phase()
+	var day_presets: Dictionary = active_global_forest_day_presets.duplicate(true)
+	day_presets[str(global_preset_slot)] = active_global_day_phases.duplicate(true)
 	day_presets = _normalize_global_forest_day_presets(day_presets)
 	return {
 		"schema": GlobalPresetConfig.VERSION,
@@ -1605,11 +1597,16 @@ func capture_global_preset_state() -> Dictionary:
 		"forest_values": forest_visual_settings.values.duplicate(true),
 		"forest_bypass_all": forest_visual_settings.bypass_all,
 		"forest_day_presets": day_presets,
-		"forest_startup_day_preset": library.get_startup_day_preset_slot(),
+		"forest_startup_day_preset": global_preset_slot,
 		"forest_time_phase": active_forest_time_phase,
 		"farmable_density": population.farmable_density if population != null else 0.3,
 		"big_things_density": population.big_things_density if population != null else 0.75
 	}
+
+## The active Global Preset's day bundle, by reference: the tuner edits this exact
+## dictionary and Global Save All is the only writer that persists it.
+func get_active_global_day_phases() -> Dictionary:
+	return active_global_day_phases
 
 func _default_global_preset_state() -> Dictionary:
 	var defaults: ForestVisualSettings = ForestVisualSettings.new()
@@ -1719,37 +1716,80 @@ func _global_state_complete(state: Dictionary) -> bool:
 	var grapple: Dictionary = state.get("grapple", {}) as Dictionary
 	return int(state.get("schema", 0)) == GlobalPresetConfig.VERSION and hand_settings.size() >= Player.SwordStyle.size() * 4 and contact_settings.size() >= 4 and weapon_hand_settings.has("Basic Longsword") and weapon_hand_settings.has("Basic Curved Sword") and forest_values.size() >= ForestVisualSettings.SPECS.size() and grapple.size() >= 10 and state.has("forest_day_presets") and state.has("forest_bypass_all")
 
-func _repair_global_preset_two_day_phases(state: Dictionary) -> bool:
-	var day_presets: Dictionary = state.get("forest_day_presets", {}) as Dictionary
-	var slot_two: Dictionary = day_presets.get("2", {}) as Dictionary
-	var noon: Dictionary = slot_two.get("Noon", {}) as Dictionary
-	var night: Dictionary = slot_two.get("Night", {}) as Dictionary
-	var noon_is_night: bool = float(noon.get("night_strength", 0.0)) > 0.5 or bool(noon.get("moon_glow_enabled", false))
-	var night_is_day: bool = float(night.get("night_strength", 0.0)) <= 0.05 and not bool(night.get("moon_glow_enabled", false))
-	if not noon_is_night and not night_is_day:
+## A phase bundle is coherent when a "day" phase is not actually night and a
+## "night" phase actually is. The old four-store writers scrambled these across
+## slots, so a mismatch is a reliable signal of corruption.
+func _phase_bundle_is_coherent(phase: String, values: Dictionary) -> bool:
+	# An empty or partial phase is never usable: the old writers saved partial
+	# bundles that would otherwise load as clean defaults.
+	if values.size() < ForestVisualSettings.SPECS.size():
 		return false
+	var night_strength: float = float(values.get("night_strength", 0.0))
+	var moon_glow: bool = bool(values.get("moon_glow_enabled", false))
+	if phase == "Night":
+		return night_strength > 0.2 or moon_glow
+	return night_strength <= 0.05 and not moon_glow
+
+func _coherent_phase_values(phase: String) -> Dictionary:
 	var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
-	var repaired_slot: Dictionary = {}
-	for phase: String in DAY_CYCLE_ORDER:
-		var profile: ForestVisualSettings = ForestVisualSettings.new()
-		var snapshot_name: String = "Hazey" if phase == "Noon" else phase + " v2"
+	var profile: ForestVisualSettings = ForestVisualSettings.new()
+	var candidates: Array[String] = []
+	if phase == "Noon":
+		candidates.append("Hazey")
+		candidates.append("Noon")
+	else:
+		candidates.append(phase + " v2")
+		candidates.append(phase)
+	for snapshot_name: String in candidates:
 		var snapshot: Dictionary = library.find_latest_named_snapshot(snapshot_name)
-		if not snapshot.is_empty():
-			profile.apply_snapshot_values(snapshot.get("values", {}) as Dictionary)
-		if phase == "Night":
-			profile.set_value("night_strength", 0.84)
-			profile.set_value("moon_glow_enabled", true)
-			profile.set_value("moon_beams_enabled", true)
-			profile.set_value("moon_beam_strength", 0.12)
-		else:
-			profile.set_value("night_strength", 0.0)
-			profile.set_value("moon_glow_enabled", false)
-		repaired_slot[phase] = profile.values.duplicate(true)
-	day_presets["2"] = repaired_slot
-	state["forest_day_presets"] = day_presets
-	state["forest_values"] = (repaired_slot.get("Morning", {}) as Dictionary).duplicate(true)
-	state["forest_time_phase"] = "Morning"
-	return true
+		if not snapshot.is_empty() and snapshot.get("values", null) is Dictionary:
+			profile.apply_snapshot_values(snapshot["values"] as Dictionary)
+			break
+	if phase == "Night":
+		profile.set_value("night_strength", 0.84)
+		profile.set_value("moon_glow_enabled", true)
+		profile.set_value("moon_beams_enabled", true)
+		profile.set_value("moon_beam_strength", 0.12)
+	else:
+		profile.set_value("night_strength", 0.0)
+		profile.set_value("moon_glow_enabled", false)
+	return profile.values.duplicate(true)
+
+## Repairs only the phase bundles that are actually scrambled, leaving coherent
+## tuning untouched. Returns true when at least one phase was rebuilt.
+func _repair_global_day_bundles(state: Dictionary) -> bool:
+	var day_presets: Dictionary = state.get("forest_day_presets", {}) as Dictionary
+	if day_presets.is_empty():
+		return false
+	var changed: bool = false
+	for slot: int in range(1, 4):
+		var bundle: Variant = day_presets.get(str(slot), null)
+		if not (bundle is Dictionary):
+			continue
+		var phases: Dictionary = bundle as Dictionary
+		for phase: String in DAY_CYCLE_ORDER:
+			var values: Variant = phases.get(phase, null)
+			if values is Dictionary and _phase_bundle_is_coherent(phase, values as Dictionary):
+				continue
+			phases[phase] = _coherent_phase_values(phase)
+			changed = true
+	if changed:
+		state["forest_day_presets"] = day_presets
+	return changed
+
+## One-shot migration repair: rebuilds scrambled day bundles in every stored
+## Global Preset exactly once per install.
+func _repair_all_global_day_bundles_once() -> void:
+	if GlobalPresetConfig.visual_repair_done():
+		return
+	var active: int = GlobalPresetConfig.active_slot()
+	for slot: int in range(1, GlobalPresetConfig.SLOT_COUNT + 1):
+		var state: Dictionary = GlobalPresetConfig.get_slot(slot)
+		if state.is_empty():
+			continue
+		if _repair_global_day_bundles(state):
+			GlobalPresetConfig.save_slot(slot, state, active)
+	GlobalPresetConfig.set_visual_repair_done()
 
 func _load_baked_global_preset() -> Dictionary:
 	var file: FileAccess = FileAccess.open("res://data/default_global_preset.json", FileAccess.READ)
@@ -1759,29 +1799,21 @@ func _load_baked_global_preset() -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary and _global_state_complete(parsed as Dictionary) else {}
 
 func _initialize_global_presets() -> void:
+	# Read the persisted world clock before anything applies a preset, because
+	# applying one writes the clock back.
+	var saved_clock: String = GlobalPresetConfig.current_time_phase()
 	# A user's saved Global Preset 2 is their live authoring package and must
 	# survive relaunch. The shipped baked package is only the first-run fallback.
 	if GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2)):
 		global_preset_slot = 2
 		GlobalPresetConfig.set_launch_slot(2)
-		var saved_user_default: Dictionary = GlobalPresetConfig.get_slot(2)
-		if _repair_global_preset_two_day_phases(saved_user_default):
-			GlobalPresetConfig.save_slot(2, saved_user_default, 2)
-		_apply_global_preset_state(saved_user_default)
+		_repair_all_global_day_bundles_once()
+		_finish_global_preset_init(GlobalPresetConfig.get_slot(2), saved_clock)
 		return
 	var baked_game_default: Dictionary = _load_baked_global_preset()
 	if not baked_game_default.is_empty():
 		global_preset_slot = 2
-		_apply_global_preset_state(baked_game_default)
-		return
-	var baked_default: Dictionary = _load_baked_global_preset()
-	if not baked_default.is_empty():
-		var baked_classic: Dictionary = _default_global_preset_state()
-		GlobalPresetConfig.save_slot(1, baked_classic, 2)
-		GlobalPresetConfig.save_slot(2, baked_default, 2)
-		GlobalPresetConfig.save_slot(3, _default_global_preset_state(), 2)
-		global_preset_slot = 2
-		_apply_global_preset_state(baked_default)
+		_finish_global_preset_init(baked_game_default, saved_clock)
 		return
 	var old_library: Dictionary = GlobalPresetConfig.load_raw_library()
 	var old_slots: Dictionary = old_library.get("slots", {}) as Dictionary
@@ -1818,7 +1850,14 @@ func _initialize_global_presets() -> void:
 	GlobalPresetConfig.save_slot(2, current_state, 2)
 	GlobalPresetConfig.save_slot(3, empty_state, 2)
 	global_preset_slot = 2
-	_apply_global_preset_state(current_state)
+	_finish_global_preset_init(current_state, saved_clock)
+
+## Applies a preset, then reapplies the persisted world clock if one was saved so
+## the running time of day survives a relaunch.
+func _finish_global_preset_init(state: Dictionary, saved_clock: String) -> void:
+	_apply_global_preset_state(state)
+	if not saved_clock.is_empty():
+		_apply_time_phase_values(saved_clock)
 
 func _apply_global_preset_state(state: Dictionary) -> void:
 	if state.is_empty():
@@ -1859,16 +1898,15 @@ func _apply_global_preset_state(state: Dictionary) -> void:
 		population.set_big_things_density(clampf(float(state.get("big_things_density", population.big_things_density)), 0.0, 1.0))
 	var day_presets: Dictionary = state.get("forest_day_presets", {}) as Dictionary
 	active_global_forest_day_presets = day_presets.duplicate(true)
+	var bundle: Variant = active_global_forest_day_presets.get(str(global_preset_slot), null)
+	active_global_day_phases = bundle as Dictionary if bundle is Dictionary else {}
 	var phase: String = str(state.get("forest_time_phase", "Noon"))
-	var selected_phases: Dictionary = day_presets.get(str(global_preset_slot), {}) as Dictionary
-	var selected_values: Variant = selected_phases.get(phase, null)
-	if selected_values is Dictionary:
-		forest_visual_settings.apply_snapshot_values(selected_values as Dictionary)
-	elif state.get("forest_values", null) is Dictionary:
+	var tuner: ForestVisualTuner = _get_forest_visual_tuner()
+	if tuner != null:
+		tuner.attach_day_bundle(active_global_day_phases, phase)
+	_apply_time_phase_values(phase)
+	if not active_global_day_phases.has(phase) and state.get("forest_values", null) is Dictionary:
 		forest_visual_settings.apply_snapshot_values(state["forest_values"] as Dictionary)
-	set_forest_time_phase(phase)
-	if is_instance_valid(backyard_training_menu) and backyard_training_menu.forest_visual_tuner != null:
-		backyard_training_menu.forest_visual_tuner.apply_global_day_presets(day_presets, global_preset_slot, phase)
 	# Applying a phase snapshot resets the visual bypass flag internally. Restore
 	# the saved bypass state only after the phase workspace has been materialized.
 	forest_visual_settings.set_bypass(bool(state.get("forest_bypass_all", false)))
@@ -1883,26 +1921,25 @@ func _apply_global_preset_state(state: Dictionary) -> void:
 
 func save_global_preset(slot: int) -> bool:
 	var target_slot: int = clampi(slot, 1, GlobalPresetConfig.SLOT_COUNT)
-	# Capture while the currently loaded global slot still owns the live Forest
-	# workspace. Changing global_preset_slot first used to make SAVE ALL select a
-	# different nested phase bundle and silently lose Night edits.
+	# Capture while the currently loaded global slot still owns the live bundle.
 	var state: Dictionary = capture_global_preset_state()
 	var saved_day_presets: Dictionary = state.get("forest_day_presets", {}) as Dictionary
-	var source_day_bundle: Variant = saved_day_presets.get(str(global_preset_slot), null)
-	if source_day_bundle is Dictionary:
-		# A Global Preset owns one complete day-cycle bundle. When saving to a
-		# different slot, copy the live source bundle into that slot instead of
-		# leaving the edited Night phase stranded under the previous slot number.
-		saved_day_presets[str(target_slot)] = (source_day_bundle as Dictionary).duplicate(true)
+	# A Global Preset owns one complete day-cycle bundle. Preserve it for the saved
+	# slot so the four tuned phases travel together with the combat package.
+	saved_day_presets[str(target_slot)] = active_global_day_phases.duplicate(true)
 	state["forest_day_presets"] = saved_day_presets
 	state["forest_time_phase"] = active_forest_time_phase
 	var saved: bool = GlobalPresetConfig.save_slot(target_slot, state, target_slot)
 	if not saved:
 		return false
 	global_preset_slot = target_slot
-	active_global_forest_day_presets = (state.get("forest_day_presets", {}) as Dictionary).duplicate(true)
-	if is_instance_valid(backyard_training_menu) and backyard_training_menu.forest_visual_tuner != null:
-		backyard_training_menu.forest_visual_tuner.mark_global_save_complete()
+	active_global_forest_day_presets = saved_day_presets.duplicate(true)
+	var bundle: Variant = active_global_forest_day_presets.get(str(target_slot), null)
+	active_global_day_phases = bundle as Dictionary if bundle is Dictionary else {}
+	var tuner: ForestVisualTuner = _get_forest_visual_tuner()
+	if tuner != null:
+		tuner.attach_day_bundle(active_global_day_phases, active_forest_time_phase)
+		tuner.mark_global_save_complete()
 	return true
 
 func load_global_preset(slot: int) -> bool:
@@ -1935,9 +1972,6 @@ func set_global_preset_launch_slot(slot: int) -> bool:
 	if saved:
 		load_global_preset(clean_slot)
 	return saved
-
-func get_active_global_forest_day_presets() -> Dictionary:
-	return active_global_forest_day_presets.duplicate(true)
 
 func get_main_game_preset() -> int:
 	return main_game_preset

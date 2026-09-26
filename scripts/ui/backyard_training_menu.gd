@@ -10,9 +10,6 @@ var combat_status: Label = null
 var event_monitor_label: Label = null
 var main_preset_status: Label = null
 var disk_feedback_label: Label = null
-var snapshot_name_edit: LineEdit = null
-var snapshot_list: VBoxContainer = null
-var snapshot_feedback_label: Label = null
 var auto_spawner_button: Button = null
 var auto_spawner_status: Label = null
 var training_dummy_button: Button = null
@@ -95,7 +92,6 @@ func _build_ui() -> void:
 	_build_windup_tab(training_tabs)
 	_build_visualizer_tab(training_tabs)
 	_build_global_presets_tab(training_tabs)
-	_build_saves_tab(training_tabs)
 	_build_forest_visuals_tab(training_tabs)
 	training_tabs.tab_changed.connect(_on_training_tab_changed)
 
@@ -154,25 +150,15 @@ func _bind_forest_visual_settings() -> void:
 		profile = main.call("get_forest_visual_settings") as ForestVisualSettings
 	if is_instance_valid(main) and main.has_method("get_arena_population"):
 		population = main.call("get_arena_population") as ArenaPopulation
-	var global_day_presets: Dictionary = {}
-	var global_slot: int = 2
+	# Bind the tuner to the one day bundle main owns (by reference). Main re-binds
+	# it whenever a Global Preset is applied, so this only needs the current state.
+	var bundle: Dictionary = {}
 	var global_phase: String = "Noon"
-	if is_instance_valid(main) and main.has_method("get_active_global_forest_day_presets"):
-		global_day_presets = main.call("get_active_global_forest_day_presets") as Dictionary
-		global_slot = int(main.call("get_global_preset_slot")) if main.has_method("get_global_preset_slot") else 2
+	if is_instance_valid(main) and main.has_method("get_active_global_day_phases"):
+		bundle = main.call("get_active_global_day_phases") as Dictionary
 		global_phase = str(main.call("get_forest_time_phase")) if main.has_method("get_forest_time_phase") else "Noon"
-	# Import the global bundle once when the tuner is initialized. Reopening the
-	# menu must not replace its live/dirty phase workspace with saved values.
-	# Main explicitly calls apply_global_day_presets() after a real Global Load.
-	if not global_day_presets.is_empty() and not forest_visual_tuner.global_preset_mode:
-		forest_visual_tuner.apply_global_day_presets(global_day_presets, global_slot, global_phase)
+	forest_visual_tuner.attach_day_bundle(bundle, global_phase)
 	forest_visual_tuner.configure(profile, population)
-	if not forest_visual_tuner.time_phase_selected.is_connected(_on_forest_time_phase_selected):
-		forest_visual_tuner.time_phase_selected.connect(_on_forest_time_phase_selected)
-
-func _on_forest_time_phase_selected(phase: String) -> void:
-	if is_instance_valid(main) and main.has_method("set_forest_time_phase"):
-		main.call("set_forest_time_phase", phase)
 
 func _on_training_tab_changed(_index: int) -> void:
 	if forest_visual_tuner != null and training_tabs.get_current_tab_control() != forest_visual_tuner:
@@ -441,7 +427,7 @@ func _build_charged_guard_tab(tabs: TabContainer) -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(title)
 	var note: Label = Label.new()
-	note.text = "Guard can catch from a timed pommel pull, or from a large G or Z drawn outside Guard when its switch is on. G and Z go straight to blue Guard; the pull uses the charged-position delay. Entry gestures are read only outside Guard, while attack gestures are read only inside blue Guard. The Arc Energy floor applies to both entry routes. Switch off Pommel Pull Entry if you want gestures alone."
+	note.text = "Guard can catch from a timed pommel pull, a large G or Z drawn outside Guard, or by pressing the left and right mouse buttons together, each when its switch is on. G and Z go straight to blue Guard; the pull uses the charged-position delay. A dual click is a fourth route that arrives blue and suppresses the chakram and grapple for that click. Entry gestures are read only outside Guard, while attack gestures are read only inside blue Guard. The Arc Energy floor applies to every entry route. Switch off Pommel Pull Entry if you want gestures and the dual click alone."
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(note)
 	_create_contact_slider(box, "charged_guard_enabled", "Charged Guard Enabled", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Enable Guard acquisition and its optional gesture entries.", "Guard recognition and lock are disabled.", "The enabled pommel, G, and Z routes can acquire Guard.", "Use the three entry switches below to choose which routes are active."))
@@ -449,6 +435,8 @@ func _build_charged_guard_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(box, "charged_guard_entry_g_enabled", "G Gesture Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a counter-clockwise inward spiral drawn outside Guard enter blue Guard immediately.", "Drawing the spiral does not acquire Guard.", "A broad spiral that turns counter-clockwise while clearly tightening enters blue Guard as soon as its shape qualifies.", "Default off. No stillness pause is required; the spiral must fit inside the 1.5-second capture window. Only mouse input is read. Requires Guard and Blue State enabled and the Arc Energy floor reached; it does not use the pommel timing window."))
 	_create_contact_slider(box, "charged_guard_entry_z_enabled", "Z Gesture Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a large Z drawn outside Guard enter blue Guard immediately.", "Drawing Z does not acquire Guard.", "Two broad rightward bars joined by a down-left stroke enter blue Guard.", "Default off. Only mouse input is read today. Each arm must be substantial and straight enough to reject a small scribble. Requires Guard and Blue State enabled and the Arc Energy floor reached."))
 	_create_contact_slider(box, "charged_guard_pommel_entry_enabled", "Pommel Pull Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Choose whether the timed pommel pull can acquire Guard.", "Pommel pulls cannot acquire Guard; enabled G or Z gestures can still do so.", "A timed, aligned pull can catch Guard as before.", "Default on. Turn this off if you prefer gesture-only Guard entry."))
+	_create_contact_slider(box, "charged_guard_dual_click_entry_enabled", "Dual-Click Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let holding the left and right mouse buttons together enter blue Guard, with the chakram and grapple suppressed while both are held.", "The dual-click route cannot acquire Guard, and both buttons keep their own chakram and grapple actions.", "Holding LMB and RMB together for the hold time below locks blue Guard and does not throw the chakram or fire the grapple.", "Default on. Only mouse input is read. Requires Guard and Blue State enabled and the Arc Energy floor reached. Turn this off to give the two buttons back to the chakram and grapple."))
+	_create_contact_slider(box, "charged_guard_dual_click_hold_time", "Dual-Click Hold Time", 0.05, 0.6, 0.05, " s", _form_three_feel_tip("How long the left and right mouse buttons must be held together before the dual-click route locks Guard.", "A short hold is enough; entering is quick but a firm click could trigger by accident.", "The pair must be held firmly before Guard locks, so a fast click never acquires it.", "Default 0.20 seconds. While both buttons are held the chakram and grapple are suppressed, so holding them has no side effects. Raise this if fast clicks ever trigger by accident."))
 	_create_contact_slider(box, "charged_guard_awaken_duration", "Charged Position Confirm Time", 0.20, 0.35, 0.05, " s", _form_three_feel_tip("Delay after Guard catches before the hand turns blue and gestures become available.", "Gestures become available soon after the catch.", "The blue state and gestures wait a little longer.", "This tuning pass caps older saved values at 0.35 seconds without deleting them."))
 	_create_contact_slider(box, "charged_guard_near_body_radius", "Near-Body Charge Radius", 10.0, 100.0, 2.0, " px", _form_three_feel_tip("How close the guarded hand must be to your body to speed up its blue charge.", "Only a tightly pulled-in hand earns the boost.", "A hand farther from the body can still earn the boost.", "Default 48 pixels. Move the guarded hand inside this radius to apply the charge boost below."))
 	_create_contact_slider(box, "charged_guard_near_body_rate", "Near-Body Charge Boost", 0.0, 3.0, 0.1, "×", _form_three_feel_tip("Extra blue charge speed while the guarded hand is inside the Near-Body Charge Radius.", "No extra speed; the confirm delay stays as set above.", "A close hand reaches blue up to four times as fast.", "Default 0. This speeds up gesture availability after Guard catches; it does not make Guard easier to catch."))
@@ -1176,204 +1164,6 @@ func _request_delete_global_preset(slot: int) -> void:
 	confirmation.canceled.connect(func() -> void: confirmation.queue_free())
 	confirmation.popup_centered(Vector2(380.0, 150.0))
 
-func _build_saves_tab(tabs: TabContainer) -> void:
-	var saves_tab: VBoxContainer = VBoxContainer.new()
-	saves_tab.name = "Saves"
-	saves_tab.add_theme_constant_override("separation", 8)
-	tabs.add_child(saves_tab)
-
-	var title: Label = Label.new()
-	title.text = "COMBAT TUNING BACKUPS"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	saves_tab.add_child(title)
-
-	var hint: Label = Label.new()
-	hint.text = "Snapshots never overwrite older backups. Every save stores all three presets, every sword style, and the Main Game preset."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	saves_tab.add_child(hint)
-
-	var create_row: HBoxContainer = HBoxContainer.new()
-	create_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	create_row.add_theme_constant_override("separation", 6)
-	saves_tab.add_child(create_row)
-
-	snapshot_name_edit = LineEdit.new()
-	snapshot_name_edit.placeholder_text = "Name this backup (e.g. Heavy Clash v3)"
-	snapshot_name_edit.max_length = 64
-	snapshot_name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	snapshot_name_edit.text_submitted.connect(_create_named_snapshot_from_text)
-	create_row.add_child(snapshot_name_edit)
-
-	var create_button: Button = Button.new()
-	create_button.text = "Create Safe Save"
-	create_button.focus_mode = Control.FOCUS_NONE
-	create_button.pressed.connect(_create_named_snapshot)
-	create_row.add_child(create_button)
-
-	snapshot_feedback_label = Label.new()
-	snapshot_feedback_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	snapshot_feedback_label.modulate = Color(0.4, 1.0, 0.4)
-	saves_tab.add_child(snapshot_feedback_label)
-
-	var scroll: ScrollContainer = ScrollContainer.new()
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	saves_tab.add_child(scroll)
-
-	snapshot_list = VBoxContainer.new()
-	snapshot_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	snapshot_list.add_theme_constant_override("separation", 8)
-	scroll.add_child(snapshot_list)
-	_refresh_snapshot_list()
-
-func _create_named_snapshot_from_text(_submitted_text: String) -> void:
-	_create_named_snapshot()
-
-func _create_named_snapshot() -> void:
-	var player: Player = _player()
-	if player == null or snapshot_name_edit == null:
-		return
-	var snapshot: Dictionary = CombatSettingsConfig.create_snapshot(snapshot_name_edit.text, main_game_preset, player.combat_contact_preset, player.combat_hand_settings, player.combat_contact_settings, player.blade_profile_settings, player.combat_weapon_hand_settings)
-	if snapshot.is_empty():
-		_set_snapshot_feedback("Could not create backup.", false)
-		return
-	snapshot_name_edit.clear()
-	_set_snapshot_feedback("Safe save created: %s — %s" % [str(snapshot.get("name", "Combat Backup")), _friendly_timestamp(str(snapshot.get("timestamp", "")))], true)
-	_refresh_snapshot_list()
-
-func _refresh_snapshot_list() -> void:
-	if snapshot_list == null:
-		return
-	for child: Node in snapshot_list.get_children():
-		snapshot_list.remove_child(child)
-		child.queue_free()
-	var snapshots: Array[Dictionary] = CombatSettingsConfig.list_snapshots()
-	if snapshots.is_empty():
-		var empty_label: Label = Label.new()
-		empty_label.text = "No safe saves yet. Name one above and create it whenever a setup feels worth protecting."
-		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		snapshot_list.add_child(empty_label)
-		return
-	for snapshot: Dictionary in snapshots:
-		_add_snapshot_row(snapshot)
-
-func _add_snapshot_row(snapshot: Dictionary) -> void:
-	var panel_row: PanelContainer = PanelContainer.new()
-	panel_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	snapshot_list.add_child(panel_row)
-
-	var row: HBoxContainer = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	panel_row.add_child(row)
-
-	var details: VBoxContainer = VBoxContainer.new()
-	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(details)
-
-	var name_label: Label = Label.new()
-	name_label.text = str(snapshot.get("name", "Combat Backup"))
-	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	details.add_child(name_label)
-
-	var timestamp_label: Label = Label.new()
-	timestamp_label.text = "%s  •  Main Preset %d  •  Saved while testing P%d" % [_friendly_timestamp(str(snapshot.get("timestamp", ""))), int(snapshot.get("active_preset", 1)), int(snapshot.get("selected_preset", snapshot.get("active_preset", 1)))]
-	timestamp_label.modulate = Color(0.72, 0.78, 0.86)
-	timestamp_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	details.add_child(timestamp_label)
-
-	var btn_container: HBoxContainer = HBoxContainer.new()
-	btn_container.add_theme_constant_override("separation", 6)
-	row.add_child(btn_container)
-
-	var load_button: Button = Button.new()
-	load_button.text = "Load"
-	load_button.focus_mode = Control.FOCUS_NONE
-	load_button.custom_minimum_size = Vector2(64.0, 44.0)
-	load_button.pressed.connect(_load_snapshot.bind(str(snapshot.get("id", ""))))
-	btn_container.add_child(load_button)
-
-	var delete_button: Button = Button.new()
-	delete_button.text = "🗑"
-	delete_button.tooltip_text = "Delete this backup"
-	delete_button.focus_mode = Control.FOCUS_NONE
-	delete_button.custom_minimum_size = Vector2(44.0, 44.0)
-	delete_button.modulate = Color(1.0, 0.5, 0.5)
-	btn_container.add_child(delete_button)
-
-	var confirm_container: HBoxContainer = HBoxContainer.new()
-	confirm_container.visible = false
-	confirm_container.add_theme_constant_override("separation", 4)
-	row.add_child(confirm_container)
-
-	var confirm_label: Label = Label.new()
-	confirm_label.text = "Delete?"
-	confirm_label.modulate = Color(1.0, 0.4, 0.4)
-	confirm_container.add_child(confirm_label)
-
-	var yes_btn: Button = Button.new()
-	yes_btn.text = "Yes"
-	yes_btn.focus_mode = Control.FOCUS_NONE
-	yes_btn.custom_minimum_size = Vector2(50.0, 44.0)
-	yes_btn.modulate = Color(1.0, 0.3, 0.3)
-	yes_btn.pressed.connect(_confirm_delete_snapshot.bind(str(snapshot.get("id", "")), str(snapshot.get("name", "Combat Backup"))))
-	confirm_container.add_child(yes_btn)
-
-	var cancel_btn: Button = Button.new()
-	cancel_btn.text = "No"
-	cancel_btn.focus_mode = Control.FOCUS_NONE
-	cancel_btn.custom_minimum_size = Vector2(50.0, 44.0)
-	cancel_btn.pressed.connect(func() -> void:
-		confirm_container.visible = false
-		btn_container.visible = true
-	)
-	confirm_container.add_child(cancel_btn)
-
-	delete_button.pressed.connect(func() -> void:
-		btn_container.visible = false
-		confirm_container.visible = true
-	)
-
-func _confirm_delete_snapshot(snapshot_id: String, snapshot_name: String) -> void:
-	if CombatSettingsConfig.delete_snapshot(snapshot_id):
-		_set_snapshot_feedback("Deleted backup: %s" % snapshot_name, true)
-	else:
-		_set_snapshot_feedback("Could not delete backup.", false)
-	_refresh_snapshot_list()
-
-func _load_snapshot(snapshot_id: String) -> void:
-	var player: Player = _player()
-	if player == null:
-		return
-	var snapshot: Dictionary = CombatSettingsConfig.load_snapshot(snapshot_id)
-	if snapshot.is_empty():
-		_set_snapshot_feedback("That backup could not be loaded.", false)
-		return
-	main_game_preset = clampi(int(snapshot.get("active_preset", 1)), 1, 4)
-	player.set_combat_contact_preset(clampi(int(snapshot.get("selected_preset", main_game_preset)), 1, 4))
-	if snapshot.get("hand_settings") is Dictionary:
-		player.combat_hand_settings = (snapshot["hand_settings"] as Dictionary).duplicate(true)
-	if snapshot.get("contact_settings") is Dictionary:
-		player.combat_contact_settings = (snapshot["contact_settings"] as Dictionary).duplicate(true)
-	if snapshot.get("weapon_hand_settings") is Dictionary:
-		player.combat_weapon_hand_settings = (snapshot["weapon_hand_settings"] as Dictionary).duplicate(true)
-	if snapshot.get("blade_settings") is Dictionary:
-		player.blade_profile_settings = (snapshot["blade_settings"] as Dictionary).duplicate(true)
-	player.ensure_experimental_form_initialized()
-	# Loading restores the workspace only. It does not overwrite the active Main Game file until Save Settings or Promote is used.
-	_set_snapshot_feedback("Loaded backup: %s (workspace only)" % str(snapshot.get("name", "Combat Backup")), true)
-	_sync_combat_controls()
-	_refresh_snapshot_list()
-
-func _set_snapshot_feedback(text: String, success: bool) -> void:
-	if snapshot_feedback_label != null:
-		snapshot_feedback_label.text = text
-		snapshot_feedback_label.modulate = Color(0.4, 1.0, 0.4) if success else Color(1.0, 0.45, 0.35)
-
-func _friendly_timestamp(timestamp: String) -> String:
-	if timestamp.is_empty():
-		return "Unknown time"
-	return timestamp.replace("T", " ")
-
 func _create_section_header(parent: VBoxContainer, title_text: String, starts_open: bool = false) -> VBoxContainer:
 	var section: VBoxContainer = VBoxContainer.new()
 	section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1835,7 +1625,6 @@ func open() -> void:
 		_sync_combat_sword_selector()
 		_sync_blade_shape_controls()
 	_sync_combat_controls()
-	_refresh_snapshot_list()
 
 func _process(_delta: float) -> void:
 	if not visible or not panel.visible: return
@@ -1884,7 +1673,6 @@ func _toggle_panel() -> void:
 		_apply_training_layout()
 		_sync_bonus_rows()
 		_sync_combat_controls()
-		_refresh_snapshot_list()
 	elif forest_visual_tuner != null:
 		forest_visual_tuner.end_comparison()
 

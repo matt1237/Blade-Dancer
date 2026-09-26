@@ -42,10 +42,10 @@ func test_forest_phase_ui_has_no_launch_authority() -> void:
 	var tuner: ForestVisualTuner = ForestVisualTuner.new()
 	add_child(tuner)
 	await get_tree().process_frame
-	var phase_actions: Control = tuner.get_node("ForestTabs/Profiles/Content/PresetActions") as Control
-	assert(not phase_actions.visible, "Forest phases must not expose a launch control")
-	for row: Node in tuner.profile_list.get_children():
-		assert(row.get_node_or_null("UseOnLaunch") == null, "legacy visual profiles must not expose launch controls")
+	var content: Node = tuner.get_node("ForestTabs/Profiles/Content")
+	assert(content.get_node_or_null("PresetTabs") == null, "Forest phases must not expose per-preset day slots")
+	assert(content.get_node_or_null("PresetActions") == null, "Forest phases must not expose a launch or save control")
+	assert(content.get_node_or_null("DayPhaseTabs") != null, "The four day-phase preview buttons should exist")
 	tuner.queue_free()
 
 func test_weapon_hand_overrides_are_independent() -> void:

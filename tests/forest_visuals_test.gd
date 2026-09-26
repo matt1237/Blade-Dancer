@@ -101,9 +101,8 @@ func _assert_tuner_controls(tuner: ForestVisualTuner, profile: ForestVisualSetti
 	assert(checkbox_count == 8 or checkbox_count == 9 or checkbox_count == 10)
 	assert(tuner.bypass_check.disabled == (profile == null))
 	assert(tuner.bypass_check.button_pressed == (profile != null and profile.bypass_all))
-	assert(tuner.profile_buttons.size() >= 2)
-	for button: Button in tuner.profile_buttons:
-		assert(button.disabled == (profile == null))
+	assert(tuner.reset_button != null)
+	assert(tuner.reset_button.disabled == (profile == null))
 
 func test_tuner_all_controls_map_types_ranges_defaults_and_configured_values() -> void:
 	var tuner: TunerFixture = _make_tuner()

@@ -28,6 +28,10 @@ var chakram_texture_hd: Texture2D = null
 @export_category("Enemy Contact")
 ## Radius used by swept Chakram-to-enemy collision checks.
 @export var enemy_hit_radius: float = 28.0
+## Minimum delay before the same enemy may be struck again by this Chakram.
+## Keeps one disc from machine-gunning a single target while still allowing a
+## disc that loops back to land a fresh hit (replaces the old once-per-flight latch).
+@export var enemy_rehit_cooldown_duration: float = 0.2
 
 var velocity: Vector2 = Vector2.ZERO
 var time_left: float = 5.0
@@ -57,7 +61,7 @@ var yoyo_coil_contact_armed: bool = false
 var sword_hit_speed_ceiling: float = 900.0
 var owner_player: Player = null
 var trail_points: Array[Vector2] = []
-var hit_enemy_ids: Dictionary[int, bool] = {}
+var hit_enemy_cooldowns: Dictionary[int, float] = {}
 var explosion_armed: bool = false
 var explosion_level: int = 0
 var explosion_flash: float = 0.0
@@ -92,11 +96,21 @@ func launch(direction: Vector2, player: Player) -> void:
 	grapple_attached = false
 	clear_yoyo_constraint()
 	pierces_remaining = player.chakram_pierce
-	hit_enemy_ids.clear()
+	hit_enemy_cooldowns.clear()
 	queue_redraw()
 
 static func updated_flight_time(current_time: float, delta: float, is_grapple_attached: bool) -> float:
 	return current_time if is_grapple_attached else current_time - maxf(delta, 0.0)
+
+## Decays per-enemy rehit timers and drops expired entries. Kept as its own
+## function so the rehit cooldown can be verified without a live scene tree.
+static func advance_enemy_rehit_cooldowns(cooldowns: Dictionary, delta: float) -> void:
+	for enemy_id: int in cooldowns.keys():
+		var rehit_left: float = float(cooldowns[enemy_id]) - delta
+		if rehit_left <= 0.0:
+			cooldowns.erase(enemy_id)
+		else:
+			cooldowns[enemy_id] = rehit_left
 
 static func yoyo_captured_velocity(moving_position: Vector2, current_velocity: Vector2, pivot: Vector2, radial_retention: float) -> Vector2:
 	var radial_direction: Vector2 = pivot.direction_to(moving_position)
@@ -176,6 +190,7 @@ func _physics_process(delta: float) -> void:
 		return
 	spin_angle = fmod(spin_angle + spin_speed * delta, TAU)
 	sword_cooldown = maxf(0.0, sword_cooldown - delta)
+	advance_enemy_rehit_cooldowns(hit_enemy_cooldowns, delta)
 	bat_stretch_left = maxf(0.0, bat_stretch_left - delta)
 	explosion_flash = maxf(0.0, explosion_flash - delta)
 	if owner_player != null and owner_player.magnetic_level > 0:
@@ -352,7 +367,7 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 				velocity = velocity.bounce(normal)
 		if is_active_coil and (not yoyo_coil_contact_armed or yoyo_coil_contact_enemy_id != enemy_id):
 			continue
-		if hit_enemy_ids.has(enemy_id) and not is_active_coil:
+		if float(hit_enemy_cooldowns.get(enemy_id, 0.0)) > 0.0 and not is_active_coil:
 			continue
 		if grapple_controller != null and not is_active_coil:
 			grapple_controller.notify_yoyo_obstruction_hit(enemy)
@@ -360,7 +375,7 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 		var away: Vector2 = enemy_center.direction_to(global_position)
 		if enemy.has_method("chakram_blocked_from_front") and enemy.chakram_blocked_from_front(global_position):
 			velocity = velocity.bounce(away).normalized() * velocity.length()
-			hit_enemy_ids[enemy_id] = true
+			hit_enemy_cooldowns[enemy_id] = enemy_rehit_cooldown_duration
 			continue
 		if enemy.has_method("chakram_hit_from_behind"):
 			enemy.chakram_hit_from_behind(velocity.normalized())
@@ -371,7 +386,7 @@ func _hit_enemies(travel_start: Vector2, travel_end: Vector2) -> void:
 		yoyo_last_enemy_hit_frame = Engine.get_physics_frames()
 		yoyo_last_enemy_hit_incoming = incoming_velocity
 		yoyo_last_enemy_hit_outgoing = velocity
-		hit_enemy_ids[enemy_id] = true
+		hit_enemy_cooldowns[enemy_id] = enemy_rehit_cooldown_duration
 		if enemy.has_method("take_damage"):
 			if owner_player != null and owner_player.voltage_enabled and enemy.has_method("apply_voltage") and randf() < BonusConfig.voltage_chance(owner_player.voltage_rank): enemy.apply_voltage(owner_player.voltage_rank)
 			var speed_bonus: float = clampf(incoming_velocity.length() / 900.0 * 0.25, 0.0, 0.25)

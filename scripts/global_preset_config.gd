@@ -108,6 +108,33 @@ static func set_launch_slot(slot: int) -> bool:
 	library["launch_slot"] = clean_slot
 	return _write_library(library)
 
+## The live day-cycle "world clock" phase. It persists beside the slots so the
+## running time of day survives a relaunch without being written into any tuning
+## package; Global Save All later captures whatever phase is current.
+static func current_time_phase() -> String:
+	var library: Dictionary = load_library()
+	var phase: String = str(library.get("current_time_phase", ""))
+	return phase if phase in ["Noon", "Morning", "Dusk", "Night"] else ""
+
+static func set_current_time_phase(phase: String) -> bool:
+	var library: Dictionary = load_library()
+	if library.is_empty() or not (phase in ["Noon", "Morning", "Dusk", "Night"]):
+		return false
+	library["current_time_phase"] = phase
+	return _write_library(library)
+
+## One-shot guard for the day-cycle visual data repair (see main.gd). Runs once
+## per install so scrambled phase bundles are rebuilt a single time.
+static func visual_repair_done() -> bool:
+	return bool(load_library().get("day_visual_repair_v1", false))
+
+static func set_visual_repair_done() -> bool:
+	var library: Dictionary = load_library()
+	if library.is_empty():
+		return false
+	library["day_visual_repair_v1"] = true
+	return _write_library(library)
+
 static func _write_library(library: Dictionary) -> bool:
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if file == null:

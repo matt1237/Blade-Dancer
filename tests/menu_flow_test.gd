@@ -149,7 +149,7 @@ func test_reopening_training_tools_does_not_reload_or_reset_the_live_day_phase()
 	# preserve the already-active world clock rather than mutate persistence.
 	main.active_forest_time_phase = "Night"
 	main.forest_visual_settings.set_value("grass_brightness", 0.73)
-	tuner._on_settings_changed_for_dirty_tracking()
+	tuner._on_settings_changed()
 	menu.close()
 	menu.open()
 	assert(tuner.selected_phase == "Night", "Opening Training Tools must not force the Forest tuner back to Noon.")

@@ -1,32 +1,29 @@
 class_name ForestVisualTuner extends VBoxContainer
 
-signal time_phase_selected(phase: String)
-
 const CATEGORY_NAMES: Array[String] = ["Profiles", "Ground", "Effects", "Details", "Border", "Arena"]
+const DAY_PHASES: Array[String] = ["Noon", "Morning", "Dusk", "Night"]
 var settings: ForestVisualSettings = null
 var population: ArenaPopulation = null
-var preset_slots: Array[Dictionary] = [{}, {}, {}]
-## Phases edited (via settings.changed) since the last Global Save All, per slot.
-## Dirty state is cleared when the complete global package is saved or loaded.
-var dirty_phases: Array[Dictionary] = [{}, {}, {}]
-var selected_preset_slot: int = 1
+## The active Global Preset's four day phases -- a live reference to the single
+## dictionary main owns and saves. Editing a slider writes straight into it; the
+## tuner never keeps a private shadow copy that could drift or overwrite it.
+var day_phases: Dictionary = {}
+## Phases edited since the last Global Save All. Cleared by mark_global_save_complete().
+var dirty_phases: Dictionary = {}
 var selected_phase: String = "Noon"
-var global_preset_mode: bool = false
-var preset_buttons: Array[Button] = []
 var phase_buttons: Array[Button] = []
 ## Base (undecorated) button labels, keyed by phase name, so dirty markers can be
-## appended/removed without losing the original "HAZEY NOON" / "NIGHT" wording.
+## appended/removed without losing the original wording.
 var phase_button_labels: Dictionary = {}
-var preset_status_label: Label = null
-## True only while _load_selected_phase() is applying a stored snapshot, so the
-## settings.changed it triggers is not mistaken for a user edit (which would
-## immediately and incorrectly mark the just-loaded phase as dirty).
-var _loading_phase: bool = false
+var phase_status_label: Label = null
+## True while settings are being written from a stored phase (load) or by main
+## (external world-clock application), so the resulting settings.changed is not
+## mistaken for a fresh user edit and committed into the wrong phase.
+var _suppress_commit: bool = false
 var farmable_density_slider: HSlider = null
 var big_things_density_slider: HSlider = null
 var farmable_density_label: Label = null
 var big_things_density_label: Label = null
-var library: ForestVisualProfileLibrary = ForestVisualProfileLibrary.new()
 var forest_tabs: TabContainer = null
 var bypass_check: CheckBox = null
 var feedback_label: Label = null
@@ -34,11 +31,7 @@ var comparison_label: Label = null
 var controls: Dictionary = {}
 var value_labels: Dictionary = {}
 var category_buttons: Array[Button] = []
-var profile_name: LineEdit = null
-var profile_list: VBoxContainer = null
-var startup_profile_label: Label = null
 var _built: bool = false
-var profile_buttons: Array[Button] = []
 var reset_button: Button = null
 
 func configure(profile: ForestVisualSettings, arena_population: ArenaPopulation = null) -> void:
@@ -48,13 +41,15 @@ func configure(profile: ForestVisualSettings, arena_population: ArenaPopulation 
 	population = arena_population
 	if is_inside_tree(): _connect_profile()
 	_sync_controls()
-	if _built and not global_preset_mode:
-		_refresh_day_presets()
+	if _built:
+		_sync_phase_buttons()
 
 func _ready() -> void:
 	if not _built:
 		_build_ui()
 		_built = true
+	if not visibility_changed.is_connected(_on_visibility_changed):
+		visibility_changed.connect(_on_visibility_changed)
 	_connect_profile()
 	_sync_controls()
 
@@ -65,77 +60,74 @@ func _exit_tree() -> void:
 func _connect_profile() -> void:
 	if settings == null: return
 	if not settings.changed.is_connected(_sync_controls): settings.changed.connect(_sync_controls)
-	if not settings.changed.is_connected(_on_settings_changed_for_dirty_tracking): settings.changed.connect(_on_settings_changed_for_dirty_tracking)
+	if not settings.changed.is_connected(_on_settings_changed): settings.changed.connect(_on_settings_changed)
 func _disconnect_profile() -> void:
 	if settings == null: return
 	if settings.changed.is_connected(_sync_controls): settings.changed.disconnect(_sync_controls)
-	if settings.changed.is_connected(_on_settings_changed_for_dirty_tracking): settings.changed.disconnect(_on_settings_changed_for_dirty_tracking)
+	if settings.changed.is_connected(_on_settings_changed): settings.changed.disconnect(_on_settings_changed)
 
-## Auto-commits every live edit into the in-memory global phase bundle immediately,
-## instead of only when the user explicitly switches phase or uses Global Save All.
-## This is what stops a stray configure()/panel-reopen from losing tuning.
-func _on_settings_changed_for_dirty_tracking() -> void:
-	if _loading_phase: return
-	_remember_current_phase()
-	if selected_preset_slot - 1 < dirty_phases.size():
-		dirty_phases[selected_preset_slot - 1][selected_phase] = true
-	_sync_preset_buttons()
-func get_global_day_presets() -> Dictionary:
-	if settings == null:
-		return {}
-	_remember_current_phase()
-	var result: Dictionary = {}
-	for slot: int in range(1, 4):
-		result[str(slot)] = preset_slots[slot - 1].duplicate(true)
-	return result
-
-func apply_global_day_presets(values_by_slot: Dictionary, startup_slot: int, phase: String) -> void:
-	global_preset_mode = true
-	preset_slots = [{}, {}, {}]
-	for slot: int in range(1, 4):
-		var incoming: Variant = values_by_slot.get(str(slot), {})
-		if incoming is Dictionary:
-			preset_slots[slot - 1] = (incoming as Dictionary).duplicate(true)
-	selected_preset_slot = clampi(startup_slot, 1, 3)
-	selected_phase = phase if ForestVisualProfileLibrary.DAY_PRESET_PHASES.has(phase) else "Noon"
-	dirty_phases = [{}, {}, {}]
+## Binds this tuner to the one day bundle main owns. `bundle` is stored by
+## reference, so every edit lands in the dictionary Global Save All persists.
+func attach_day_bundle(bundle: Dictionary, phase: String) -> void:
+	day_phases = bundle
+	selected_phase = phase if DAY_PHASES.has(phase) else "Noon"
+	dirty_phases.clear()
 	_load_selected_phase()
-	_sync_preset_buttons()
+	_sync_phase_buttons()
 
-func mark_global_save_complete() -> void:
-	for slot_dirty: Dictionary in dirty_phases:
-		slot_dirty.clear()
-	_sync_preset_buttons()
+func get_day_bundle() -> Dictionary:
+	return day_phases
 
+func get_selected_phase() -> String:
+	return selected_phase
+
+## Writes the live settings into the owned bundle's current phase. Main calls this
+## before capturing a Global Preset so nothing tuned goes unsaved.
+func commit_current_phase() -> void:
+	if settings == null: return
+	day_phases[selected_phase] = settings.values.duplicate(true)
+
+## Lets main apply a phase to the live view without that apply being mistaken for
+## a user edit (which would commit the applied values back into the wrong phase).
+func set_suppress_commit(active: bool) -> void:
+	_suppress_commit = active
+
+## The world clock applied a new phase on its own; mirror the label only.
 func sync_external_phase(phase: String) -> void:
-	if not ForestVisualProfileLibrary.DAY_PRESET_PHASES.has(phase):
+	if not DAY_PHASES.has(phase):
 		return
 	selected_phase = phase
-	_sync_preset_buttons()
+	_sync_phase_buttons()
+
+func mark_global_save_complete() -> void:
+	dirty_phases.clear()
+	_sync_phase_buttons()
 
 func end_comparison() -> void:
 	if settings != null: settings.set_bypass(false)
 
+## Leaving the panel (or the tools closing) ends any active A/B comparison.
 func _on_visibility_changed() -> void:
 	if not is_visible_in_tree(): end_comparison()
-	else: _sync_controls()
+
+## A genuine user edit: commit it into the owned bundle and flag the phase dirty.
+func _on_settings_changed() -> void:
+	if _suppress_commit: return
+	commit_current_phase()
+	dirty_phases[selected_phase] = true
+	_sync_phase_buttons()
 
 func _build_ui() -> void:
 	add_theme_constant_override("separation", 6)
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_add_label(self, "Title", "FOREST VISUALS", 16)
-	_add_label(self, "Introduction", "HD Forest + Backyard only. Noon preserves Hazey. Try Morning v2, Dusk v2, and Night v2; older profiles remain untouched.")
+	_add_label(self, "Introduction", "HD Forest + Backyard only. Noon preserves Hazey. Tune each of the four day phases here; Global Presets → SAVE ALL is the single save that owns them.")
 	bypass_check = CheckBox.new(); bypass_check.name = "bypass_all"; bypass_check.text = "Bypass All Presentation Effects"; bypass_check.focus_mode = Control.FOCUS_NONE
 	bypass_check.toggled.connect(_on_bypass_toggled); add_child(bypass_check)
 	comparison_label = _add_label(self, "ComparisonStatus", "A/B bypass preserves values; ground stays tuned.")
 	var actions: HBoxContainer = HBoxContainer.new(); actions.name = "ProfileActions"; add_child(actions)
-	profile_name = LineEdit.new(); profile_name.name = "ProfileName"; profile_name.placeholder_text = "Name visual profile"; profile_name.max_length = 64; profile_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL; actions.add_child(profile_name)
-	var save_button: Button = _add_button(actions, "SaveNewSnapshot", "Save New", _save_snapshot); profile_buttons.append(save_button)
-	var refresh_button: Button = _add_button(actions, "RefreshProfiles", "Refresh", _refresh_profiles); profile_buttons.append(refresh_button)
-	reset_button = _add_button(actions, "ResetDefaults", "Reset Defaults", _reset_defaults); reset_button.visible = false
-	# Retain the old three-button contract for compatibility with existing tuner QA.
-	profile_buttons.append(save_button)
+	reset_button = _add_button(actions, "ResetDefaults", "Reset Defaults", _reset_defaults)
 	feedback_label = _add_label(self, "Feedback", "")
 	var categories: HBoxContainer = HBoxContainer.new(); categories.name = "Categories"; add_child(categories)
 	for category: String in CATEGORY_NAMES:
@@ -146,10 +138,7 @@ func _build_ui() -> void:
 		var content: VBoxContainer = VBoxContainer.new(); content.name = "Content"; content.size_flags_horizontal = Control.SIZE_EXPAND_FILL; scroll.add_child(content)
 		_add_label(content, "Help", _category_help(category))
 		if category == "Profiles":
-			startup_profile_label = _add_label(content, "StartupProfile", "Canonical cycle: Preset 1")
-			_build_day_preset_controls(content)
-			_add_label(content, "LegacyProfilesHeading", "LEGACY INDIVIDUAL PROFILES (NO LAUNCH CONTROL)", 11)
-			profile_list = VBoxContainer.new(); profile_list.name = "SavedProfiles"; profile_list.add_theme_constant_override("separation", 4); content.add_child(profile_list)
+			_build_day_phase_controls(content)
 		elif category == "Arena":
 			_build_arena_controls(content)
 		else:
@@ -157,36 +146,21 @@ func _build_ui() -> void:
 				if str(spec["group"]) == category: _add_setting(content, spec)
 	forest_tabs.tab_changed.connect(_on_category_changed)
 	_on_category_changed(0)
-	_refresh_profiles()
 
-func _build_day_preset_controls(parent: VBoxContainer) -> void:
-	var preset_row: HBoxContainer = HBoxContainer.new()
-	preset_row.name = "PresetTabs"
-	parent.add_child(preset_row)
-	preset_row.visible = false
-	for slot: int in range(1, 4):
-		var button: Button = _add_button(preset_row, "Preset%d" % slot, "PRESET %d" % slot, _select_day_preset.bind(slot))
-		button.toggle_mode = true
-		preset_buttons.append(button)
+func _build_day_phase_controls(parent: VBoxContainer) -> void:
+	_add_label(parent, "DayPhaseHint", "Click a phase to view and tune it. Switching a phase never moves the running day cycle.")
 	var phase_row: HBoxContainer = HBoxContainer.new()
 	phase_row.name = "DayPhaseTabs"
 	parent.add_child(phase_row)
-	for phase: String in ForestVisualProfileLibrary.DAY_PRESET_PHASES:
+	for phase: String in DAY_PHASES:
 		var phase_label: String = "HAZEY NOON" if phase == "Noon" else phase.to_upper()
 		phase_button_labels[phase] = phase_label
 		var button: Button = _add_button(phase_row, phase, phase_label, _select_day_phase.bind(phase))
 		button.toggle_mode = true
 		phase_buttons.append(button)
-	preset_status_label = _add_label(parent, "PresetStatus", "")
+	phase_status_label = _add_label(parent, "PhaseStatus", "")
 	_add_label(parent, "DirtyHint", "Edit a phase here, then use Global Presets → SAVE ALL to save the complete package.")
-	var action_row: HBoxContainer = HBoxContainer.new()
-	action_row.name = "PresetActions"
-	parent.add_child(action_row)
-	action_row.visible = false
-	_add_button(action_row, "SaveDayPreset", "SAVE PRESET", _save_day_preset)
-	_add_button(action_row, "UseDayPreset", "USE ON LAUNCH", _use_day_preset)
-	_add_button(action_row, "LoadDayPreset", "LOAD PHASE", _load_selected_phase)
-	_refresh_day_presets()
+	_sync_phase_buttons()
 
 func _build_arena_controls(parent: VBoxContainer) -> void:
 	_add_label(parent, "ArenaHelp", "Live population tuning. Objects remain in authored sockets; density never adds random scatter.")
@@ -207,115 +181,36 @@ func _build_arena_controls(parent: VBoxContainer) -> void:
 	big_things_density_slider.value_changed.connect(_on_big_things_density_changed)
 	parent.add_child(big_things_density_slider)
 
-func set_training_default_noon() -> void:
-	if settings == null:
-		return
-	selected_preset_slot = clampi(selected_preset_slot, 1, preset_slots.size())
-	selected_phase = "Noon"
-	_load_selected_phase()
-
-func _remember_current_phase() -> void:
-	if settings == null or selected_preset_slot < 1 or selected_preset_slot > preset_slots.size(): return
-	preset_slots[selected_preset_slot - 1][selected_phase] = settings.values.duplicate(true)
-
+## Loads the selected phase into the live view for preview/tuning. Never touches
+## the running world clock.
 func _load_selected_phase() -> void:
 	if settings == null: return
-	var slot: Dictionary = preset_slots[selected_preset_slot - 1]
-	var values: Variant = slot.get(selected_phase, null)
+	var values: Variant = day_phases.get(selected_phase, null)
 	if values is Dictionary:
-		# Guard: applying a stored snapshot fires settings.changed, which must not
-		# be mistaken for a fresh user edit (that would instantly re-mark the
-		# phase we just loaded as "dirty" with nothing actually unsaved).
-		_loading_phase = true
+		_suppress_commit = true
 		settings.apply_snapshot_values(values as Dictionary)
-		_loading_phase = false
+		_suppress_commit = false
 		if is_instance_valid(population): population.set_time_phase(selected_phase)
-		_set_preset_status("Loaded Preset %d / %s." % [selected_preset_slot, selected_phase])
-	_sync_preset_buttons()
-
-func _select_day_preset(slot: int) -> void:
-	_remember_current_phase()
-	selected_preset_slot = clampi(slot, 1, 3)
-	_load_selected_phase()
-	_sync_preset_buttons()
+		_set_phase_status("Viewing %s." % selected_phase)
 
 func _select_day_phase(phase: String) -> void:
-	_remember_current_phase()
-	selected_phase = phase if ForestVisualProfileLibrary.DAY_PRESET_PHASES.has(phase) else "Noon"
+	commit_current_phase()
+	selected_phase = phase if DAY_PHASES.has(phase) else "Noon"
 	_load_selected_phase()
-	time_phase_selected.emit(selected_phase)
-	_sync_preset_buttons()
+	_sync_phase_buttons()
 
-func _save_day_preset() -> void:
-	if global_preset_mode:
-		_set_preset_status("Use Global Presets → SAVE ALL for all Forest phases.", false)
-		return
-	_remember_current_phase()
-	var error: Error = library.save_day_preset(selected_preset_slot, preset_slots[selected_preset_slot - 1])
-	if error == OK: dirty_phases[selected_preset_slot - 1].clear()
-	_set_preset_status("Saved Preset %d." % selected_preset_slot if error == OK else "Could not save Preset %d." % selected_preset_slot, error == OK)
-	_refresh_day_presets()
-
-func _use_day_preset() -> void:
-	if global_preset_mode:
-		_set_preset_status("Forest phases do not control launch. Use Global Presets → LOAD ON LAUNCH.", false)
-		return
-	_remember_current_phase()
-	var save_error: Error = library.save_day_preset(selected_preset_slot, preset_slots[selected_preset_slot - 1])
-	var startup_error: Error = library.set_startup_day_preset_slot(selected_preset_slot) if save_error == OK else save_error
-	if startup_error == OK:
-		dirty_phases[selected_preset_slot - 1].clear()
-		_load_selected_phase()
-		_set_preset_status("Preset %d is now the canonical launch cycle." % selected_preset_slot, true)
-	else:
-		_set_preset_status("Could not set launch cycle.", false)
-	_refresh_day_presets()
-
-## Merges disk state into memory instead of overwriting it: any phase with
-## unsaved edits this session (dirty_phases) is kept exactly as tuned, even if
-## this runs again (e.g. the training panel is reopened) before it is saved.
-func _refresh_day_presets() -> void:
-	if settings == null: return
-	if global_preset_mode:
-		_sync_preset_buttons()
-		return
-	library.ensure_day_preset_slots(settings)
-	for slot: int in range(1, 4):
-		var disk_values: Dictionary = library.get_day_preset(slot)
-		var current: Dictionary = preset_slots[slot - 1]
-		var slot_dirty: Dictionary = dirty_phases[slot - 1]
-		var merged: Dictionary = disk_values.duplicate(true)
-		for phase: String in ForestVisualProfileLibrary.DAY_PRESET_PHASES:
-			if bool(slot_dirty.get(phase, false)) and current.get(phase, null) is Dictionary:
-				merged[phase] = current[phase]
-		preset_slots[slot - 1] = merged
-	_sync_preset_buttons()
-
-func _slot_has_dirty_phase(slot_index: int) -> bool:
-	if slot_index < 0 or slot_index >= dirty_phases.size(): return false
-	for is_dirty: bool in dirty_phases[slot_index].values():
-		if is_dirty: return true
-	return false
-
-func _sync_preset_buttons() -> void:
-	for index: int in range(preset_buttons.size()):
-		var marker: String = " *" if _slot_has_dirty_phase(index) else ""
-		preset_buttons[index].text = "PRESET %d%s" % [index + 1, marker]
-		preset_buttons[index].set_pressed_no_signal(index + 1 == selected_preset_slot)
-	var current_slot_dirty: Dictionary = dirty_phases[selected_preset_slot - 1] if selected_preset_slot - 1 < dirty_phases.size() else {}
+func _sync_phase_buttons() -> void:
 	for index: int in range(phase_buttons.size()):
 		var phase_name: String = str(phase_buttons[index].name)
 		var base_label: String = str(phase_button_labels.get(phase_name, phase_name.to_upper()))
-		var marker: String = " *" if bool(current_slot_dirty.get(phase_name, false)) else ""
+		var marker: String = " *" if bool(dirty_phases.get(phase_name, false)) else ""
 		phase_buttons[index].text = base_label + marker
 		phase_buttons[index].set_pressed_no_signal(phase_name == selected_phase)
-	if startup_profile_label != null:
-		startup_profile_label.text = "Global Preset %d phases — save with Global Presets → SAVE ALL" % selected_preset_slot if global_preset_mode else "Legacy visual cycle: Preset %d" % library.get_startup_day_preset_slot()
 
-func _set_preset_status(text: String, success: bool = true) -> void:
-	if preset_status_label != null:
-		preset_status_label.text = text
-		preset_status_label.modulate = Color(0.55, 1.0, 0.65) if success else Color(1.0, 0.5, 0.4)
+func _set_phase_status(text: String, success: bool = true) -> void:
+	if phase_status_label != null:
+		phase_status_label.text = text
+		phase_status_label.modulate = Color(0.55, 1.0, 0.65) if success else Color(1.0, 0.5, 0.4)
 
 func _on_farmable_density_changed(value: float) -> void:
 	if is_instance_valid(population):
@@ -337,7 +232,7 @@ func _add_button(parent: Node, node_name: String, text: String, callback: Callab
 	var button: Button = Button.new(); button.name = node_name; button.text = text; button.focus_mode = Control.FOCUS_NONE; button.pressed.connect(callback); parent.add_child(button); return button
 func _category_help(category: String) -> String:
 	match category:
-		"Profiles": return "Noon is a Hazey copy. The v2 profiles add localized light and mist; older profiles are preserved. Illustrated Fantasy Realism is the original baseline copy, not an art upgrade. No combat or progression changes."
+		"Profiles": return "Each of the four day phases is owned by the active Global Preset. Noon is a Hazey copy. Click a phase to view and tune it; switching phases here never changes the running day cycle."
 		"Ground": return "Ground materials: tune the clear, east-west dirt/grass composition."
 		"Effects": return "Optional effects are OFF by default. Bloom may soften detail."
 		"Details": return "Readable leaves and border accents; these never change collision."
@@ -362,7 +257,7 @@ func _sync_controls() -> void:
 		if spec["default"] is bool: (controls[key] as CheckBox).disabled = settings == null; (controls[key] as CheckBox).set_pressed_no_signal(bool(value))
 		else: (controls[key] as HSlider).editable = settings != null; (controls[key] as HSlider).set_value_no_signal(float(value)); (value_labels[key] as Label).text = ("%.0f" if float(spec["step"]) >= 1.0 else "%.2f") % float(value)
 	if bypass_check != null: bypass_check.disabled = settings == null; bypass_check.set_pressed_no_signal(settings != null and settings.bypass_all)
-	for button: Button in profile_buttons: button.disabled = settings == null
+	if reset_button != null: reset_button.disabled = settings == null
 	if is_instance_valid(population):
 		if farmable_density_slider != null: farmable_density_slider.set_value_no_signal(population.farmable_density)
 		if big_things_density_slider != null: big_things_density_slider.set_value_no_signal(population.big_things_density)
@@ -375,65 +270,10 @@ func _on_check_toggled(value: bool, key: String) -> void:
 	if settings != null: settings.set_value(key, value)
 func _on_bypass_toggled(value: bool) -> void:
 	if settings != null: settings.set_bypass(value)
-func _save_snapshot() -> void:
-	if settings == null: return
-	var snapshot: Dictionary = library.create_snapshot(profile_name.text, settings)
-	_set_feedback("Saved visual profile: %s" % str(snapshot.get("name", "")) if not snapshot.is_empty() else "Save failed: enter a profile name.", not snapshot.is_empty()); profile_name.clear(); _refresh_profiles()
-func _refresh_profiles() -> void:
-	if profile_list == null: return
-	for child: Node in profile_list.get_children(): child.queue_free()
-	var startup_id: String = library.get_startup_snapshot_id()
-	if startup_profile_label != null:
-		var startup_snapshot: Dictionary = library.get_snapshot(startup_id)
-		startup_profile_label.text = "Startup profile: %s" % (str(startup_snapshot.get("name", "")) if not startup_snapshot.is_empty() else "none")
-	for snapshot: Dictionary in library.list_snapshots():
-		var snapshot_id: String = str(snapshot.get("id", ""))
-		var row: HBoxContainer = HBoxContainer.new(); row.name = "Profile_" + snapshot_id; profile_list.add_child(row)
-		var marker: String = "★ " if snapshot_id == startup_id else ""
-		var label: Label = _add_label(row, "Info", "%s%s  •  %s" % [marker, str(snapshot.get("name", "")), str(snapshot.get("timestamp", ""))]); label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_add_button(row, "Load", "Load (legacy)", _load_snapshot.bind(snapshot_id))
-		_add_button(row, "Delete", "Delete", _delete_snapshot.bind(snapshot_id))
-func _load_snapshot(id: String) -> void:
-	if settings == null: return
-	var snapshot: Dictionary = library.get_snapshot(id)
-	if snapshot.is_empty():
-		_set_feedback("Load failed; profile not found. Current values unchanged.", false)
-		return
-	var error: Error = settings.apply_snapshot_values(snapshot.get("values", {}))
-	_set_feedback("Loaded visual profile." if error == OK else "Load failed; current values unchanged.", error == OK)
-func _set_startup_snapshot(id: String) -> void:
-	if settings == null: return
-	var snapshot: Dictionary = library.get_snapshot(id)
-	if snapshot.is_empty():
-		_set_feedback("Startup profile not found.", false)
-		return
-	var apply_error: Error = settings.apply_snapshot_values(snapshot.get("values", {}) as Dictionary)
-	if apply_error != OK:
-		_set_feedback("Could not apply startup profile; current values unchanged.", false)
-		return
-	var save_error: Error = settings.save_preset()
-	var startup_error: Error = library.set_startup_snapshot_id(id)
-	var success: bool = save_error == OK and startup_error == OK
-	_set_feedback("Set %s as the startup visual profile." % str(snapshot.get("name", "")) if success else "Could not save startup profile.", success)
-	_refresh_profiles()
-
-func _delete_snapshot(id: String) -> void:
-	var confirmation: ConfirmationDialog = ConfirmationDialog.new()
-	confirmation.name = "ConfirmDelete"
-	confirmation.dialog_text = "Delete this visual profile?"
-	add_child(confirmation)
-	confirmation.confirmed.connect(func() -> void:
-		var error: Error = library.delete_snapshot(id)
-		_set_feedback("Deleted visual profile." if error == OK else "Delete failed.", error == OK)
-		_refresh_profiles()
-		confirmation.queue_free()
-	)
-	confirmation.canceled.connect(func() -> void: confirmation.queue_free())
-	confirmation.popup_centered(Vector2(360.0, 140.0))
 func _reset_defaults() -> void:
 	if settings != null:
 		settings.reset_defaults()
-		_set_feedback("Defaults restored; saved profiles unchanged.", true)
+		_set_feedback("Defaults restored. Global Presets are unchanged until you save.", true)
 
 func _set_feedback(text: String, success: bool) -> void:
 	if feedback_label != null: feedback_label.text = text; feedback_label.modulate = Color(0.55, 1.0, 0.65) if success else Color(1.0, 0.5, 0.4)

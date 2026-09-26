@@ -1200,3 +1200,198 @@ func test_thrust_hit_stops_forward_lunge_and_deals_at_least_base_damage() -> voi
 	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE and is_zero_approx(player.charged_guard_gesture_lunge_left), "Contact must stop the thrust animation and its movement timer.")
 	assert(player.velocity.x <= 0.0 and is_equal_approx(player.velocity.y, -30.0), "Contact must remove forward lunge speed while retaining away/tangential motion.")
 	player.free()
+
+func _run_sword_frames(player: Player, frames: int) -> void:
+	# _update_sword reads the current scene for terrain/wall hooks. The headless test tree has
+	# no running scene, so install a bare stub: every optional hook simply reports "absent".
+	var tree: SceneTree = get_tree()
+	var stub: Node = Node.new()
+	tree.root.add_child(stub)
+	var previous_scene: Node = tree.current_scene
+	tree.current_scene = stub
+	for _frame: int in range(frames):
+		player._update_sword(1.0 / 60.0)
+	tree.current_scene = previous_scene
+	stub.queue_free()
+
+func test_a_metronome_reversal_discards_unearned_guard_evidence() -> void:
+	# One metronome half-stroke is exactly one Guard acquisition attempt. Evidence earned inside a
+	# half-stroke must not survive its reversal, or a partial pull from one swing could combine
+	# with a partial pull from the next and catch a Guard the player never actually asked for.
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.authored_metronome_energy = 1.0
+	player.charged_guard_pommel_travel = 30.0
+	player.charged_guard_pommel_time = 0.10
+	player.charged_guard_input_gap = 0.0
+	var swings_before: int = player.swing_count
+	# Sit just inside the positive half-stroke, so the next advance crosses the pi/2 reversal.
+	player.sword_phase = PI * 0.5 - 0.001
+	_run_sword_frames(player, 3)
+	assert(player.swing_count != swings_before, "The blade must cross a metronome reversal to exercise the reset.")
+	assert(is_zero_approx(player.charged_guard_pommel_travel), "A half-stroke reversal must wipe unearned pommel travel.")
+	assert(is_zero_approx(player.charged_guard_pommel_time), "A half-stroke reversal must wipe unearned pommel intent time.")
+	assert(player.charged_guard_acquisition_evidence_reset, "The reversal must flag that Guard evidence was discarded.")
+	player.free()
+
+func test_a_held_guard_keeps_its_evidence_through_a_reversal_attempt() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.authored_metronome_energy = 1.0
+	player.charged_guard_locked = true
+	player.charged_guard_pommel_travel = 30.0
+	player.sword_phase = PI * 0.5 - 0.001
+	_run_sword_frames(player, 6)
+	assert(player.charged_guard_locked and is_equal_approx(player.charged_guard_pommel_travel, 30.0), "A reversal must never discard a held guard's evidence.")
+	player.free()
+
+func test_a_partial_pull_cannot_carry_across_a_reversal_to_finish_a_later_pull() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.authored_metronome_energy = 1.0
+	_aim_right(player)
+	player.sword_phase = 1.2
+	_counter_drive(player, 300.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_pommel_travel > 0.0 and player.charged_guard_pommel_travel < 40.0, "The first half-stroke should bank a partial pull only.")
+	player.sword_phase = PI * 0.5 - 0.001
+	var swings_before: int = player.swing_count
+	_run_sword_frames(player, 3)
+	assert(player.swing_count != swings_before, "The blade must cross a reversal to discard the partial pull.")
+	assert(is_zero_approx(player.charged_guard_pommel_travel), "The reversal must discard the partial pull before the next half-stroke can add to it.")
+	player.sword_phase = 1.2
+	_counter_drive(player, 300.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_locked, "A fresh pull cannot complete itself from evidence the reversal already discarded.")
+	player.free()
+
+func test_a_six_pixel_pull_cannot_satisfy_a_forty_pixel_requirement() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_pommel_travel", 40.0)
+	_aim_right(player)
+	player.sword_phase = 1.2
+	# 300 px/s over one 60 Hz frame is ~5 px of authored pull, far short of 40.
+	_counter_drive(player, 300.0)
+	player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_pommel_travel < 12.0, "A single ~5 px pull must bank only what it actually travelled.")
+	assert(not player.charged_guard_locked, "A ~5 px pull cannot reach a 40 px requirement.")
+	player.free()
+
+func test_dual_click_ships_on_with_a_default_hold_time() -> void:
+	var player: Player = _new_player()
+	assert(is_equal_approx(player.get_combat_contact_setting("charged_guard_dual_click_entry_enabled"), 1.0), "The dual-click Guard entry must default on.")
+	assert(is_equal_approx(player.get_combat_contact_setting("charged_guard_dual_click_hold_time"), 0.20), "The dual-click hold time must default to 0.20 seconds.")
+	player.free()
+
+func test_dual_click_needs_a_held_pair_and_ignores_a_fast_click() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_hold_time", 0.20)
+	# Holding for ~0.10 s is under the 0.20 s bar: a fast click must never acquire Guard.
+	for _frame: int in range(6):
+		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
+	assert(player.charged_guard_dual_click_held and not player.charged_guard_locked, "A held pair under the hold time must register as the combo without locking Guard.")
+	# Keeping the pair held past the bar must lock it.
+	for _frame: int in range(12):
+		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
+	assert(player.charged_guard_locked, "Holding both buttons past the hold time must lock Guard.")
+	player._update_charged_guard_dual_click_from_state(false, false, 1.0 / 60.0)
+	assert(not player.charged_guard_dual_click_held and is_zero_approx(player.charged_guard_dual_click_hold_left), "Releasing the pair must end the combo and clear the hold.")
+	player.free()
+
+func test_dual_click_hold_timer_restarts_when_the_pair_breaks() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_hold_time", 0.20)
+	for _frame: int in range(8):
+		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
+	# Break the pair, then hold again briefly: the earlier hold must not count toward the new one.
+	player._update_charged_guard_dual_click_from_state(true, false, 1.0 / 60.0)
+	assert(is_zero_approx(player.charged_guard_dual_click_hold_left), "Releasing one button must clear the accumulated hold.")
+	for _frame: int in range(6):
+		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
+	assert(not player.charged_guard_locked, "A fresh hold must run its own timer rather than resuming the broken one.")
+	player.free()
+
+func test_dual_click_entry_switch_off_leaves_both_buttons_alone() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 0.0)
+	for _frame: int in range(30):
+		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
+	assert(not player.charged_guard_locked and not player.charged_guard_dual_click_held, "With the switch off, holding both buttons must neither lock Guard nor claim the buttons.")
+	player.free()
+
+func test_a_held_dual_click_suppresses_the_chakram_throw() -> void:
+	var player: Player = _new_player()
+	# The chakram reads a mobile-style held flag here so the test can exercise the release edge
+	# that would otherwise throw; the Guard combo must suppress it regardless of button kind.
+	player.mobile_input_enabled = true
+	player.chakram_charges = 2
+	player.charged_guard_dual_click_held = true
+	player.mobile_chakram_held = false
+	player.chakram_key_was_down = true
+	player._handle_chakram_input()
+	assert(player.active_chakrams.is_empty(), "While the combo is held the chakram must not throw, even on the release edge.")
+	player.charged_guard_dual_click_held = false
+	player.mobile_chakram_held = false
+	player.chakram_key_was_down = true
+	player._handle_chakram_input()
+	assert(not player.active_chakrams.is_empty(), "Without the combo the same release must throw the chakram as usual.")
+	player.free()
+
+func test_a_lone_right_press_waits_for_its_pair_before_firing() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 1.0)
+	var step: float = 1.0 / 60.0
+	# RMB arrives alone, with the left button still to come: the pair window must hold it back
+	# so the grapple cannot fire from the leading edge of the combo.
+	player._update_charged_guard_dual_click_from_state(false, true, step)
+	assert(player._charged_guard_dual_click_holds_grapple(), "A lone right press must own the grapple during the pair-join window.")
+	assert(not player.charged_guard_dual_click_held, "A lone right press is not itself the held combo.")
+	# Keep RMB down until the window lapses: the press is then released back to the grapple.
+	var frames: int = int(ceil(player.CHARGED_GUARD_DUAL_CLICK_JOIN_WINDOW / step)) + 2
+	for _frame: int in range(frames):
+		player._update_charged_guard_dual_click_from_state(false, true, step)
+	assert(not player._charged_guard_dual_click_holds_grapple(), "After the pair-join window the lone right press must be released so the grapple can fire.")
+	player.free()
+
+func test_a_left_press_joining_inside_the_window_still_forms_the_combo() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_hold_time", 0.20)
+	var step: float = 1.0 / 60.0
+	player._update_charged_guard_dual_click_from_state(false, true, step)
+	player._update_charged_guard_dual_click_from_state(true, true, step)
+	assert(player.charged_guard_dual_click_held, "A left press joining the right one inside the window must form the held pair.")
+	var frames: int = int(ceil(0.20 / step)) + 2
+	for _frame: int in range(frames):
+		player._update_charged_guard_dual_click_from_state(true, true, step)
+	assert(player.charged_guard_locked, "A pair formed inside the join window must still lock Guard once held past the hold time.")
+	player.free()
+
+func test_a_lone_left_press_never_blocks_the_chakram() -> void:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 1.0)
+	# A lone left press must never be mistaken for the combo or for a grapple hold.
+	player._update_charged_guard_dual_click_from_state(true, false, 1.0 / 60.0)
+	assert(not player.charged_guard_dual_click_held and not player._charged_guard_dual_click_holds_grapple(), "A lone left press must not claim the combo or the grapple.")
+	# A quick left tap must still throw on its release edge.
+	player.mobile_input_enabled = true
+	player.chakram_charges = 2
+	player.mobile_chakram_held = false
+	player.chakram_key_was_down = true
+	player._handle_chakram_input()
+	assert(not player.active_chakrams.is_empty(), "A lone left tap must still throw the chakram.")
+	player.free()
