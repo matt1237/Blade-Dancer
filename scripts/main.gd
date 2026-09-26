@@ -653,12 +653,6 @@ func set_experimental_bind_focus(active: bool, point: Vector2, world_scale: floa
 	if is_instance_valid(combat_presentation_fx):
 		combat_presentation_fx.set_bind_focus(active, world_scale, zoom_amount, response)
 
-## The charged-guard unleash's red windup asks for a heavy world slow-down. Forwarded to the
-## single time-scale arbiter so the request never writes Engine.time_scale directly.
-func set_charged_guard_unleash_slowmo(active: bool, world_scale: float) -> void:
-	if is_instance_valid(combat_presentation_fx):
-		combat_presentation_fx.set_gesture_windup(active, world_scale)
-
 func spawn_impact_speed_lines(point: Vector2, direction: Vector2, strength: float = 1.0, contact_quality: float = 0.0) -> void:
 	combat_presentation_fx.trigger(point, direction, strength, false, contact_quality)
 
@@ -1530,7 +1524,7 @@ func _materialize_combat_settings() -> Dictionary:
 	var saved_style: Player.SwordStyle = player.sword_style
 	var hand_settings: Dictionary = player.combat_hand_settings.duplicate(true)
 	var contact_settings: Dictionary = player.combat_contact_settings.duplicate(true)
-	var hand_keys: Array[String] = ["windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end", "mouse_drag", "rotation", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "tempo_assist_enabled", "directional_arc_opening_enabled", "counter_steer_arc_enabled", "counter_steer_arc_compression", "authored_step_enabled", "swing_gesture_gearing_degrees", "radial_response", "scale", "min", "max", "arc", "frequency", "slide_sparks", "clash_sparks", "parry_sparks", "bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug"]
+	var hand_keys: Array[String] = ["windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end", "mouse_drag", "rotation", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "radial_response", "scale", "min", "max", "arc", "frequency", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks", "bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug"]
 	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "flesh_contact_drag", "flesh_contact_drag_recovery", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_hitstop", "farmable_contact_drag", "farmable_contact_drag_recovery", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
 	contact_keys.append_array(CombatSettingsConfig.CHARGED_GUARD_TUNING_KEYS)
 	contact_keys.append_array(CombatSettingsConfig.AUTHORED_METRONOME_TUNING_KEYS)
@@ -1547,14 +1541,14 @@ func _materialize_combat_settings() -> Dictionary:
 			var hand_key: String = "%d:%d" % [preset, style_index]
 			var raw_hand: Variant = hand_settings.get(hand_key, {})
 			var hand_values: Dictionary = (raw_hand as Dictionary).duplicate(true) if raw_hand is Dictionary else {}
+			for legacy_bind_key: String in Player.EXPERIMENTAL_BIND_SETTING_KEYS + Player.LEGACY_BIND_SLIDE_SETTING_KEYS:
+				if style_index != int(Player.SwordStyle.METRONOME_BIND_B):
+					hand_values.erase(legacy_bind_key)
 			for key: String in hand_keys:
+				if key.begins_with("bind_") and style_index != int(Player.SwordStyle.METRONOME_BIND_B):
+					continue
 				hand_values[key] = player.get_combat_hand_setting(key)
 			hand_settings[hand_key] = hand_values
-	# Only the surviving form's profiles belong in the materialized package.
-	for raw_key: Variant in hand_settings.keys():
-		var style_part: String = str(raw_key).get_slice(":", 1)
-		if style_part.is_valid_int() and int(style_part) >= Player.SwordStyle.size():
-			hand_settings.erase(raw_key)
 	player.combat_contact_preset = saved_preset
 	player.sword_style = saved_style
 	return {"hand": hand_settings, "contact": contact_settings}
@@ -1878,7 +1872,8 @@ func _apply_global_preset_state(state: Dictionary) -> void:
 		player.combat_weapon_hand_settings = (state["combat_weapon_hand_settings"] as Dictionary).duplicate(true)
 	if state.get("blade_profile_settings", null) is Dictionary:
 		player.blade_profile_settings = (state["blade_profile_settings"] as Dictionary).duplicate(true)
-	# Migrate any legacy per-form hand tables onto the single surviving Bind form.
+	# A pre-Form-III global preset gets its own one-time clone of the Form II
+	# values it just imported. Existing Form III values are never overwritten.
 	player.ensure_experimental_form_initialized()
 	var grapple_data: Dictionary = state.get("grapple", {}) as Dictionary
 	var grapple: GrappleController = player.grapple_controller

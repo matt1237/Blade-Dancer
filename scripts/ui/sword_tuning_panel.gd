@@ -186,7 +186,16 @@ func _select_section(section_index: int) -> void:
 
 func _style_display_name(style_index: int) -> String:
 	match style_index:
-		Player.SwordStyle.BIND: return "Form I: Bind"
+		Player.SwordStyle.METRONOME: return "Form I: Metronome V"
+		Player.SwordStyle.METRONOME_WINDUP: return "Form II: Metronome Wind-up"
+		Player.SwordStyle.METRONOME_BIND: return "Form III: Bind A"
+		Player.SwordStyle.METRONOME_BIND_B: return "Form IV: Bind B (TEST)"
+		Player.SwordStyle.THRUST: return "Form V: Thrusting A"
+		Player.SwordStyle.MOULINET: return "Form VI: Moulinet 1 (Full 8)"
+		Player.SwordStyle.MOULINET_2: return "Form VII: Moulinet 2 (Single Lobe)"
+		Player.SwordStyle.MOULINET_3: return "Form VIII: Moulinet 3 (Aim-Driven)"
+		Player.SwordStyle.MOULINET_4: return "Form IX: Flattened Infinity"
+		Player.SwordStyle.THRUST_METRONOME: return "Form X: Metronome Thrusts"
 		_: return "Unknown"
 
 func _create_param_row(parent: VBoxContainer, param: Dictionary) -> void:

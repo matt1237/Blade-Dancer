@@ -32,7 +32,7 @@ func _process(delta: float) -> void:
 	if display_mode != "beat" or player_ref == null or get_tree().paused:
 		queue_redraw()
 		return
-	if not player_ref.is_experimental_bind_form():
+	if player_ref.sword_style not in [Player.SwordStyle.METRONOME, Player.SwordStyle.METRONOME_WINDUP] and not player_ref.is_experimental_bind_form():
 		queue_redraw()
 		return
 	var current_phase: float = player_ref.sword_phase

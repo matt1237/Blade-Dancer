@@ -48,18 +48,6 @@ func test_every_form_three_slider_has_left_and_right_feel_guidance() -> void:
 			assert(line.contains("_form_three_feel_tip("), "Every Form III slider tooltip needs explicit left/right feel guidance: %s" % line)
 	assert(guided_slider_count == Player.EXPERIMENTAL_BIND_SETTING_KEYS.size() - 1, "Every player-facing Bind control except retired bind_debug must have feel guidance.")
 
-func test_counter_steer_compression_tuners_are_exposed_and_persisted() -> void:
-	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
-	for key: String in ["counter_steer_arc_enabled", "counter_steer_arc_compression"]:
-		var found: bool = false
-		for line: String in menu_source.split("\n"):
-			if line.contains("_create_hand_slider(core_section, \"%s\"" % key):
-				found = true
-				assert(line.contains("_form_three_feel_tip("), "The %s slider needs explicit left/right feel guidance: %s" % [key, line])
-		assert(found, "The %s tuner must appear in the Core Sword & Reach section." % key)
-	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
-	assert(main_source.contains("\"counter_steer_arc_enabled\"") and main_source.contains("\"counter_steer_arc_compression\""), "Both counter-steer tuners must be part of the persisted hand-setting authority.")
-
 func test_slide_clash_and_parry_controls_have_feel_guidance() -> void:
 	var keys: Array[String] = [
 		"clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown",
@@ -83,15 +71,16 @@ func test_slide_clash_and_parry_controls_have_feel_guidance() -> void:
 				break
 		assert(matching_line.contains("_form_three_feel_tip("), "Missing explicit slide feel guidance for %s" % slide_key)
 
-func test_gameplay_re_exposes_sword_form_cycling() -> void:
+func test_bind_is_the_only_player_facing_sword_form() -> void:
 	var player_source: String = FileAccess.get_file_as_string("res://scripts/player.gd")
 	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
 	var gameplay_start: int = player_source.find("func _physics_process")
 	var gameplay_end: int = player_source.find("func _handle_style_input", gameplay_start)
 	var gameplay_source: String = player_source.substr(gameplay_start, gameplay_end - gameplay_start)
-	assert(gameplay_source.contains("_handle_style_input()"), "Gameplay input must again expose the Z/X sword-form cycle for the rebuilt forms.")
-	assert(player_source.contains("const STYLE_CYCLE_ORDER"), "The form cycle must be an explicit ordered list.")
-	assert(main_source.contains("style_label.visible = false"), "Sword-form HUD label must remain hidden until the rebuilt forms are user-facing.")
+	assert(not gameplay_source.contains("_handle_style_input()"), "Gameplay input must not expose internal sword-form cycling.")
+	assert(main_source.contains("style_label.text = \"\""), "HUD must not display sword-form information.")
+	assert(main_source.contains("style_label.visible = false"), "Sword-form HUD label must remain hidden.")
+	assert(not main_source.contains("to change"), "No player-facing sword-form control hint should remain.")
 
 func test_backyard_layout_tab_offers_forest_and_empty_without_hiding_tools() -> void:
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
@@ -173,7 +162,7 @@ func test_bind_form_has_one_shared_slide_authority_for_every_weapon() -> void:
 	add_child(main)
 	var menu: BackyardTrainingMenu = main.backyard_training_menu
 	var player: Player = main.get_node("Player") as Player
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_BIND_B
 	player.combat_contact_preset = 2
 	menu.open()
 	menu._sync_combat_controls()
@@ -197,7 +186,7 @@ func test_bind_b_slider_drag_updates_without_full_panel_resync() -> void:
 	add_child(main)
 	var menu: BackyardTrainingMenu = main.backyard_training_menu
 	var player: Player = main.get_node("Player") as Player
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_BIND_B
 	player.combat_contact_preset = 2
 	player.set_equipped_sword("Basic Curved Sword")
 	menu.open()

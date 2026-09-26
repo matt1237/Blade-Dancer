@@ -69,7 +69,7 @@ func test_settings_safe_before_ready_and_endpoint_thresholds() -> void:
 func test_actual_player_phase_is_only_motion_clock() -> void:
 	var visualizer: MetronomeVisualizer = _make_visualizer()
 	var player: Player = Player.new()
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_WINDUP
 	player.sword_phase = PI * 0.5 + PI * 0.3
 	visualizer.configure(player, 30.0)
 	visualizer._process(0.016)
@@ -80,9 +80,9 @@ func test_actual_player_phase_is_only_motion_clock() -> void:
 	player.sword_phase = PI * 0.5 + PI * 0.7
 	visualizer._process(0.0)
 	assert(is_equal_approx(visualizer._last_progress, 0.7))
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_BIND
 	visualizer._process(0.0)
-	assert(visualizer.visible, "The surviving form must keep the phase-driven metronome visualizer.")
+	assert(visualizer.visible, "Form III must retain the same phase-driven metronome visualizer as Forms I–II.")
 	visualizer.set_display_enabled(false)
 	visualizer._process(0.016)
 	assert(not visualizer.visible)
@@ -111,7 +111,7 @@ func test_one_peak_per_group_and_slower_full_envelope() -> void:
 func test_authoritative_count_wrap_and_reset() -> void:
 	var visualizer: MetronomeVisualizer = _make_visualizer()
 	var player: Player = Player.new()
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME
 	visualizer.configure(player, 50.0, "gold", 4)
 	# TAU is in the middle of a stroke, not a count increment.
 	player.swing_count = 3

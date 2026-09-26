@@ -7,7 +7,7 @@ func _make_pair() -> Array[Node]:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
 	player.set_physics_process(false)
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_BIND
 	player.combat_contact_preset = 2
 	player.set_combat_hand_setting("bind_enabled", 1.0)
 	player.set_combat_hand_setting("bind_capture_time", 0.10)
@@ -121,11 +121,24 @@ func test_only_one_opponent_can_own_an_experimental_bind() -> void:
 	actors[1].free()
 	actors[0].free()
 
+func test_forms_one_and_two_cannot_arm_experimental_bind() -> void:
+	var actors: Array[Node] = _make_pair()
+	var player: Player = actors[0] as Player
+	var enemy: Enemy = actors[1] as Enemy
+	player.sword_style = Player.SwordStyle.METRONOME_WINDUP
+	player._begin_experimental_bind_candidate(enemy, enemy.get_slide_contact_global())
+	assert(not player.experimental_bind_candidate, "Form II must remain mechanically untouched by Form III bind state.")
+	player.sword_style = Player.SwordStyle.METRONOME
+	player._begin_experimental_bind_candidate(enemy, enemy.get_slide_contact_global())
+	assert(not player.experimental_bind_candidate, "Form I must remain mechanically untouched by Form III bind state.")
+	actors[1].free()
+	actors[0].free()
+
 func test_bind_world_slow_compensation_preserves_sword_clock() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
 	player.set_physics_process(false)
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_BIND
 	player.combat_hand_settings.clear()
 	player.combat_weapon_hand_settings.clear()
 	assert(is_equal_approx(player.get_combat_hand_setting("bind_sword_speed"), 1.0), "Default stable focus must not accidentally detune the sword from its musical metronome.")
@@ -236,7 +249,7 @@ func test_focus_world_scale_is_sustained_and_restores_cleanly() -> void:
 	assert(is_equal_approx(Engine.time_scale, 1.0), "Releasing focus must always restore normal world time.")
 	fx.free()
 
-func test_preset_copy_keeps_the_bind_form_tuning_authoritative() -> void:
+func test_preset_copy_keeps_experimental_fields_out_of_forms_one_and_two() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
 	player.set_physics_process(false)
@@ -244,8 +257,11 @@ func test_preset_copy_keeps_the_bind_form_tuning_authoritative() -> void:
 	player.combat_weapon_hand_settings.clear()
 	player.ensure_experimental_form_initialized()
 	player.copy_preset_settings(2, 3)
-	var bind_form: Dictionary = player.combat_hand_settings.get("3:0", {}) as Dictionary
-	assert(bind_form.has("bind_enabled"), "Preset operations must preserve the canonical Bind Form values.")
+	var form_one: Dictionary = player.combat_hand_settings.get("3:0", {}) as Dictionary
+	var form_two: Dictionary = player.combat_hand_settings.get("3:7", {}) as Dictionary
+	var bind_form: Dictionary = player.combat_hand_settings.get("3:9", {}) as Dictionary
+	assert(not form_one.has("bind_enabled") and not form_two.has("bind_enabled"), "Preset operations must not write Bind fields into ordinary forms.")
+	assert(bind_form.has("bind_enabled"), "Preset operations must preserve the canonical shared Bind Form values.")
 	player.free()
 
 func test_training_tuner_keeps_slide_shared_and_bind_controls_form_specific() -> void:
@@ -257,11 +273,14 @@ func test_training_tuner_keeps_slide_shared_and_bind_controls_form_specific() ->
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	menu.main = fake_main
 	fake_main.add_child(menu)
-	player.sword_style = Player.SwordStyle.BIND
+	player.sword_style = Player.SwordStyle.METRONOME_WINDUP
 	menu._sync_combat_controls()
+	assert(not menu.experimental_bind_section.visible, "Bind controls must be hidden for non-Bind forms.")
 	var slide_row: Dictionary = menu.contact_controls.get("slide_speed", {}) as Dictionary
 	assert(not slide_row.is_empty(), "Shared Slide controls must exist independently from Bind controls.")
-	assert((slide_row["slider"] as HSlider).visible, "Shared Slide controls must stay visible for the Bind form.")
+	assert((slide_row["slider"] as HSlider).visible, "Shared Slide controls must stay visible for every form.")
+	player.sword_style = Player.SwordStyle.METRONOME_BIND
+	menu._sync_combat_controls()
 	assert(menu.experimental_bind_section.visible, "The Bind form must reveal its form-specific tuner.")
 	for setting_key: String in Player.EXPERIMENTAL_BIND_SETTING_KEYS:
 		if setting_key == "bind_debug":
