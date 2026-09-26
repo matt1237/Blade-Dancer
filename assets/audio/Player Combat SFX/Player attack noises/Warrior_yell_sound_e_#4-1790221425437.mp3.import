@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dfvhiwt3ourng"
+path="res://.godot/imported/Warrior_yell_sound_e_#4-1790221425437.mp3-166f29f6fa8b92201f161b5e51d72619.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Player Combat SFX/Player attack noises/Warrior_yell_sound_e_#4-1790221425437.mp3"
+dest_files=["res://.godot/imported/Warrior_yell_sound_e_#4-1790221425437.mp3-166f29f6fa8b92201f161b5e51d72619.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

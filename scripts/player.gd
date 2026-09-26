@@ -9,7 +9,7 @@ enum AuthoredMetronomeState { INACTIVE, READY, ACTIVE, RETURNING, SHEATHED }
 ## The one ability a Charged Guard gesture can discharge into. NONE means the gesture
 ## layer is idle and the guard owns the pose; THRUST means the lunging thrust owns the
 ## pose instead (see the ordered override chain at _apply_charged_guard_gesture_pose).
-enum ChargedGuardGesture { NONE, THRUST, WHIRLWIND }
+enum ChargedGuardGesture { NONE, THRUST, WHIRLWIND, ARC_SLASH }
 const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B]
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
@@ -48,13 +48,8 @@ const CHARGED_GUARD_MIN_HAND_RADIUS: float = 18.0
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
 const SWING_COMMITMENT_DURATION_DEFAULT: float = 0.16
 const SWING_COMMITMENT_INPUT_THRESHOLD: float = 0.01
-const CHARGED_GUARD_CANDIDATE_LATCH: float = 0.30
 ## One missed input sample may interrupt a deliberate pull; older evidence never survives.
 const CHARGED_GUARD_INPUT_GRACE: float = 0.04
-## How far the blade may drift from the shape it was banked in before the guard slips away. This
-## is what "keep the drive steady" means in practice: the swing never stops pushing the blade, and
-## only a continuing counter-drive holds it still.
-const CHARGED_GUARD_POSITION_TOLERANCE_DEGREES: float = 35.0
 ## Top speed the locked hand repositions at once the guard is fully charged.
 ## Deliberately independent of the Guard Break Speed Threshold tuner: that slider
 ## answers "how hard is this guard to break", and tuning break difficulty must not
@@ -93,12 +88,10 @@ const CHARGED_GUARD_GESTURE_MIN_SPAN: float = 220.0
 ## Chord over path length: 1.0 is a perfect line, about 0.64 a semicircle, far lower a
 ## squiggle. Scale-free, so a bigger version of the same wiggle still fails.
 const CHARGED_GUARD_GESTURE_STRAIGHTNESS: float = 0.85
-## Longest a single stroke may take. A longer draw is abandoned rather than trimmed, so
-## a slow drag can never be mistaken for a deliberate line.
+## Longest a straight stroke may take. Circles have their own longer window.
 const CHARGED_GUARD_GESTURE_WINDOW: float = 1.5
-## Stillness that closes a stroke and lets it be read. This is the punctuation an
-## authored stroke already ends on, and it is what keeps the gesture and the guard
-## break from ever competing for the same motion.
+## Stillness closes a stroke and lets it be read. A hard flick is held until this
+## point so a complete technique can take priority over the Guard break.
 const CHARGED_GUARD_GESTURE_SETTLE_TIME: float = 0.07
 const CHARGED_GUARD_GESTURE_MOVE_EPSILON: float = 1.0
 ## Frame samples a single stroke may hold. The window is what really bounds this -- the
@@ -125,23 +118,31 @@ const CHARGED_GUARD_GESTURE_SPARK_BURST: int = 8
 ## sign of that sweep is the direction the player drew, which is what decides which way the
 ## blade spins. Screen and world share the same y-down handedness and the camera never
 ## mirrors, so the sign carries over as-is.
-## The bars are deliberately forgiving, because a circle is far harder to draw than a line and
-## a generous shape must never be the reason the ability will not fire. The sweep floor is
-## only 200 degrees: its job is to establish a direction and reject a scribble, not to prove
-## the stroke closed. Closure proves that, and the two are an either/or -- a stroke that swept
-## nearly the whole way around has already shown it came around, so the ends are only required
-## to meet when the sweep fell short. An overshooting circle therefore still reads.
+## A rough three-quarter loop is enough for Whirlwind. The sweep floor establishes direction;
+## a loose endpoint check helps shorter arcs, while longer arcs need no closure at all.
 const CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP: float = 3.49
-const CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP: float = 5.236
-const CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS: float = 40.0
-const CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE: float = 1.0
-const CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD: float = 2.4
-const CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES: int = 8
+const CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP: float = 4.5
+const CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS: float = 30.0
+const CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE: float = 2.0
+const CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD: float = 4.0
+const CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES: int = 6
 ## Circles get their own, much longer window than the line. A line is flicked in a third of a
 ## second; a circle drawn carefully -- as anyone who does not draw circles well will draw it
 ## -- takes two or three, and timing those out was the likeliest reason the ability would not
 ## fire at all in play.
 const CHARGED_GUARD_GESTURE_CIRCLE_WINDOW: float = 3.0
+const CHARGED_GUARD_ENTRY_WINDOW: float = 1.5
+const CHARGED_GUARD_ENTRY_MIN_WIDTH: float = 150.0
+const CHARGED_GUARD_ENTRY_MIN_HEIGHT: float = 120.0
+const CHARGED_GUARD_ENTRY_G_MIN_SWEEP: float = 5.5
+const CHARGED_GUARD_ENTRY_G_MIN_INWARD_RATIO: float = 0.45
+const CHARGED_GUARD_GESTURE_V_MIN_ARM: float = 65.0
+const CHARGED_GUARD_GESTURE_V_MIN_DEPTH: float = 40.0
+const CHARGED_GUARD_GESTURE_V_MIN_STRAIGHTNESS: float = 0.72
+const CHARGED_GUARD_GESTURE_V_WINDOW: float = 2.0
+const CHARGED_GUARD_ARC_SLASH_WINDUP: float = 0.07
+const CHARGED_GUARD_ARC_SLASH_SWEEP: float = 0.30
+const CHARGED_GUARD_ARC_SLASH_RECOVER: float = 0.20
 ## The lunging thrust the gesture discharges into. Deliberately unhurried: the wind-up
 ## turns the blade onto the drawn line, the drive throws it out, the hold reads at full
 ## reach, and the recovery settles back into ordinary metre. The body is thrown along
@@ -195,8 +196,8 @@ const CHARGED_GUARD_REPOSITION_SPEED_REFERENCE: float = 800.0
 ## Acquisition reads authored velocity against the visible blade's pommel axis, not cursor
 ## orbit. Only aligned, sufficiently fast motion inside the metronome turn window can bank
 ## travel and intent. A brief missed sample is tolerated; an abandoned pull is reset rather
-## than slowly bleeding into unrelated movement. The candidate then has one short, hard
-## deadline to hold its blade shape and lock.
+## than slowly bleeding into unrelated movement. The qualifying pull catches Guard
+## immediately, without a second blade-angle hold.
 ## Acquisition diagnostics print at most this often, so a player counter-steering through a
 ## whole fight gets a readable trickle rather than a flood.
 const CHARGED_GUARD_ACQUISITION_LOG_INTERVAL: float = 0.25
@@ -211,9 +212,12 @@ const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
 const STROKE_DRIVE_BUILD_PER_SECOND: float = 3.0
 const STROKE_DRIVE_BUILD_PROGRESS_LIMIT: float = 0.60
+const SWORD_SWING_SFX_DRIVE_THRESHOLD: float = 0.50
+const ATTACK_VOICE_SFX_DRIVE_THRESHOLD: float = 0.95
 const AUTHORED_STEP_DRIVE_THRESHOLD: float = 0.70
 const SWORD_TEXTURE: Texture2D = preload("res://assets/Blade Dancer Sword.png")
 const CURVED_SWORD_TEXTURE: Texture2D = preload("res://assets/generated/basic_curved_sword_frame_0.png")
+const PLAYER_SWORD_VISUAL_SCRIPT: Script = preload("res://scripts/player_sword_visual.gd")
 const SWORD_FLAME_ATLAS: Texture2D = preload("res://assets/generated/hd_weapon_flame_symmetric_atlas.png")
 const SWORD_FLAME_FRAME_SIZE: Vector2 = Vector2(192.0, 192.0)
 const SWORD_FLAME_FRAME_COUNT: int = 6
@@ -410,6 +414,9 @@ static func additive_sword_damage_multiplier(contact_multiplier: float, authored
 	for multiplier: float in [contact_multiplier, authored_multiplier, commitment_multiplier, position_multiplier, reentry_multiplier]:
 		combined += multiplier - 1.0
 	return maxf(minimum_multiplier, combined)
+
+static func charged_guard_thrust_damage_multiplier(sword_damage_multiplier: float) -> float:
+	return maxf(1.0, sword_damage_multiplier)
 
 @export_category("Successful Sword Hit Feedback")
 ## Freeze duration for a weak flesh hit, in seconds.
@@ -656,12 +663,20 @@ var charged_guard_gesture_cursor: Vector2 = Vector2.ZERO
 ## Screen-space points of the stroke being drawn. Screen space is the reason no camera
 ## motion can draw, bend, extend or rotate a gesture.
 var charged_guard_gesture_path: PackedVector2Array = PackedVector2Array()
+var charged_guard_entry_path: PackedVector2Array = PackedVector2Array()
+var charged_guard_entry_stroke_time: float = 0.0
+var charged_guard_entry_active: bool = false
+var charged_guard_entry_spent: bool = false
+var charged_guard_entry_has_cursor: bool = false
+var charged_guard_entry_previous_cursor: Vector2 = Vector2.ZERO
+var charged_guard_entry_grace_left: float = 0.0
 var charged_guard_gesture_stroke_time: float = 0.0
 var charged_guard_gesture_still: float = 0.0
 var charged_guard_gesture_active: bool = false
 ## A stroke is spent once it has been read, or once it overran the window: either way it
 ## can never qualify, and only fresh movement starts a new one.
 var charged_guard_gesture_spent: bool = false
+var charged_guard_gesture_break_pending: bool = false
 var charged_guard_gesture_has_cursor: bool = false
 var charged_guard_gesture_previous_cursor: Vector2 = Vector2.ZERO
 var charged_guard_gesture_trail_left: float = 0.0
@@ -673,6 +688,10 @@ var charged_guard_gesture_spark_timer: float = 0.0
 var charged_guard_gesture_state: ChargedGuardGesture = ChargedGuardGesture.NONE
 var charged_guard_gesture_phase_time: float = 0.0
 var charged_guard_gesture_direction: Vector2 = Vector2.RIGHT
+var charged_guard_arc_mid_angle: float = 0.0
+var charged_guard_arc_sign: float = 1.0
+var charged_guard_arc_initial_angle: float = 0.0
+var charged_guard_arc_initial_hand_offset: Vector2 = Vector2.ZERO
 ## Captured at activation so the thrust extends from the reach the player was actually
 ## holding, instead of breathing with the cursor during the sequence.
 var charged_guard_gesture_hand_radius: float = 0.0
@@ -715,6 +734,7 @@ var hd_head_sprite: Sprite2D = null
 var hd_torso_sprite: Sprite2D = null
 var hd_feet_sprite: Sprite2D = null
 var flow_fx: PlayerFlowFX = null
+var player_sword_visual: Node2D = null
 ## Which gear base item is currently equipped, driving visible weapon art
 ## and the hit-capsule widening table above. Set by main.gd at run start
 ## from HomeProgression.equipped_gear_item(); armory_config.gd owns the
@@ -962,6 +982,11 @@ func _ready() -> void:
 	flow_fx.name = "PlayerFlowFX"
 	add_child(flow_fx)
 	flow_fx.setup(self)
+	player_sword_visual = PLAYER_SWORD_VISUAL_SCRIPT.new() as Node2D
+	player_sword_visual.name = "PlayerSwordVisual"
+	player_sword_visual.z_as_relative = false
+	player_sword_visual.z_index = 5
+	add_child(player_sword_visual)
 	_apply_armor_visual()
 	queue_redraw()
 
@@ -1312,6 +1337,7 @@ func _physics_process(delta: float) -> void:
 	# Screen space is inherently camera-free: the camera moves the world, never the
 	# pointer's place on the screen.
 	charged_guard_gesture_cursor = get_viewport().get_mouse_position()
+	_update_charged_guard_entry_gesture(sword_control_delta)
 	_update_charged_guard_gesture(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
 	_apply_experimental_bind_retention(sword_control_delta)
@@ -2058,9 +2084,7 @@ func _update_aim(delta: float) -> void:
 		var max_step_rad: float = deg_to_rad(max_turn_deg) * delta
 		desired_step = clampf(desired_step, -max_step_rad, max_step_rad)
 	var charged_position_stage_enabled: bool = get_combat_contact_setting("charged_guard_position_charge_enabled") >= 0.5
-	var charged_reposition_scale: float = charged_guard_slow_reposition_scale(charged_guard_authored_aim_velocity.length(), CHARGED_GUARD_REPOSITION_SPEED_REFERENCE, charged_guard_movement_suppression_left > 0.0) * charged_guard_reposition_ramp if charged_guard_fully_charged and charged_position_stage_enabled else 1.0
 	if charged_guard_hand_follows_cursor(charged_guard_fully_charged, charged_position_stage_enabled, charged_guard_reposition_ramp):
-		desired_step *= charged_reposition_scale
 		# Converge on a bounded target instead of integrating cursor displacement, so
 		# returning from any direction stays smooth. Mouse aim takes that target from the
 		# cursor's own motion: its world point is dragged around by the camera's lead, lag
@@ -2074,12 +2098,12 @@ func _update_aim(delta: float) -> void:
 			charged_guard_hand_target = charged_guard_clamp_hand_offset(charged_guard_lock_hand_offset + charged_guard_cursor_motion, charged_guard_lock_radius, CHARGED_GUARD_MIN_HAND_RADIUS, charged_guard_radial_direction)
 			# The blade turns with the cursor's motion about the hand, bounded by the
 			# sword's own turn cap so a fast sweep cannot snap the guard around.
-			var charged_guard_blade_turn: float = charged_guard_angular_travel(charged_guard_lock_hand_offset, charged_guard_cursor_motion) * charged_reposition_scale
+			var charged_guard_blade_turn: float = charged_guard_angular_travel(charged_guard_lock_hand_offset, charged_guard_cursor_motion)
 			if max_turn_deg > 0.0:
 				var charged_guard_turn_cap: float = deg_to_rad(max_turn_deg) * delta
 				charged_guard_blade_turn = clampf(charged_guard_blade_turn, -charged_guard_turn_cap, charged_guard_turn_cap)
 			charged_guard_lock_angle += charged_guard_blade_turn
-		charged_guard_lock_hand_offset = charged_guard_repositioned_hand_offset(charged_guard_lock_hand_offset, charged_guard_hand_target, CHARGED_GUARD_REPOSITION_SPEED * charged_reposition_scale, delta)
+		charged_guard_lock_hand_offset = charged_guard_hand_target
 		if charged_guard_lock_hand_offset.length_squared() >= CHARGED_GUARD_MIN_HAND_RADIUS * CHARGED_GUARD_MIN_HAND_RADIUS:
 			charged_guard_radial_direction = charged_guard_lock_hand_offset.normalized()
 	aim_angle += desired_step
@@ -2396,7 +2420,7 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"bind_sword_speed": return float(values.get("bind_sword_speed", 1.0))
 		"bind_release_grace": return float(values.get("bind_release_grace", 0.12))
 		"bind_max_duration": return float(values.get("bind_max_duration", 1.40))
-		"bind_rebind_cooldown": return float(values.get("bind_rebind_cooldown", 0.28))
+		"bind_rebind_cooldown": return float(values.get("bind_rebind_cooldown", 2.0))
 		"bind_focus_time_scale": return float(values.get("bind_focus_time_scale", 0.60))
 		"bind_focus_zoom": return float(values.get("bind_focus_zoom", 0.15))
 		"bind_focus_bias": return float(values.get("bind_focus_bias", 0.60))
@@ -2472,6 +2496,10 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 	var preset_key: String = str(combat_contact_preset)
 	var values: Dictionary = combat_contact_settings.get(preset_key, {})
 	if values.has(setting):
+		# Older saved presets may retain the long pre-gesture delay. Keep their
+		# data intact while applying the shorter playable range in this build.
+		if setting == "charged_guard_awaken_duration":
+			return clampf(float(values[setting]), 0.20, 0.35)
 		return float(values[setting])
 	var distinct: bool = combat_contact_preset >= 2
 	var result: float = 0.0
@@ -2586,11 +2614,15 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_enabled": result = 0.0
 		"charged_guard_position_charge_enabled": result = 0.0
 		"charged_guard_gestures_enabled": result = 0.0
+		"charged_guard_entry_g_enabled": result = 0.0
+		"charged_guard_entry_z_enabled": result = 0.0
+		"charged_guard_pommel_entry_enabled": result = 1.0
 		"charged_guard_hold_duration": result = 0.20
-		"charged_guard_awaken_duration": result = 1.0
+		"charged_guard_awaken_duration": result = 0.35
 		"charged_guard_break_speed": result = 600.0
 		"charged_guard_hold_limit": result = 4.0
 		"charged_guard_acquisition_window": result = 0.65
+		"charged_guard_min_arc_energy": result = 100.0
 		"charged_guard_pommel_alignment": result = 0.82
 		"charged_guard_pommel_speed": result = 90.0
 		"charged_guard_pommel_travel": result = 14.0
@@ -2751,6 +2783,31 @@ func _apply_charged_guard_gesture_pose(transform_data: Dictionary) -> Dictionary
 		return transform_data
 	if charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
 		return _apply_charged_guard_whirlwind_pose(transform_data)
+	if charged_guard_gesture_state == ChargedGuardGesture.ARC_SLASH:
+		return _apply_charged_guard_arc_slash_pose(transform_data)
+	return transform_data
+
+func _apply_charged_guard_arc_slash_pose(transform_data: Dictionary) -> Dictionary:
+	var elapsed: float = charged_guard_gesture_phase_time
+	var start_angle: float = charged_guard_arc_mid_angle - charged_guard_arc_sign * PI * 0.5
+	var radius: float = maxf(CHARGED_GUARD_MIN_HAND_RADIUS, charged_guard_arc_initial_hand_offset.length())
+	var angle: float = charged_guard_arc_initial_angle
+	var hand_offset: Vector2 = charged_guard_arc_initial_hand_offset
+	if elapsed < CHARGED_GUARD_ARC_SLASH_WINDUP:
+		var windup_ratio: float = smoothstep(0.0, 1.0, elapsed / CHARGED_GUARD_ARC_SLASH_WINDUP)
+		angle = lerp_angle(angle, start_angle, windup_ratio)
+		hand_offset = hand_offset.lerp(Vector2.RIGHT.rotated(start_angle) * radius, windup_ratio)
+	else:
+		var sweep_ratio: float = clampf((elapsed - CHARGED_GUARD_ARC_SLASH_WINDUP) / CHARGED_GUARD_ARC_SLASH_SWEEP, 0.0, 1.0)
+		angle = start_angle + charged_guard_arc_sign * PI * smoothstep(0.0, 1.0, sweep_ratio)
+		hand_offset = Vector2.RIGHT.rotated(angle) * radius
+		var recover_elapsed: float = elapsed - CHARGED_GUARD_ARC_SLASH_WINDUP - CHARGED_GUARD_ARC_SLASH_SWEEP
+		if recover_elapsed > 0.0:
+			var recover_ratio: float = smoothstep(0.0, 1.0, clampf(recover_elapsed / CHARGED_GUARD_ARC_SLASH_RECOVER, 0.0, 1.0))
+			angle = lerp_angle(angle, float(transform_data["angle"]), recover_ratio)
+			hand_offset = hand_offset.lerp((transform_data["start"] as Vector2) - global_position, recover_ratio)
+	transform_data["angle"] = angle
+	transform_data["start"] = global_position + hand_offset
 	return transform_data
 
 ## The whirlwind's claim on the pose: the whole sword sweeps one turn around the player,
@@ -3432,6 +3489,116 @@ static func gesture_radius_spread(path: PackedVector2Array) -> float:
 		return INF
 	return largest / smallest
 
+## The deepest point between the two ends is the V's corner. Both arms must be
+## deliberate, reasonably straight strokes, with a clear turn between them.
+static func gesture_v_vertex_index(path: PackedVector2Array, stroke_time: float) -> int:
+	if path.size() < 7 or stroke_time <= 0.0 or stroke_time > CHARGED_GUARD_GESTURE_V_WINDOW:
+		return -1
+	var chord: Vector2 = path[path.size() - 1] - path[0]
+	if chord.length() < CHARGED_GUARD_GESTURE_V_MIN_ARM:
+		return -1
+	var vertex_index: int = -1
+	var greatest_depth: float = 0.0
+	for index: int in range(2, path.size() - 2):
+		var depth: float = absf(chord.cross(path[index] - path[0])) / chord.length()
+		if depth > greatest_depth:
+			greatest_depth = depth
+			vertex_index = index
+	if greatest_depth < CHARGED_GUARD_GESTURE_V_MIN_DEPTH or vertex_index < 0:
+		return -1
+	var first_arm: Vector2 = path[0] - path[vertex_index]
+	var second_arm: Vector2 = path[path.size() - 1] - path[vertex_index]
+	if first_arm.length() < CHARGED_GUARD_GESTURE_V_MIN_ARM or second_arm.length() < CHARGED_GUARD_GESTURE_V_MIN_ARM:
+		return -1
+	var corner_cosine: float = first_arm.normalized().dot(second_arm.normalized())
+	if corner_cosine < -0.71 or corner_cosine > 0.77:
+		return -1
+	var incoming: PackedVector2Array = PackedVector2Array()
+	var outgoing: PackedVector2Array = PackedVector2Array()
+	for index: int in range(vertex_index + 1):
+		incoming.append(path[index])
+	for index: int in range(vertex_index, path.size()):
+		outgoing.append(path[index])
+	if gesture_straightness(incoming) < CHARGED_GUARD_GESTURE_V_MIN_STRAIGHTNESS or gesture_straightness(outgoing) < CHARGED_GUARD_GESTURE_V_MIN_STRAIGHTNESS:
+		return -1
+	return vertex_index
+
+static func gesture_bounds(path: PackedVector2Array) -> Rect2:
+	if path.is_empty():
+		return Rect2()
+	var low: Vector2 = path[0]
+	var high: Vector2 = path[0]
+	for point: Vector2 in path:
+		low = low.min(point)
+		high = high.max(point)
+	return Rect2(low, high - low)
+
+static func gesture_subpath(path: PackedVector2Array, first: int, last: int) -> PackedVector2Array:
+	var part: PackedVector2Array = PackedVector2Array()
+	for index: int in range(first, last + 1):
+		part.append(path[index])
+	return part
+
+## A deliberate full-size Z: two rightward bars with a down-left diagonal.
+## Straightness of each arm rejects a fast zigzag scribble of similar overall size.
+static func gesture_entry_z_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	if path.size() < 12 or stroke_time <= 0.0 or stroke_time > CHARGED_GUARD_ENTRY_WINDOW:
+		return false
+	var bounds: Rect2 = gesture_bounds(path)
+	if bounds.size.x < CHARGED_GUARD_ENTRY_MIN_WIDTH or bounds.size.y < CHARGED_GUARD_ENTRY_MIN_HEIGHT:
+		return false
+	var upper_corner: int = -1
+	var lower_corner: int = -1
+	var farthest_right: float = -INF
+	var farthest_left: float = INF
+	for index: int in range(2, maxi(3, path.size() / 2)):
+		if path[index].x >= farthest_right:
+			farthest_right = path[index].x
+			upper_corner = index
+	for index: int in range(path.size() / 2, path.size() - 2):
+		if path[index].x < farthest_left:
+			farthest_left = path[index].x
+			lower_corner = index
+	if upper_corner < 2 or lower_corner <= upper_corner + 2 or lower_corner >= path.size() - 2:
+		return false
+	var first: Vector2 = path[upper_corner] - path[0]
+	var diagonal: Vector2 = path[lower_corner] - path[upper_corner]
+	var last: Vector2 = path[path.size() - 1] - path[lower_corner]
+	if first.x < bounds.size.x * 0.7 or absf(first.y) > bounds.size.y * 0.25:
+		return false
+	if diagonal.x > -bounds.size.x * 0.7 or diagonal.y < bounds.size.y * 0.7:
+		return false
+	if last.x < bounds.size.x * 0.7 or absf(last.y) > bounds.size.y * 0.25:
+		return false
+	return gesture_straightness(gesture_subpath(path, 0, upper_corner)) >= 0.78 and gesture_straightness(gesture_subpath(path, upper_corner, lower_corner)) >= 0.78 and gesture_straightness(gesture_subpath(path, lower_corner, path.size() - 1)) >= 0.78
+
+## G entry is a deliberate counter-clockwise spiral that visibly cinches inward.
+## Screen coordinates are y-down, so a counter-clockwise spiral has negative orbit sweep.
+static func gesture_entry_g_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	if path.size() < 24 or stroke_time <= 0.0 or stroke_time > CHARGED_GUARD_ENTRY_WINDOW:
+		return false
+	var bounds: Rect2 = gesture_bounds(path)
+	if bounds.size.x < CHARGED_GUARD_ENTRY_MIN_WIDTH or bounds.size.y < CHARGED_GUARD_ENTRY_MIN_HEIGHT:
+		return false
+	var center: Vector2 = gesture_centroid(path)
+	var start_radius: float = path[0].distance_to(center)
+	var end_radius: float = path[path.size() - 1].distance_to(center)
+	if start_radius < 60.0 or end_radius > start_radius * CHARGED_GUARD_ENTRY_G_MIN_INWARD_RATIO:
+		return false
+	if gesture_orbit_sweep(path) > -CHARGED_GUARD_ENTRY_G_MIN_SWEEP:
+		return false
+	var inward_steps: int = 0
+	var measured_steps: int = 0
+	var previous_radius: float = start_radius
+	for index: int in range(1, path.size()):
+		var current_radius: float = path[index].distance_to(center)
+		if absf(current_radius - previous_radius) >= 0.5:
+			measured_steps += 1
+			if current_radius < previous_radius:
+				inward_steps += 1
+		previous_radius = current_radius
+	return measured_steps > 0 and float(inward_steps) / float(measured_steps) >= 0.70
+
 ## The circle gesture's whole test: enough samples to be a real stroke, inside the circle's
 ## own generous window, big enough to be deliberate, round rather than spiral, and swept one
 ## way the whole way. Closure and sweep are an either/or rather than both: a stroke that
@@ -3533,6 +3700,80 @@ func _clear_charged_guard_gesture_stroke() -> void:
 	charged_guard_gesture_still = 0.0
 	charged_guard_gesture_active = false
 	charged_guard_gesture_spent = false
+	charged_guard_gesture_break_pending = false
+
+func _clear_charged_guard_entry_stroke() -> void:
+	charged_guard_entry_path.clear()
+	charged_guard_entry_stroke_time = 0.0
+	charged_guard_entry_active = false
+	charged_guard_entry_spent = false
+
+func _charged_guard_entry_armed() -> bool:
+	if get_combat_contact_setting("charged_guard_entry_g_enabled") < 0.5 and get_combat_contact_setting("charged_guard_entry_z_enabled") < 0.5:
+		return false
+	if get_combat_contact_setting("charged_guard_enabled") < 0.5 or get_combat_contact_setting("charged_guard_position_charge_enabled") < 0.5:
+		return false
+	if charged_guard_locked or charged_guard_gesture_state != ChargedGuardGesture.NONE or charged_guard_reacquire_block_left > 0.0 or not _is_metronome_style():
+		return false
+	if mobile_input_enabled or input_mode == INPUT_MODE_CONTROLLER or training_menu_input_locked or hit_stagger_left > 0.0:
+		return false
+	return not _authored_metronome_mode_applies() or authored_metronome_energy + 0.0001 >= clampf(get_combat_contact_setting("charged_guard_min_arc_energy"), 0.0, 100.0) / 100.0
+
+func _update_charged_guard_entry_gesture(delta: float) -> void:
+	if not _charged_guard_entry_armed():
+		_clear_charged_guard_entry_stroke()
+		charged_guard_entry_has_cursor = false
+		return
+	if not charged_guard_entry_has_cursor:
+		charged_guard_entry_previous_cursor = charged_guard_gesture_cursor
+		charged_guard_entry_has_cursor = true
+		return
+	var moved: float = charged_guard_gesture_cursor.distance_to(charged_guard_entry_previous_cursor)
+	charged_guard_entry_previous_cursor = charged_guard_gesture_cursor
+	if charged_guard_entry_active:
+		charged_guard_entry_stroke_time += delta
+		if charged_guard_entry_stroke_time > CHARGED_GUARD_ENTRY_WINDOW or charged_guard_entry_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
+			charged_guard_entry_spent = true
+	if moved < CHARGED_GUARD_GESTURE_MOVE_EPSILON:
+		return
+	if not charged_guard_entry_active or charged_guard_entry_spent:
+		charged_guard_entry_path.clear()
+		charged_guard_entry_path.append(charged_guard_gesture_cursor)
+		charged_guard_entry_stroke_time = 0.0
+		charged_guard_entry_active = true
+		charged_guard_entry_spent = false
+	else:
+		charged_guard_entry_path.append(charged_guard_gesture_cursor)
+	charged_guard_gesture_trail_left = CHARGED_GUARD_GESTURE_TRAIL_FADE
+	# Entry shapes qualify on their final authored movement. No separate stillness/settle
+	# pause: Z resolves at its last bar, while G resolves once its inward spiral is clear.
+	var g_read: bool = get_combat_contact_setting("charged_guard_entry_g_enabled") >= 0.5 and gesture_entry_g_qualified(charged_guard_entry_path, charged_guard_entry_stroke_time)
+	var z_read: bool = get_combat_contact_setting("charged_guard_entry_z_enabled") >= 0.5 and gesture_entry_z_qualified(charged_guard_entry_path, charged_guard_entry_stroke_time)
+	if g_read or z_read:
+		charged_guard_entry_spent = true
+		_activate_charged_guard_from_entry_gesture("G" if g_read else "Z")
+
+func _activate_charged_guard_from_entry_gesture(shape: String) -> void:
+	var current_transform: Dictionary = _sword_transform()
+	var current_hilt: Vector2 = (current_transform["start"] as Vector2) - global_position
+	_clear_charged_guard_attempt()
+	charged_guard_locked = true
+	charged_guard_fully_charged = true
+	charged_guard_reposition_ramp = 1.0
+	charged_guard_lock_angle = float(current_transform["angle"])
+	charged_guard_initial_lock_angle = charged_guard_lock_angle
+	charged_guard_lock_hand_offset = current_hilt
+	charged_guard_initial_hand_offset = current_hilt
+	charged_guard_lock_radius = current_hilt.length()
+	charged_guard_radial_direction = current_hilt.normalized() if current_hilt.length_squared() > 0.001 else Vector2.RIGHT
+	charged_guard_hold_time = 0.0
+	charged_guard_flash_left = 0.55
+	charged_guard_entry_grace_left = 0.12
+	charged_guard_gesture_flash_left = CHARGED_GUARD_GESTURE_FLASH_TIME
+	charged_guard_gesture_has_cursor = false
+	_clear_charged_guard_gesture_stroke()
+	if OS.is_debug_build():
+		print("[guard] %s entry LOCK" % shape)
 
 ## The gesture layer's whole lifecycle: the trail and hit-flash timers, the running ability, and
 ## stroke recognition while the blue guard is held. Called before _update_charged_guard on
@@ -3545,6 +3786,8 @@ func _update_charged_guard_gesture(delta: float) -> void:
 	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
 		if charged_guard_gesture_state == ChargedGuardGesture.WHIRLWIND:
 			_advance_charged_guard_whirlwind(delta)
+		elif charged_guard_gesture_state == ChargedGuardGesture.ARC_SLASH:
+			_advance_charged_guard_arc_slash(delta)
 		else:
 			_advance_charged_guard_thrust(delta)
 		return
@@ -3559,11 +3802,15 @@ func _update_charged_guard_gesture(delta: float) -> void:
 	charged_guard_gesture_previous_cursor = charged_guard_gesture_cursor
 	if charged_guard_gesture_active:
 		charged_guard_gesture_stroke_time += delta
-		if charged_guard_gesture_stroke_time > CHARGED_GUARD_GESTURE_WINDOW or charged_guard_gesture_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
+		if charged_guard_gesture_stroke_time > CHARGED_GUARD_GESTURE_CIRCLE_WINDOW or charged_guard_gesture_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
 			# Too slow, or absurdly oversampled. Abandoned rather than trimmed, so a long
 			# slow drag degrades to "no gesture" instead of hiding a shorter qualifying
 			# sub-stroke inside itself.
 			charged_guard_gesture_spent = true
+			if charged_guard_gesture_break_pending:
+				_release_charged_guard_hold()
+				_clear_charged_guard_gesture_stroke()
+				return
 	if cursor_moved >= CHARGED_GUARD_GESTURE_MOVE_EPSILON:
 		charged_guard_gesture_still = 0.0
 		if charged_guard_gesture_active and not charged_guard_gesture_spent:
@@ -3595,10 +3842,19 @@ func _update_charged_guard_gesture(delta: float) -> void:
 	if gesture_circle_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, CHARGED_GUARD_GESTURE_CIRCLE_WINDOW):
 		read_as = "whirlwind"
 		_begin_charged_guard_whirlwind()
+	elif gesture_v_vertex_index(charged_guard_gesture_path, charged_guard_gesture_stroke_time) >= 0:
+		read_as = "arc slash"
+		_begin_charged_guard_arc_slash()
 	elif gesture_stroke_qualified(charged_guard_gesture_path, charged_guard_gesture_stroke_time, CHARGED_GUARD_GESTURE_MIN_SPAN, CHARGED_GUARD_GESTURE_STRAIGHTNESS, CHARGED_GUARD_GESTURE_WINDOW):
 		read_as = "thrust"
 		_begin_charged_guard_thrust()
 	_log_charged_guard_gesture_read(read_as)
+	if read_as == "nothing" and charged_guard_gesture_break_pending:
+		_release_charged_guard_hold()
+	if read_as == "nothing":
+		_clear_charged_guard_gesture_stroke()
+	else:
+		charged_guard_gesture_break_pending = false
 
 ## Editor-only, and deliberately blunt: every time a stroke is brought to rest the recogniser
 ## prints its own numbers, whether or not that stroke read. Tuning the bars by feel alone meant
@@ -3667,6 +3923,18 @@ func _advance_charged_guard_thrust(delta: float) -> void:
 	charged_guard_gesture_lunge_armed = false
 	charged_guard_gesture_has_cursor = false
 
+func _stop_charged_guard_thrust_on_contact() -> bool:
+	if charged_guard_gesture_state != ChargedGuardGesture.THRUST:
+		return false
+	var forward_speed: float = maxf(0.0, velocity.dot(charged_guard_gesture_direction))
+	velocity -= charged_guard_gesture_direction * forward_speed
+	charged_guard_gesture_lunge_left = 0.0
+	charged_guard_gesture_lunge_armed = false
+	charged_guard_gesture_state = ChargedGuardGesture.NONE
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_has_cursor = false
+	return true
+
 ## A drawn circle discharges the guard into a whirlwind instead of a thrust. The whole sword
 ## sweeps one turn around the player, going whichever way the circle was drawn, and the
 ## ability claims the pose exactly as the thrust does. Nothing else about it is special: the
@@ -3711,6 +3979,36 @@ func _advance_charged_guard_whirlwind(delta: float) -> void:
 	charged_guard_gesture_phase_time = 0.0
 	charged_guard_gesture_has_cursor = false
 
+func _begin_charged_guard_arc_slash() -> void:
+	var vertex_index: int = gesture_v_vertex_index(charged_guard_gesture_path, charged_guard_gesture_stroke_time)
+	if vertex_index < 0:
+		return
+	var vertex: Vector2 = charged_guard_gesture_path[vertex_index]
+	var first_arm: Vector2 = charged_guard_gesture_path[0] - vertex
+	var second_arm: Vector2 = charged_guard_gesture_path[charged_guard_gesture_path.size() - 1] - vertex
+	var apex_direction: Vector2 = vertex - (charged_guard_gesture_path[0] + charged_guard_gesture_path[charged_guard_gesture_path.size() - 1]) * 0.5
+	charged_guard_arc_mid_angle = get_viewport().get_canvas_transform().basis_xform(apex_direction).angle()
+	charged_guard_arc_sign = -signf(first_arm.cross(second_arm))
+	charged_guard_arc_initial_angle = charged_guard_lock_angle
+	charged_guard_arc_initial_hand_offset = charged_guard_lock_hand_offset
+	charged_guard_gesture_state = ChargedGuardGesture.ARC_SLASH
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_flash_left = CHARGED_GUARD_GESTURE_FLASH_TIME
+	_spawn_charged_guard_gesture_sparks(charged_guard_gesture_cursor, CHARGED_GUARD_GESTURE_SPARK_BURST, 11.0)
+	charged_guard_gesture_active = false
+	charged_guard_gesture_spent = true
+	charged_guard_locked = false
+	_clear_charged_guard_attempt()
+	hit_ids.clear()
+
+func _advance_charged_guard_arc_slash(delta: float) -> void:
+	charged_guard_gesture_phase_time += delta
+	if charged_guard_gesture_phase_time < CHARGED_GUARD_ARC_SLASH_WINDUP + CHARGED_GUARD_ARC_SLASH_SWEEP + CHARGED_GUARD_ARC_SLASH_RECOVER:
+		return
+	charged_guard_gesture_state = ChargedGuardGesture.NONE
+	charged_guard_gesture_phase_time = 0.0
+	charged_guard_gesture_has_cursor = false
+
 ## True from the moment a guard acquisition starts charging until the lock releases, which
 ## is exactly when the guard's ring, glow and afterimages are on screen. Sole authority for
 ## "the guard is engaged": the draw code and the metronome sheathe timer both read this, so
@@ -3733,7 +4031,7 @@ func _clear_charged_guard_attempt() -> void:
 	charged_guard_charge = 0.0
 
 ## Temporary debug-build acquisition trace, throttled during ordinary play but always printed
-## at candidate creation, expiry and lock. All values come from the live acquisition path.
+## at lock. All values come from the live acquisition path.
 func _log_charged_guard_acquisition(alignment: float, speed: float, phase_valid: bool, travel: float, intent: float, candidate_age: float, candidate: bool, shape_valid: bool, event: String = "") -> void:
 	if not OS.is_debug_build():
 		return
@@ -3756,6 +4054,7 @@ func _release_charged_guard_hold() -> void:
 
 func _update_charged_guard(delta: float) -> void:
 	charged_guard_flash_left = maxf(0.0, charged_guard_flash_left - delta)
+	charged_guard_entry_grace_left = maxf(0.0, charged_guard_entry_grace_left - delta)
 	charged_guard_acquisition_log_cooldown = maxf(0.0, charged_guard_acquisition_log_cooldown - delta)
 	charged_guard_reacquire_block_left = maxf(0.0, charged_guard_reacquire_block_left - delta)
 	if charged_guard_gesture_state != ChargedGuardGesture.NONE:
@@ -3776,9 +4075,14 @@ func _update_charged_guard(delta: float) -> void:
 		# thrown away by a sideways jab, so a guard cannot be lost while it is being acquired.
 		var aim_distance: float = (virtual_aim_point - global_position).length()
 		var flick_speed: float = charged_guard_lateral_aim_speed(aim_direction, charged_guard_authored_aim_velocity)
-		if charged_guard_motion_breaks(flick_speed, get_combat_contact_setting("charged_guard_break_speed"), _cursor_hand_reach_limit(), aim_distance):
-			_release_charged_guard_hold()
-			return
+		if charged_guard_entry_grace_left <= 0.0 and charged_guard_motion_breaks(flick_speed, get_combat_contact_setting("charged_guard_break_speed"), _cursor_hand_reach_limit(), aim_distance):
+			if _charged_guard_gesture_armed() and charged_guard_gesture_active:
+				# Let the stroke finish. A valid technique wins; an unrecognized flick
+				# releases Guard when the player brings that stroke to rest.
+				charged_guard_gesture_break_pending = true
+			else:
+				_release_charged_guard_hold()
+				return
 		# The guard runs out on its own. Counted from blue only, because the charge itself is
 		# free -- timing that would punish the very act of building the guard -- and paused
 		# while a stroke is being drawn, so a circle can never be timed out from under the
@@ -3797,15 +4101,16 @@ func _update_charged_guard(delta: float) -> void:
 			return
 		if not charged_guard_fully_charged:
 			var awaken_duration: float = maxf(0.05, get_combat_contact_setting("charged_guard_awaken_duration"))
-			charged_guard_awaken_charge = minf(awaken_duration, charged_guard_awaken_charge + delta)
+			var near_body: bool = charged_guard_lock_hand_offset.length() <= get_combat_contact_setting("charged_guard_near_body_radius")
+			var charge_speed: float = 1.0 + (get_combat_contact_setting("charged_guard_near_body_rate") if near_body else 0.0)
+			charged_guard_awaken_charge = minf(awaken_duration, charged_guard_awaken_charge + delta * charge_speed)
 			if charged_guard_awaken_charge >= awaken_duration:
 				charged_guard_fully_charged = true
-				charged_guard_reposition_ramp = 0.0
+				charged_guard_reposition_ramp = 1.0
 				charged_guard_afterimage_timer = 0.0
 				charged_guard_flash_left = 0.55
 				charged_guard_afterimages.clear()
 		if charged_guard_fully_charged:
-			charged_guard_reposition_ramp = minf(1.0, charged_guard_reposition_ramp + delta / CHARGED_GUARD_REPOSITION_RAMP_TIME)
 			# Sample the hand glow into the afterimage pool on a timer rather than
 			# only while the hand slowly repositions, so the blue state always trails.
 			charged_guard_afterimage_timer = maxf(0.0, charged_guard_afterimage_timer - delta)
@@ -3829,78 +4134,71 @@ func _update_charged_guard(delta: float) -> void:
 	var authored_speed: float = charged_guard_authored_aim_velocity.length()
 	var deliberate_pommel_drive: bool = pommel_alignment >= get_combat_contact_setting("charged_guard_pommel_alignment") and authored_speed >= get_combat_contact_setting("charged_guard_pommel_speed")
 	var phase_valid: bool = absf(cos(sword_phase)) <= get_combat_contact_setting("charged_guard_acquisition_window")
+	# In authored metronome mode, the swing must have opened to the tuned
+	# arc-energy floor before any part of a Guard pull can be banked.
+	var arc_energy_ready: bool = not _authored_metronome_mode_applies() or authored_metronome_energy + 0.0001 >= clampf(get_combat_contact_setting("charged_guard_min_arc_energy"), 0.0, 100.0) / 100.0
 	if authored_speed >= get_combat_contact_setting("charged_guard_pommel_speed"):
 		charged_guard_recent_motion_left = 0.16
 	else:
 		charged_guard_recent_motion_left = maxf(0.0, charged_guard_recent_motion_left - delta)
 	var travel_needed: float = get_combat_contact_setting("charged_guard_pommel_travel")
-	if not charged_guard_candidate_active:
-		if charged_guard_reacquire_block_left > 0.0:
-			charged_guard_pommel_travel = 0.0
-			charged_guard_pommel_time = 0.0
-			charged_guard_input_gap = 0.0
-			return
-		if deliberate_pommel_drive and phase_valid:
-			charged_guard_input_gap = 0.0
-			charged_guard_pommel_travel = minf(travel_needed, charged_guard_pommel_travel + authored_speed * pommel_alignment * delta)
-			charged_guard_pommel_time += delta
-		else:
-			charged_guard_input_gap += delta
-			if charged_guard_input_gap > CHARGED_GUARD_INPUT_GRACE:
-				charged_guard_pommel_travel = 0.0
-				charged_guard_pommel_time = 0.0
-		var banked: bool = charged_guard_pommel_travel >= travel_needed and charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
-		if not banked:
-			_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, false)
-			return
-		charged_guard_candidate_active = true
-		charged_guard_candidate_angle = float(current_transform["angle"])
-		charged_guard_candidate_latch_left = CHARGED_GUARD_CANDIDATE_LATCH
-		charged_guard_input_gap = 0.0
-		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, true, true, "candidate")
-		charged_guard_charge = 0.0
-		return
-	# The latch is a HARD total deadline, including time spent inside the angle tolerance.
-	charged_guard_candidate_latch_left = maxf(0.0, charged_guard_candidate_latch_left - delta)
-	var candidate_age: float = CHARGED_GUARD_CANDIDATE_LATCH - charged_guard_candidate_latch_left
-	var guard_folded: bool = absf(angle_difference(charged_guard_candidate_angle, float(current_transform["angle"]))) <= deg_to_rad(CHARGED_GUARD_POSITION_TOLERANCE_DEGREES)
-	if charged_guard_candidate_latch_left <= 0.0:
-		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded, "expired")
-		_clear_charged_guard_attempt()
-		return
-	_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded)
-	if not guard_folded:
-		# Settle may resume within the deadline, but an interrupted shape earns no hold time.
-		charged_guard_charge = 0.0
-		return
-	var hand_radius: float = current_hilt.length()
-	var near_body: bool = hand_radius <= get_combat_contact_setting("charged_guard_near_body_radius")
-	var recent_motion: bool = charged_guard_recent_motion_left > 0.0
-	var charge_multiplier: float = charged_guard_charge_multiplier(near_body, recent_motion, deliberate_pommel_drive, get_combat_contact_setting("charged_guard_near_body_rate"), get_combat_contact_setting("charged_guard_recent_motion_rate"), get_combat_contact_setting("charged_guard_pommel_rate"))
-	# The charge-time tuner cannot require a hold longer than the candidate's hard deadline.
-	# Older presets with a longer value remain loadable and use this effective ceiling.
-	var hold_duration: float = minf(get_combat_contact_setting("charged_guard_hold_duration"), CHARGED_GUARD_CANDIDATE_LATCH - 0.05)
-	charged_guard_charge = minf(hold_duration, charged_guard_charge + delta * charge_multiplier)
-	if charged_guard_charge >= hold_duration:
-		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, candidate_age, true, guard_folded, "lock")
+	if charged_guard_reacquire_block_left > 0.0:
 		charged_guard_pommel_travel = 0.0
 		charged_guard_pommel_time = 0.0
-		var lock_angle: float = float(current_transform["angle"])
-		charged_guard_locked = true
-		charged_guard_candidate_active = false
-		charged_guard_candidate_latch_left = 0.0
-		charged_guard_lock_angle = lock_angle
-		charged_guard_initial_lock_angle = lock_angle
-		charged_guard_lock_hand_offset = current_hilt
-		charged_guard_initial_hand_offset = current_hilt
-		charged_guard_lock_radius = current_hilt.length()
-		charged_guard_radial_direction = current_hilt.normalized() if current_hilt.length_squared() > 0.001 else Vector2.RIGHT
-		charged_guard_flash_left = 0.18
+		charged_guard_input_gap = 0.0
+		return
+	if not arc_energy_ready:
+		charged_guard_pommel_travel = 0.0
+		charged_guard_pommel_time = 0.0
+		charged_guard_input_gap = 0.0
+		return
+	if get_combat_contact_setting("charged_guard_pommel_entry_enabled") < 0.5:
+		charged_guard_pommel_travel = 0.0
+		charged_guard_pommel_time = 0.0
+		charged_guard_input_gap = 0.0
+		return
+	if deliberate_pommel_drive and phase_valid:
+		charged_guard_input_gap = 0.0
+		charged_guard_pommel_travel = minf(travel_needed, charged_guard_pommel_travel + authored_speed * pommel_alignment * delta)
+		charged_guard_pommel_time += delta
+	else:
+		charged_guard_input_gap += delta
+		if charged_guard_input_gap > CHARGED_GUARD_INPUT_GRACE:
+			charged_guard_pommel_travel = 0.0
+			charged_guard_pommel_time = 0.0
+	var banked: bool = charged_guard_pommel_travel >= travel_needed and charged_guard_pommel_time >= get_combat_contact_setting("charged_guard_pommel_intent_time")
+	if not banked:
+		_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, false)
+		return
+	# The timed, sustained axial pull is the action. It catches the blade
+	# immediately; no separate stillness test is required of the player.
+	_log_charged_guard_acquisition(pommel_alignment, authored_speed, phase_valid, charged_guard_pommel_travel, charged_guard_pommel_time, 0.0, false, true, "lock")
+	charged_guard_pommel_travel = 0.0
+	charged_guard_pommel_time = 0.0
+	charged_guard_input_gap = 0.0
+	var lock_angle: float = float(current_transform["angle"])
+	charged_guard_locked = true
+	charged_guard_lock_angle = lock_angle
+	charged_guard_initial_lock_angle = lock_angle
+	charged_guard_lock_hand_offset = current_hilt
+	charged_guard_initial_hand_offset = current_hilt
+	charged_guard_lock_radius = current_hilt.length()
+	charged_guard_radial_direction = current_hilt.normalized() if current_hilt.length_squared() > 0.001 else Vector2.RIGHT
+	charged_guard_flash_left = 0.18
 
 static func authored_stroke_drive_increment(angular_travel_radians: float, gearing_degrees: float, authored_pace: float) -> float:
 	var required_travel_radians: float = deg_to_rad(maxf(1.0, gearing_degrees))
 	var pace_weight: float = smoothstep(TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN, 1.0, clampf(authored_pace, 0.0, 1.0))
 	return absf(angular_travel_radians) / required_travel_radians * pace_weight
+
+static func stroke_drive_crossed_threshold(previous_drive: float, current_drive: float, threshold: float) -> bool:
+	return previous_drive < threshold and current_drive >= threshold
+
+static func low_health_hit_threshold_crossed(previous_health: float, current_health: float, maximum_health: float) -> bool:
+	if maximum_health <= 0.0:
+		return false
+	var threshold: float = maximum_health * 0.20
+	return previous_health > threshold and current_health <= threshold
 
 func _update_sword(delta: float) -> void:
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
@@ -3960,11 +4258,16 @@ func _update_sword(delta: float) -> void:
 	var stroke_progress_before_advance: float = metronome_stroke_progress(sword_phase)
 	var drive_feature_enabled: bool = tempo_enabled or get_combat_hand_setting("directional_arc_opening_enabled") >= 0.5 or get_combat_hand_setting("authored_step_enabled") >= 0.5 or get_combat_contact_setting("apex_hang_time") >= 0.5
 	var drive_input_aligned: bool = drive_feature_enabled and player_aim_turn_sign != 0.0 and player_aim_turn_sign == autonomous_travel_sign and authored_sword_engagement >= TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN
+	var stroke_drive_before: float = authored_stroke_drive
 	if drive_input_aligned and stroke_progress_before_advance <= STROKE_DRIVE_BUILD_PROGRESS_LIMIT:
 		# Gesture gearing measures aligned hand travel, weighted by its authored pace.
 		# A slow arc or tiny twitch adds little; a long fast straight flick adds more.
 		var drive_increment: float = authored_stroke_drive_increment(authored_angular_travel_radians, get_combat_hand_setting("swing_gesture_gearing_degrees"), authored_sword_engagement)
 		authored_stroke_drive = clampf(authored_stroke_drive + drive_increment, 0.0, 1.0)
+	if stroke_drive_crossed_threshold(stroke_drive_before, authored_stroke_drive, SWORD_SWING_SFX_DRIVE_THRESHOLD):
+		var sound_main: Node = get_tree().current_scene
+		if sound_main != null and sound_main.has_method("play_combat_clip"):
+			sound_main.call("play_combat_clip", "sword_swing")
 	if tempo_enabled:
 		tempo_assist_multiplier = lerpf(1.0, TEMPO_ASSIST_MAX_MULTIPLIER, authored_stroke_drive)
 	else:
@@ -4166,10 +4469,12 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		if enemy.has_method("is_shield_blocking") and enemy.is_shield_blocking(seg_start, seg_end, parry_forgiveness):
 			if enemy.has_method("shield_parry"): enemy.shield_parry(blade_velocity)
 			_trigger_parry(enemy.global_position)
+			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		if enemy.has_method("try_blade_slide") and enemy.try_blade_slide(seg_start, seg_end, blade_velocity, combat_contact_preset):
 			var slide_point: Vector2 = enemy.call("get_slide_contact_global") as Vector2 if enemy.has_method("get_slide_contact_global") else enemy.global_position
 			_trigger_blade_slide(slide_point, enemy)
+			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		if enemy.has_method("is_blade_blocking") and enemy.is_blade_blocking(seg_start, seg_end, parry_forgiveness):
 			var directional_parry: bool = true
@@ -4183,28 +4488,33 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				if qualifies_clash:
 					if enemy.has_method("weapon_clash"): enemy.weapon_clash(blade_velocity, combat_contact_preset)
 					_trigger_clash(enemy.global_position)
+					if _stop_charged_guard_thrust_on_contact(): return
 					continue
 				else:
 					# Glancing micro-contact: no mutual stagger shockwave lock
 					_trigger_blade_contact(enemy.global_position)
+					if _stop_charged_guard_thrust_on_contact(): return
 					continue
 			if enemy.has_method("parry_blade"): enemy.parry_blade(seg_start, seg_end, blade_velocity, combat_contact_preset)
 			if disarm_rank > 0 and enemy.has_method("try_disarm"):
 				enemy.try_disarm(BonusConfig.disarm_chance(disarm_rank))
 			_trigger_parry(enemy.global_position)
+			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		# Generic contact is the fallback classification, not an extra effect layered
 		# under a Slide, Clash, or Parry from the same blade collision.
 		if enemy.has_method("is_blade_contact") and enemy.is_blade_contact(seg_start, seg_end):
 			if blade_contact_flash_left <= 0.0:
 				_trigger_blade_contact(enemy.global_position)
+			if _stop_charged_guard_thrust_on_contact(): return
 			continue
+		var thrust_contact: bool = charged_guard_gesture_state == ChargedGuardGesture.THRUST
 		var contact: SwordContactData = SwordInteractionResolver.swept_contact(prev_seg_start, prev_seg_end, seg_start, seg_end, enemy.global_position, enemy_body_contact_radius, delta, velocity, sword_movement_damage_contribution, sword_movement_speed_cap)
 		if contact.swept_distance > enemy_body_contact_radius: continue
 		# Hilt Bash is classified by the actual contact position along the whole
 		# (possibly curved) blade, not by distance from the player's body center.
 		var whole_blade_fraction: float = _blade_path_fraction_for_segment(current_blade_samples, seg_index, contact.blade_position)
-		var hilt_contact: bool = whole_blade_fraction <= hilt_bash_blade_fraction
+		var hilt_contact: bool = whole_blade_fraction <= hilt_bash_blade_fraction and not thrust_contact
 		if hilt_contact:
 			if get_combat_contact_setting("hilt_bash_enabled") >= 0.5:
 				if float(enemy_rehit_cooldowns.get(id, 0.0)) <= 0.0:
@@ -4216,10 +4526,10 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		# Player body overlap alone never enters this path: reaching here already
 		# requires actual swept weapon geometry to touch the enemy. Do not cancel a
 		# valid blade hit merely because the combatants' bodies are close together.
-		if float(enemy_rehit_cooldowns.get(id, 0.0)) > 0.0:
+		if float(enemy_rehit_cooldowns.get(id, 0.0)) > 0.0 and not thrust_contact:
 			_set_sword_event("REHIT COOLDOWN", contact.contact_point, 0.22)
 			continue
-		if hit_ids.has(id):
+		if hit_ids.has(id) and not thrust_contact:
 			_set_sword_event("RECONTACT IGNORED", contact.contact_point, 0.22)
 			continue
 		var reentry_quality: float = _experimental_reentry_quality_for_contact(combat_enemy, contact) if combat_enemy != null else 0.0
@@ -4244,11 +4554,17 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			var blade_position_multiplier: float = cutting_zone_damage_multiplier(whole_blade_fraction, forte_zone_start_fraction, cutting_zone_base_damage_multiplier, cutting_zone_tip_damage_multiplier)
 			var stagger_duration: float = lerpf(get_combat_contact_setting("flesh_stagger_min"), get_combat_contact_setting("flesh_stagger_max"), contact.impact_quality) * (0.6 + commitment_factor * 0.4) * reentry_stagger_multiplier
 			var total_damage_multiplier: float = additive_sword_damage_multiplier(contact.damage_multiplier(), authored_damage_multiplier, commitment_factor, blade_position_multiplier, reentry_damage_multiplier)
+			if thrust_contact:
+				# A committed Guard thrust must land at least base sword damage. The
+				# normal settings cannot tune this special down into an invisible hit.
+				total_damage_multiplier = charged_guard_thrust_damage_multiplier(total_damage_multiplier)
 			var dealt_damage: float = sword_damage * total_damage_multiplier
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
 				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
 			else:
 				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
+			if authored_stroke_drive >= ATTACK_VOICE_SFX_DRIVE_THRESHOLD and main_scene.has_method("play_combat_clip"):
+				main_scene.call("play_combat_clip", "player_attack")
 			var typed_enemy: Enemy = enemy as Enemy
 			var current_main: Node = get_tree().current_scene
 			if typed_enemy != null and current_main.has_method("spawn_enemy_hit_presentation"):
@@ -4256,8 +4572,11 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			_trigger_successful_sword_hit(contact)
 			if reentry_quality > 0.0:
 				_consume_experimental_reentry(contact, reentry_quality)
-			notify_player_damage_dealt(true)
+				notify_player_damage_dealt(true)
 		gain_flow(5.0)
+		if thrust_contact:
+			_stop_charged_guard_thrust_on_contact()
+			return
 	for active_chakram: Chakram in active_chakrams:
 		if not is_instance_valid(active_chakram): continue
 		var chakram_segment: Array = _closest_blade_segment(active_chakram.global_position, current_blade_samples)
@@ -4935,9 +5254,8 @@ func _trigger_parry(point: Vector2) -> void:
 		main_scene.request_screen_shake(get_combat_contact_setting("parry_shake_strength"), get_combat_contact_setting("parry_shake_duration"), global_position.direction_to(point))
 	if main_scene.has_method("spawn_tuned_parry_focus_fx"):
 		main_scene.spawn_tuned_parry_focus_fx(point, blade_velocity, parry_quality, get_combat_contact_setting("parry_focus"), get_combat_contact_setting("parry_focus_duration"), get_combat_contact_setting("parry_zoom"), get_combat_contact_setting("parry_zoom_duration"), parry_impact)
-	if main_scene.has_method("play_sfx"):
-		var parry_pitch: float = main_scene.get_combat_hit_pitch(parry_quality) if main_scene.has_method("get_combat_hit_pitch") else 1.0
-		main_scene.play_sfx("parry", 1.25, parry_pitch)
+	if main_scene.has_method("play_combat_clip"):
+		main_scene.call("play_combat_clip", "parry_clash")
 	var active_recoil: float = get_combat_contact_setting("parry_player_recoil")
 	velocity -= global_position.direction_to(point) * active_recoil
 	clash_recovery_left = get_combat_contact_setting("parry_recovery")
@@ -4972,7 +5290,7 @@ func _trigger_clash(point: Vector2) -> void:
 		main_scene.request_screen_shake(get_combat_contact_setting("clash_shake_strength"), get_combat_contact_setting("clash_shake_duration"), recoil_direction)
 	if main_scene.has_method("spawn_tuned_combat_presentation"):
 		main_scene.spawn_tuned_combat_presentation(point, recoil_direction, clash_impact, get_combat_contact_setting("clash_zoom"), get_combat_contact_setting("clash_zoom_duration"), 1.0)
-	if main_scene.has_method("play_sfx"): main_scene.play_sfx("sword_clash", 1.25)
+	if main_scene.has_method("play_combat_clip"): main_scene.call("play_combat_clip", "parry_clash")
 	var active_recoil: float = get_combat_contact_setting("clash_player_recoil")
 	velocity -= recoil_direction * active_recoil
 	clash_recovery_left = get_combat_contact_setting("clash_recovery")
@@ -5037,6 +5355,7 @@ func take_damage(amount: float, knockback_force: Vector2 = Vector2.ZERO, attacke
 	var reduced_damage: float = maxf(0.0, incoming_damage - BonusConfig.defense_reduction(defense_rank))
 	var mitigated_damage: float = incoming_damage - reduced_damage
 	var actual_damage_received: float = minf(health, reduced_damage)
+	var health_before_hit: float = health
 	health = maxf(0.0, health - actual_damage_received)
 	var main_scene: Node = get_tree().current_scene
 	if main_scene.has_method("record_damage_received"): main_scene.record_damage_received(actual_damage_received)
@@ -5044,6 +5363,8 @@ func take_damage(amount: float, knockback_force: Vector2 = Vector2.ZERO, attacke
 		main_scene.spawn_damage_number(global_position, actual_damage_received, true)
 	if main_scene.has_method("record_damage_mitigated"): main_scene.record_damage_mitigated(mitigated_damage)
 	if main_scene.has_method("play_sfx"): main_scene.play_sfx("player_hit", 1.0)
+	if actual_damage_received > 0.0 and low_health_hit_threshold_crossed(health_before_hit, health, max_health) and main_scene.has_method("play_combat_clip"):
+		main_scene.call("play_combat_clip", "low_health")
 	if main_scene.has_method("request_screen_shake"):
 		var damage_shake_scale: float = clampf(reduced_damage / 10.0, 0.5, 1.5)
 		main_scene.request_screen_shake(player_hit_screen_shake_strength * damage_shake_scale, player_hit_screen_shake_duration, hit_knockback)
@@ -5633,8 +5954,8 @@ func _draw() -> void:
 	# whose source art has hilt/tip reversed, no PNG editing required.
 	var sword_flipped: bool = bool(SWORD_TEXTURE_FLIP_Y.get(equipped_sword_id, false))
 	var sword_rect: Rect2 = Rect2(-512.0, 768.0, 1024.0, -1536.0) if sword_flipped else Rect2(-512.0, -768.0, 1024.0, 1536.0)
-	if authored_metronome_sheathe_alpha > 0.01:
-		draw_texture_rect(equipped_sword_texture(), sword_rect, false, Color(1.0, 1.0, 1.0, authored_metronome_sheathe_alpha))
+	if player_sword_visual != null:
+		player_sword_visual.call("set_sword_pose", equipped_sword_texture(), texture_center, sword_angle - PI * 0.5, Vector2(0.055 * blade_roll, 0.055), sword_rect, authored_metronome_sheathe_alpha)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	if sword_fire_left > 0.0 and not authored_metronome_sheathed:
 		var fire_fade: float = clampf(sword_fire_left / maxf(sword_fire_duration, 0.001), 0.0, 1.0)
@@ -5649,7 +5970,9 @@ func _draw() -> void:
 	# back through the live camera. The stroke therefore stays exactly where the cursor
 	# went -- camera lead, lag and arena clamp included -- and it lingers through the hit
 	# flash so the picture of the gesture is still on screen as the thrust begins.
-	if get_combat_contact_setting("charged_guard_gestures_enabled") >= 0.5 and (charged_guard_gesture_trail_left > 0.0 or not charged_guard_gesture_sparks.is_empty()):
+	var drawing_entry: bool = charged_guard_locked and not charged_guard_entry_path.is_empty()
+	var drawing_guard_attack: bool = charged_guard_locked or charged_guard_gesture_state != ChargedGuardGesture.NONE
+	if drawing_guard_attack and (charged_guard_gesture_trail_left > 0.0 or not charged_guard_gesture_sparks.is_empty()):
 		var trail_fade: float = clampf(charged_guard_gesture_trail_left / maxf(0.001, CHARGED_GUARD_GESTURE_TRAIL_FADE), 0.0, 1.0)
 		var trail_flash: float = clampf(charged_guard_gesture_flash_left / maxf(0.001, CHARGED_GUARD_GESTURE_FLASH_TIME), 0.0, 1.0)
 		var trail_shimmer: Color = FlowColorUtils.charged_oscillating_color(float(Time.get_ticks_msec()) * 0.001)
@@ -5658,21 +5981,22 @@ func _draw() -> void:
 		var trail_blue: Color = trail_shimmer.lerp(FlowColorUtils.CHARGE_BLUE_TONE, 0.35)
 		var trail_lit: Color = trail_blue.lerp(FlowColorUtils.CHARGE_WHITE_TONE, trail_flash * 0.75)
 		var screen_to_local: Transform2D = get_viewport().get_canvas_transform().affine_inverse()
-		var trail_count: int = charged_guard_gesture_path.size()
+		var drawn_gesture_path: PackedVector2Array = charged_guard_entry_path if drawing_entry else charged_guard_gesture_path
+		var trail_count: int = drawn_gesture_path.size()
 		if charged_guard_gesture_trail_left > 0.0 and trail_count > 1:
 			for trail_index: int in range(trail_count - 1):
 				# Brightest at the cursor and fading back down the stroke, so it is the head
 				# of the drawn line that reads rather than its dusty beginning.
 				var segment_fade: float = float(trail_index + 1) / float(trail_count)
-				var trail_start: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_index]) - global_position
-				var trail_end: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_index + 1]) - global_position
+				var trail_start: Vector2 = (screen_to_local * drawn_gesture_path[trail_index]) - global_position
+				var trail_end: Vector2 = (screen_to_local * drawn_gesture_path[trail_index + 1]) - global_position
 				var trail_color: Color = trail_lit
 				trail_color.a = (0.55 + trail_flash * 0.4) * trail_fade * segment_fade
 				draw_line(trail_start, trail_end, trail_color, CHARGED_GUARD_GESTURE_TRAIL_WIDTH + trail_flash * 3.0, true)
 		if charged_guard_gesture_trail_left > 0.0 and trail_count > 0:
 			# A soft glow on the drawing point itself, so the stroke has a visible head
 			# instead of stopping dead where the cursor is.
-			var head_position: Vector2 = (screen_to_local * charged_guard_gesture_path[trail_count - 1]) - global_position
+			var head_position: Vector2 = (screen_to_local * drawn_gesture_path[trail_count - 1]) - global_position
 			var head_halo: Color = trail_lit
 			head_halo.a = (0.28 + trail_flash * 0.45) * trail_fade
 			draw_circle(head_position, 7.0 + trail_flash * 3.0, head_halo)

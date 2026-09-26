@@ -4,8 +4,38 @@ const SAMPLE_RATE: float = 22050.0
 const BUFFER_LENGTH: float = 0.85
 
 const SFX_BUS: StringName = &"SFX"
+const COMBAT_CLIP_PLAYER_COUNT: int = 12
+const PLAYER_ATTACK_CLIP_COOLDOWN_MSEC: int = 5000
+const SWORD_SWING_VOLUME_DB: float = -3.61
+const COMBAT_CLIP_POOLS: Dictionary = {
+	"low_health": [
+		preload("res://assets/audio/Player Combat SFX/Low Player Health/low health hit A.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Low Player Health/low health hit B.mp3")
+	],
+	"player_attack": [
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_battlecry_so_#3-1790221453118.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_battlecry_so_#4-1790221453119.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#1-1790219395783.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#2-1790219395784.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#4-1790219458727.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Player attack noises/Warrior_yell_sound_e_#4-1790221425437.mp3")
+	],
+	"sword_swing": [
+		preload("res://assets/audio/Player Combat SFX/Sword Swings/Loud_sword_swing_who_#2-1790219297893.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Sword Swings/Loud_sword_swing_who_#3-1790219293162.mp3")
+	],
+	"parry_clash": [
+		preload("res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#1-1790219093887.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#2-1790219093888.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#3-1790219093889.mp3"),
+		preload("res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#4-1790219093889.mp3")
+	]
+}
 
 var players: Array[AudioStreamPlayer] = []
+var combat_clip_players: Array[AudioStreamPlayer] = []
+var combat_clip_player_cursor: int = 0
+var player_attack_clip_ready_at_msec: int = 0
 
 func _ready() -> void:
 	for index: int in range(20):
@@ -17,6 +47,12 @@ func _ready() -> void:
 		player.bus = SFX_BUS
 		add_child(player)
 		players.append(player)
+	for index: int in range(COMBAT_CLIP_PLAYER_COUNT):
+		var clip_player: AudioStreamPlayer = AudioStreamPlayer.new()
+		clip_player.name = "CombatClipPlayer%d" % index
+		clip_player.bus = SFX_BUS
+		add_child(clip_player)
+		combat_clip_players.append(clip_player)
 
 func play_sfx(sound_name: String, intensity: float = 1.0, pitch_scale: float = 1.0) -> void:
 	var index: int = _sound_index(sound_name)
@@ -34,6 +70,33 @@ func play_sfx(sound_name: String, intensity: float = 1.0, pitch_scale: float = 1
 		var time: float = float(frame) / SAMPLE_RATE
 		var sample: float = _sample(sound_name, time, intensity)
 		playback.push_frame(Vector2(sample, sample))
+
+func play_combat_clip(category: String) -> void:
+	var now_msec: int = Time.get_ticks_msec()
+	if category == "player_attack" and now_msec < player_attack_clip_ready_at_msec:
+		return
+	var clips: Array = COMBAT_CLIP_POOLS.get(category, [])
+	if clips.is_empty() or combat_clip_players.is_empty():
+		return
+	var selected_clip: AudioStream = clips[randi_range(0, clips.size() - 1)] as AudioStream
+	var selected_player: AudioStreamPlayer = null
+	for offset: int in range(combat_clip_players.size()):
+		var candidate_index: int = (combat_clip_player_cursor + offset) % combat_clip_players.size()
+		var candidate: AudioStreamPlayer = combat_clip_players[candidate_index]
+		if not candidate.playing:
+			selected_player = candidate
+			combat_clip_player_cursor = (candidate_index + 1) % combat_clip_players.size()
+			break
+	if selected_player == null:
+		selected_player = combat_clip_players[combat_clip_player_cursor]
+		combat_clip_player_cursor = (combat_clip_player_cursor + 1) % combat_clip_players.size()
+	selected_player.stop()
+	selected_player.stream = selected_clip
+	selected_player.pitch_scale = randf_range(0.97, 1.03)
+	selected_player.volume_db = SWORD_SWING_VOLUME_DB if category == "sword_swing" else 0.0
+	selected_player.play()
+	if category == "player_attack":
+		player_attack_clip_ready_at_msec = Time.get_ticks_msec() + PLAYER_ATTACK_CLIP_COOLDOWN_MSEC
 
 func _sound_index(sound_name: String) -> int:
 	match sound_name:

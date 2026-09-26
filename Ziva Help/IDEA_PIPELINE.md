@@ -43,6 +43,17 @@ Our collaboration should leave a recognizable hallmark: ambitious human sparks t
 
 # Active Pipeline
 
+## Guard Gestures — Directional Slash
+
+**Status:** Mechanically Working → Awaiting Resonance
+**Player fantasy:** Draw a decisive corner with the mouse and have the sword cut through that side of the body. V cuts below, > right, ^ above, and < left; reversing the stroke reverses the cut.
+
+**Verified:** The focused Guard tests cover all four orientations, reversed direction, live V discharge, and return to ordinary sword control. Near-body hand position can speed the blue charge through restored radius and boost sliders. Separate opt-in G and Z strokes can enter blue Guard directly outside Guard; a third switch can turn off pommel entry. Size, shape, state gating, and Arc Energy checks have focused tests. Gesture trail rendering is now limited to Guard and Guard attacks; recognition sampling remains active outside Guard for G/Z entry. Flow afterimages retain their original layer, HD body parts render above them, and the live sword uses a dedicated higher world layer.
+
+**Next playable milestone:** Draw each attack and entry shape during a real fight. Check whether the arc slash hits the intended half, and whether G and Z consistently enter Guard without ordinary aiming or scribbles doing so. Mouse entry is implemented; controller and mobile gesture capture still need their own input path and feel test.
+
+**Open feel questions:** How large and crisp must a hand-drawn corner be? Does the half-circle cut feel like a single broad slash? Does the near-body charge boost make gesture attacks available soon enough without making Guard acquisition too easy?
+
 ## 1. Bind Form — Geometric Sword Contact
 
 **Status:** Mechanically Working → Consolidated Feel / Polish  

@@ -36,6 +36,17 @@ func _arm_real_slide(player: Player, enemy: Enemy) -> Dictionary:
 	player._trigger_blade_slide(enemy.get_slide_contact_global(), enemy)
 	return {"start": blade_start, "end": blade_end}
 
+func test_bind_rebind_suppression_defaults_to_two_seconds() -> void:
+	var actors: Array[Node] = _make_pair()
+	var player: Player = actors[0] as Player
+	var bind_key: String = player._canonical_bind_hand_key()
+	var bind_values: Dictionary = player.combat_hand_settings.get(bind_key, {}) as Dictionary
+	bind_values.erase("bind_rebind_cooldown")
+	player.combat_hand_settings[bind_key] = bind_values
+	assert(is_equal_approx(player.get_combat_hand_setting("bind_rebind_cooldown"), 2.0), "The existing shared re-bind suppression setting should default to two seconds when no saved value overrides it.")
+	actors[1].free()
+	actors[0].free()
+
 func test_form_three_bind_requires_slide_then_continuous_pressure() -> void:
 	var actors: Array[Node] = _make_pair()
 	var player: Player = actors[0] as Player
@@ -74,6 +85,7 @@ func test_form_three_bind_releases_on_geometry_and_suppresses_immediate_rebind()
 	var actors: Array[Node] = _make_pair()
 	var player: Player = actors[0] as Player
 	var enemy: Enemy = actors[1] as Enemy
+	player.set_combat_hand_setting("bind_rebind_cooldown", 2.0)
 	var segment: Dictionary = _arm_real_slide(player, enemy)
 	for _step: int in range(3):
 		player._update_experimental_bind_contact(enemy, segment["start"] as Vector2, segment["end"] as Vector2, 0.04)
@@ -81,7 +93,7 @@ func test_form_three_bind_releases_on_geometry_and_suppresses_immediate_rebind()
 	player.experimental_bind_contact_seen = false
 	player._finish_experimental_bind_frame(0.11)
 	assert(not player.experimental_bind_active, "A blade pair that exceeds Release Grace must leave focus instead of magnetically reacquiring.")
-	assert(player.experimental_bind_cooldown_left > 0.0, "Release must impose short re-bind suppression against contact spam.")
+	assert(is_equal_approx(player.experimental_bind_cooldown_left, 2.0), "Release must use the existing two-second re-bind suppression setting.")
 	player._begin_experimental_bind_candidate(enemy, enemy.get_slide_contact_global())
 	assert(not player.experimental_bind_candidate, "Re-bind suppression must reject an immediate candidate even while weapons remain nearby.")
 	actors[1].free()

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bv1o4knon4bs2"
+path="res://.godot/imported/Warrior_light_attack_#1-1790219395783.mp3-548009775dd12e70c92a12eb9f3ec63b.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#1-1790219395783.mp3"
+dest_files=["res://.godot/imported/Warrior_light_attack_#1-1790219395783.mp3-548009775dd12e70c92a12eb9f3ec63b.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

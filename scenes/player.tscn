@@ -61,6 +61,7 @@ shape = SubResource("PlayerShape")
 
 [node name="KnightSpriteHD" type="AnimatedSprite2D" parent="." unique_id=1399685120]
 visible = false
+z_index = 0
 position = Vector2(0, 0)
 scale = Vector2(0.28, 0.28)
 sprite_frames = SubResource("SpriteFrames_i4ail")

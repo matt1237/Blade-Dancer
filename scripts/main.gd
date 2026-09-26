@@ -607,6 +607,9 @@ func record_damage_mitigated(amount: float) -> void:
 func play_sfx(sound_name: String, intensity: float = 1.0, pitch_scale: float = 1.0) -> void:
 	if audio_manager != null: audio_manager.play_sfx(sound_name, intensity, pitch_scale)
 
+func play_combat_clip(category: String) -> void:
+	if audio_manager != null: audio_manager.play_combat_clip(category)
+
 func get_combat_hit_pitch(contact_quality: float) -> float:
 	return combat_presentation_fx.hit_pitch_scale(contact_quality)
 

@@ -6,7 +6,7 @@ Prefer targeted inspection and small patches over broad rewrites.
 
 ## Golden Rules
 1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules.
-2. Feel free to ask clarifying questions before implementation, especially for large requests, ambiguous prompts, or work that needs additional design detail.
+2. Ask clarifying questions whenever missing information could materially change the implementation or the direction of a discussion. Ask before implementation when scope, intended behavior, constraints, or design choices are unclear; during discussion, ask as soon as a user's preference or meaning is ambiguous. Continue independent work that does not depend on the answer, and do not guess on a consequential decision.
 3. DO NOT scan the entire project unless the task genuinely requires it.
 4. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
 5. Read PROJECT_MAP.md first for system/file locations.
@@ -20,6 +20,7 @@ Prefer targeted inspection and small patches over broad rewrites.
 	- what was tested
 	- what was ruled out
 	- the next most likely cause
+13. Never add a redundant feature, slider, timer/cooldown, state variable, code path, or helper for behavior an existing system already owns. Locate and extend the canonical implementation instead of creating parallel or duplicated logic/UI. If a behavior is genuinely distinct, explain its distinct lifecycle and purpose before adding a separate authority; ask if that distinction is unclear.
 
 ## Efficient Investigation Protocol
 For every task:

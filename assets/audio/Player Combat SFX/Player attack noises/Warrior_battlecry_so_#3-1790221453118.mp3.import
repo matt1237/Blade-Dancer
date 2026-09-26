@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dmrk87x004wwr"
+path="res://.godot/imported/Warrior_battlecry_so_#3-1790221453118.mp3-1ac0318e53967679102065b57608f181.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Player Combat SFX/Player attack noises/Warrior_battlecry_so_#3-1790221453118.mp3"
+dest_files=["res://.godot/imported/Warrior_battlecry_so_#3-1790221453118.mp3-1ac0318e53967679102065b57608f181.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0.0
+bpm=0.0
+beat_count=0
+bar_beats=4

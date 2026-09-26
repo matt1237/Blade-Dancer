@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://brpdf34y4ijmt"
+path="res://.godot/imported/Loud_sword_swing_who_#3-1790219293162.mp3-431e185a12d790083222b0b4dd3bfb17.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Player Combat SFX/Sword Swings/Loud_sword_swing_who_#3-1790219293162.mp3"
+dest_files=["res://.godot/imported/Loud_sword_swing_who_#3-1790219293162.mp3-431e185a12d790083222b0b4dd3bfb17.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

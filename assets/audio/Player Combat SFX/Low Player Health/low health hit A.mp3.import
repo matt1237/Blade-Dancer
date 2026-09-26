@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bawhipid1y0fe"
+path="res://.godot/imported/low health hit A.mp3-4a9023edc6d30b48b6f033e060be5a99.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Player Combat SFX/Low Player Health/low health hit A.mp3"
+dest_files=["res://.godot/imported/low health hit A.mp3-4a9023edc6d30b48b6f033e060be5a99.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
