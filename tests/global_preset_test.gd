@@ -1,5 +1,23 @@
 class_name GlobalPresetTest extends Node
 
+func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
+	var baked_file: FileAccess = FileAccess.open("res://data/default_global_preset.json", FileAccess.READ)
+	assert(baked_file != null, "The packaged GP2 must ship with Web exports.")
+	var baked: Dictionary = JSON.parse_string(baked_file.get_as_text()) as Dictionary
+	assert(int(baked.get("schema", 0)) == GlobalPresetConfig.VERSION and int(baked.get("main_game_preset", 0)) == 2, "The packaged default must be a complete GP2 package.")
+	var hands: Dictionary = baked.get("combat_hand_settings", {}) as Dictionary
+	var bind: Dictionary = hands.get("2:9", {}) as Dictionary
+	assert(is_equal_approx(float(bind.get("mouse_drag", 0.0)), 15.0) and is_equal_approx(float(bind.get("max_turn_speed", 0.0)), 810.0), "The packaged Bind profile must carry the authored GP2 sword controls.")
+	var contacts: Dictionary = baked.get("combat_contact_settings", {}) as Dictionary
+	var combat_two: Dictionary = contacts.get("2", {}) as Dictionary
+	assert(is_equal_approx(float(combat_two.get("authored_metronome_enabled", 0.0)), 1.0), "The shipped authored metronome setting must not fall back to the older preset.")
+	var source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
+	var initialize: int = source.find("func _initialize_global_presets()")
+	var web_path: int = source.find("if OS.has_feature(\"web\"):", initialize)
+	var web_apply: int = source.find("_finish_global_preset_init(shipped_gp2, \"\")", web_path)
+	var saved_path: int = source.find("GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2))", initialize)
+	assert(initialize >= 0 and web_path > initialize and web_apply > web_path and saved_path > web_apply, "Web startup must apply shipped GP2 before reading browser presets, without restoring an old world-clock phase.")
+
 func test_global_library_has_three_complete_slots() -> void:
 	var library: Dictionary = GlobalPresetConfig.load_library()
 	assert(int(library.get("version", 0)) == GlobalPresetConfig.VERSION, "global preset schema should be current")

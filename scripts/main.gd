@@ -1800,6 +1800,14 @@ func _load_baked_global_preset() -> Dictionary:
 	return parsed as Dictionary if parsed is Dictionary and _global_state_complete(parsed as Dictionary) else {}
 
 func _initialize_global_presets() -> void:
+	# Web builds ship the authored GP2 as the game setting. Old browser user://
+	# presets and world clocks must not override it; local editor saves stay intact.
+	if OS.has_feature("web"):
+		var shipped_gp2: Dictionary = _load_baked_global_preset()
+		if not shipped_gp2.is_empty():
+			global_preset_slot = 2
+			_finish_global_preset_init(shipped_gp2, "")
+			return
 	# Read the persisted world clock before anything applies a preset, because
 	# applying one writes the clock back.
 	var saved_clock: String = GlobalPresetConfig.current_time_phase()
