@@ -54,6 +54,56 @@ func test_counter_steer_compresses_only_the_active_side_geometry_without_advanci
 	assert(angle_difference(float(opposite_side["angle"]), float(compressed_opposite["angle"])) > 0.0, "The opposite half-stroke must compress toward its own side, never across the aim axis.")
 	player.free()
 
+func test_earned_arc_geometry_remains_continuous_at_reversal_for_both_swords() -> void:
+	var tree: SceneTree = get_tree()
+	var previous_scene: Node = tree.current_scene
+	var stub: Node = Node.new()
+	tree.root.add_child(stub)
+	tree.current_scene = stub
+	for sword_id: String in ["Basic Longsword", "Basic Curved Sword"]:
+		for case_name: String in ["directional", "counter", "counter_idle", "both", "both_idle", "neither"]:
+			var player: Player = PLAYER_SCENE.instantiate() as Player
+			stub.add_child(player)
+			player.set_physics_process(false)
+			player.combat_contact_preset = 2
+			player.sword_style = Player.SwordStyle.METRONOME_BIND_B
+			player.combat_hand_settings = {}
+			player.combat_weapon_hand_settings = {}
+			player.set_equipped_sword(sword_id)
+			player.set_combat_hand_setting_for_sword(sword_id, "counter_steer_arc_enabled", 1.0 if case_name in ["counter", "counter_idle", "both", "both_idle"] else 0.0)
+			player.set_combat_hand_setting_for_sword(sword_id, "counter_steer_arc_compression", 0.4)
+			player.set_combat_hand_setting_for_sword(sword_id, "directional_arc_opening_enabled", 1.0 if case_name in ["directional", "both", "both_idle"] else 0.0)
+			player.authored_sword_engagement = 1.0
+			player.player_aim_turn_sign = 0.0 if case_name.ends_with("idle") else -1.0
+			player.sword_phase = PI * 0.5 - 0.001
+			player.authored_stroke_drive = 1.0 if case_name in ["directional", "both", "both_idle"] else 0.0
+			player.directional_arc_extension_degrees = 10.0 if case_name in ["directional", "both", "both_idle"] else 0.0
+			player.counter_steer_compression = 0.4 if case_name in ["counter", "counter_idle", "both", "both_idle"] else 0.0
+			var angle_before: float = float(player._sword_transform()["angle"])
+			player._update_sword(1.0 / 60.0)
+			var angle_after: float = float(player._sword_transform()["angle"])
+			assert(player.swing_count == 1, "The test stroke must cross a metronome reversal.")
+			assert(absf(angle_difference(angle_before, angle_after)) < deg_to_rad(1.0), "%s %s must not snap at reversal." % [sword_id, case_name])
+			player.sword_phase = PI * 0.5 + PI * 0.35
+			var settled_angle: float = float(player._sword_transform()["angle"])
+			player.reversal_arc_carry_degrees = 0.0
+			assert(is_equal_approx(settled_angle, float(player._sword_transform()["angle"])), "The carried angle must have faded out by early return travel.")
+			player.free()
+	tree.current_scene = previous_scene
+	stub.queue_free()
+
+func test_negative_side_reversal_keeps_its_earned_endpoint_angle() -> void:
+	var player: Player = PLAYER_SCENE.instantiate() as Player
+	player.sword_phase = PI * 1.5 - 0.001
+	player.directional_arc_extension_degrees = 10.0
+	var before: float = float(player._calculate_form_metronome(0.0, 40.0, 105.0, sin(player.sword_phase))["angle"])
+	player.sword_phase = PI * 1.5 + 0.001
+	player.directional_arc_extension_degrees = 0.0
+	player.reversal_arc_carry_degrees = -10.0
+	var after: float = float(player._calculate_form_metronome(0.0, 40.0, 105.0, sin(player.sword_phase))["angle"])
+	assert(absf(angle_difference(before, after)) < deg_to_rad(0.1), "Negative-side return must keep its previous endpoint instead of snapping toward center.")
+	player.free()
+
 func test_counter_steer_controls_follow_directional_arc_and_use_canonical_keys() -> void:
 	assert(CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS == COUNTER_KEYS, "Counter-steer's two saved tuners must use one canonical key list.")
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()

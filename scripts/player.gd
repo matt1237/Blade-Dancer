@@ -210,6 +210,7 @@ const SWORD_TRAIL_MAX_VISIBILITY: float = 1.15
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
+const REVERSAL_ARC_CARRY_PROGRESS: float = 0.30
 const COUNTER_STEER_ARC_COMPRESSION_DEFAULT: float = 0.22
 const COUNTER_STEER_ARC_COMPRESSION_MAX: float = 0.40
 const COUNTER_STEER_COMPRESSION_SMOOTH_RATE: float = 12.0
@@ -624,6 +625,8 @@ var metronome_reversal_side: float = 0.0
 var tempo_assist_multiplier: float = 1.0
 var authored_stroke_drive: float = 0.0
 var directional_arc_extension_degrees: float = 0.0
+## Earned endpoint offset carried briefly into the return so the blade cannot snap at reversal.
+var reversal_arc_carry_degrees: float = 0.0
 ## Smoothed fraction of the active stroke's destination arc removed by deliberate counter-steering.
 var counter_steer_compression: float = 0.0
 var authored_apex_hang_left: float = 0.0
@@ -2887,6 +2890,11 @@ func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw
 		offset += signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(directional_arc_extension_degrees)
 	if counter_steer_compression > 0.0 and not is_zero_approx(shaped_sine):
 		offset -= signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(arc) * counter_steer_compression
+	# At a reversal the new stroke starts at the old endpoint. Keep its earned
+	# offset there and release it over the first part of the return, not in one frame.
+	if not is_zero_approx(reversal_arc_carry_degrees):
+		var release: float = 1.0 - smoothstep(0.0, REVERSAL_ARC_CARRY_PROGRESS, metronome_stroke_progress(sword_phase))
+		offset += deg_to_rad(reversal_arc_carry_degrees) * release
 	var result_angle: float = base_angle + offset + sword_hit_recoil_offset
 	return {"start": global_position + Vector2.RIGHT.rotated(base_angle) * radius, "angle": result_angle, "arc_degrees": arc}
 
@@ -4394,7 +4402,6 @@ func _update_sword(delta: float) -> void:
 	else:
 		directional_arc_extension_degrees = 0.0
 	var counter_steer_target: float = _counter_steer_compression_target(player_aim_turn_sign, autonomous_travel_sign)
-	counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 	sword_delta *= tempo_assist_multiplier
 	var windup_profile: float = get_combat_hand_setting("windup_profile") if _is_windup_metronome_style() else 0.0
 	if windup_profile > 0.0:
@@ -4410,6 +4417,11 @@ func _update_sword(delta: float) -> void:
 		sword_delta = minf(sword_delta, constrained_delta)
 	swing_time += sword_delta
 	sword_phase = wrapf(sword_phase + sword_delta * swing_frequency * TAU, 0.0, TAU)
+	# On the exact turn frame, carry the last visible counter-steer value across
+	# before resetting it. Smoothing toward a new input target here would jump
+	# the endpoint before the return stroke even begins.
+	if (cos(previous_phase) >= 0.0) == (cos(sword_phase) >= 0.0):
+		counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 
 	var transform_data: Dictionary = _sword_transform()
 	var current_angle: float = float(transform_data["angle"])
@@ -4431,6 +4443,9 @@ func _update_sword(delta: float) -> void:
 			# Binary Authored Apex Hang: 50% drive begins earning dwell; full drive
 			# reaches 0.14 seconds. Contact freezes can still supersede this hold.
 			authored_apex_hang_left = lerpf(0.0, get_combat_contact_setting("apex_hang_duration"), inverse_lerp(0.5, 1.0, completed_stroke_drive))
+		# Keep the earned endpoint geometry while the new stroke starts its return.
+		# Its offset fades with stroke travel; the new stroke still earns fresh drive.
+		reversal_arc_carry_degrees = signf(sin(sword_phase)) * (directional_arc_extension_degrees - float(transform_data.get("arc_degrees", 0.0)) * counter_steer_compression)
 		# Option B: every new stroke earns acceleration, opening, and drive anew.
 		tempo_assist_multiplier = 1.0
 		authored_stroke_drive = 0.0
