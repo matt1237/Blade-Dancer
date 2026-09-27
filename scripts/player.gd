@@ -210,6 +210,9 @@ const SWORD_TRAIL_MAX_VISIBILITY: float = 1.15
 const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
 const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
+const COUNTER_STEER_ARC_COMPRESSION_DEFAULT: float = 0.22
+const COUNTER_STEER_ARC_COMPRESSION_MAX: float = 0.40
+const COUNTER_STEER_COMPRESSION_SMOOTH_RATE: float = 12.0
 const STROKE_DRIVE_BUILD_PER_SECOND: float = 3.0
 const STROKE_DRIVE_BUILD_PROGRESS_LIMIT: float = 0.60
 const SWORD_SWING_SFX_DRIVE_THRESHOLD: float = 0.50
@@ -621,6 +624,8 @@ var metronome_reversal_side: float = 0.0
 var tempo_assist_multiplier: float = 1.0
 var authored_stroke_drive: float = 0.0
 var directional_arc_extension_degrees: float = 0.0
+## Smoothed fraction of the active stroke's destination arc removed by deliberate counter-steering.
+var counter_steer_compression: float = 0.0
 var authored_apex_hang_left: float = 0.0
 var authored_apex_hang_armed_drive: float = 0.0
 var charged_guard_charge: float = 0.0
@@ -2349,6 +2354,9 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 				continue
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
+		for hand_key: String in CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS:
+			if not copied_hand.has(hand_key):
+				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
 		sword_style = saved_style
 		combat_contact_preset = saved_preset
 		combat_hand_settings[tgt_hand_key] = copied_hand
@@ -2415,6 +2423,8 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"swing_commitment_duration": return float(values.get("swing_commitment_duration", SWING_COMMITMENT_DURATION_DEFAULT))
 		"tempo_assist_enabled": return float(values.get("tempo_assist_enabled", 0.0))
 		"directional_arc_opening_enabled": return float(values.get("directional_arc_opening_enabled", 0.0))
+		"counter_steer_arc_enabled": return float(values.get("counter_steer_arc_enabled", 0.0))
+		"counter_steer_arc_compression": return float(values.get("counter_steer_arc_compression", COUNTER_STEER_ARC_COMPRESSION_DEFAULT))
 		"authored_step_enabled": return float(values.get("authored_step_enabled", 0.0))
 		"backstep_enabled": return float(values.get("backstep_enabled", 0.0))
 		"swing_gesture_gearing_degrees": return float(values.get("swing_gesture_gearing_degrees", 60.0))
@@ -2875,8 +2885,20 @@ func _calculate_form_metronome(base_angle: float, radius: float, arc: float, raw
 	# shaped travel amount keeps the extension continuous from reversal to apex.
 	if directional_arc_extension_degrees > 0.0 and not is_zero_approx(shaped_sine):
 		offset += signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(directional_arc_extension_degrees)
+	if counter_steer_compression > 0.0 and not is_zero_approx(shaped_sine):
+		offset -= signf(shaped_sine) * absf(shaped_sine) * deg_to_rad(arc) * counter_steer_compression
 	var result_angle: float = base_angle + offset + sword_hit_recoil_offset
 	return {"start": global_position + Vector2.RIGHT.rotated(base_angle) * radius, "angle": result_angle, "arc_degrees": arc}
+
+func _counter_steer_compression_target(aim_turn_sign: float, travel_sign: float) -> float:
+	if get_combat_hand_setting("counter_steer_arc_enabled") < 0.5:
+		return 0.0
+	if aim_turn_sign == 0.0 or aim_turn_sign == travel_sign:
+		return 0.0
+	if authored_sword_engagement < TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN:
+		return 0.0
+	var strength: float = smoothstep(TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN, 1.0, clampf(authored_sword_engagement, 0.0, 1.0))
+	return clampf(get_combat_hand_setting("counter_steer_arc_compression"), 0.0, COUNTER_STEER_ARC_COMPRESSION_MAX) * strength
 
 func _form_phase() -> float:
 	return sword_phase if sword_phase != 0.0 or swing_time == 0.0 else swing_time * TAU * _sword_cycle_frequency()
@@ -4368,6 +4390,8 @@ func _update_sword(delta: float) -> void:
 		directional_arc_extension_degrees = authored_stroke_drive * DIRECTIONAL_ARC_OPENING_DEGREES
 	else:
 		directional_arc_extension_degrees = 0.0
+	var counter_steer_target: float = _counter_steer_compression_target(player_aim_turn_sign, autonomous_travel_sign)
+	counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 	sword_delta *= tempo_assist_multiplier
 	var windup_profile: float = get_combat_hand_setting("windup_profile") if _is_windup_metronome_style() else 0.0
 	if windup_profile > 0.0:
@@ -4408,6 +4432,7 @@ func _update_sword(delta: float) -> void:
 		tempo_assist_multiplier = 1.0
 		authored_stroke_drive = 0.0
 		directional_arc_extension_degrees = 0.0
+		counter_steer_compression = 0.0
 		# Preserve bonuses and per-stroke hit suppression, including phase wrap.
 		hit_ids.clear()
 		swing_count += 1
