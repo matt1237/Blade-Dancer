@@ -38,6 +38,7 @@ enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMO
 @onready var options_tab: Button = $TopBar/OptionsTab
 @onready var adventure_button: Button = $TopBar/AdventureButton
 @onready var tutorial_button: Button = $TutorialButton
+@onready var tutorial_star_image: TextureRect = $TutorialButton/TutorialStarImage
 @onready var enable_music_button: Button = $EnableMusicButton
 @onready var music_status: Label = $MusicStatus
 @onready var tutorial_page: Control = $TutorialPage
@@ -117,6 +118,7 @@ var cooking_heart_badge: TextureRect = null
 var cooking_heart_glow: RedHeartGlow = null
 var cooking_bonus_selection_armed: bool = false
 var tutorial_star_glow: TutorialButtonGlow = null
+var tutorial_star_hop_wait: float = randf_range(2.5, 5.0)
 
 ## Paths are resolved lazily (ResourceLoader.exists check) so the Home Menu
 ## keeps working even before/without the art existing yet.
@@ -232,6 +234,15 @@ func set_tutorial_star_glow(enabled: bool) -> void:
 		if tutorial_star_glow.prompt_label != null: tutorial_star_glow.prompt_label.visible = false
 	else:
 		tutorial_star_glow.clear_highlight()
+
+func _hop_tutorial_star() -> void:
+	# The supplied image stays still most of the time; only its UI transform moves.
+	var hop: Tween = create_tween().bind_node(tutorial_star_image).set_trans(Tween.TRANS_SINE)
+	hop.tween_property(tutorial_star_image, "position", Vector2(8.0, -1.0), 0.18).set_ease(Tween.EASE_OUT)
+	hop.parallel().tween_property(tutorial_star_image, "rotation", -0.09, 0.18)
+	hop.tween_property(tutorial_star_image, "position", Vector2(8.0, 8.0), 0.26).set_ease(Tween.EASE_IN)
+	hop.parallel().tween_property(tutorial_star_image, "rotation", 0.08, 0.26)
+	hop.tween_property(tutorial_star_image, "rotation", 0.0, 0.16)
 
 func _create_time_of_day_indicator() -> void:
 	time_of_day_icon = TextureRect.new()
@@ -488,7 +499,12 @@ func _ready() -> void:
 	set_audio_volumes(music_volume, sfx_volume)
 	queue_redraw()
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if is_visible_in_tree():
+		tutorial_star_hop_wait -= delta
+		if tutorial_star_hop_wait <= 0.0:
+			tutorial_star_hop_wait = randf_range(3.0, 6.0)
+			_hop_tutorial_star()
 	if progression != null: _update_cooking_heart_ui()
 	if progression == null or not progression.is_crafting(): return
 	craft_progress.value = progression.crafting_progress() * 100.0

@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://lvdg87ggupt4"]
 
 [ext_resource type="Script" uid="uid://cmr2cxo0hlf4k" path="res://scripts/ui/home_menu.gd" id="1_home"]
+[ext_resource type="Texture2D" path="res://assets/generated/Tutorial Star.png" id="2_tutorial_star"]
 
 [node name="HomeMenu" type="Control" unique_id=1540440840]
 process_mode = 3
@@ -111,9 +112,20 @@ offset_left = 24.0
 offset_top = 24.0
 offset_right = 84.0
 offset_bottom = 84.0
-theme_override_font_sizes/font_size = 30
-text = "★"
+text = ""
 tooltip_text = "Open the Blade Dancer tutorial"
+
+[node name="TutorialStarImage" type="TextureRect" parent="TutorialButton"]
+layout_mode = 0
+mouse_filter = 2
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 52.0
+offset_bottom = 52.0
+pivot_offset = Vector2(22, 22)
+texture = ExtResource("2_tutorial_star")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="EnableMusicButton" type="Button" parent="."]
 layout_mode = 1

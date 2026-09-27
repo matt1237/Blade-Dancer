@@ -87,6 +87,17 @@ func test_home_tutorial_dialogue_is_centralized_and_editable() -> void:
 		assert(source.contains("const %s: Array[String]" % constant_name), "%s must remain visible as editable dialogue copy." % constant_name)
 	assert(not source.contains("dialogue.start([\"Come to the storage room.\"])") and not source.contains("dialogue.start([\"This is my kitchen."), "Dialogue calls must use centralized copy constants.")
 
+func test_tutorial_star_is_an_image_that_does_not_block_its_button() -> void:
+	var scene: PackedScene = load("res://scenes/ui/home_menu.tscn") as PackedScene
+	var menu: HomeMenu = scene.instantiate() as HomeMenu
+	add_child(menu)
+	var star: TextureRect = menu.tutorial_star_image
+	assert(menu.tutorial_button.text.is_empty(), "The Web tutorial button must not rely on a star font glyph.")
+	assert(star.texture != null and star.texture.get_size().x > 0.0, "The replacement illustrated star must load from the shipped image.")
+	assert(star.mouse_filter == Control.MOUSE_FILTER_IGNORE, "The animated art must leave the tutorial button clickable.")
+	assert(menu.tutorial_star_glow.target == menu.tutorial_button, "Keep the existing tutorial glow on the clickable button.")
+	menu.queue_free()
+
 func test_tutorial_glow_has_blue_white_falling_fade_particles() -> void:
 	var source: String = FileAccess.get_file_as_string("res://scripts/ui/tutorial_button_glow.gd")
 	assert(source.contains("fall_height"))

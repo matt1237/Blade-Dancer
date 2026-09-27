@@ -50,6 +50,7 @@ func _ready() -> void:
 	for index: int in range(COMBAT_CLIP_PLAYER_COUNT):
 		var clip_player: AudioStreamPlayer = AudioStreamPlayer.new()
 		clip_player.name = "CombatClipPlayer%d" % index
+		clip_player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 		clip_player.bus = SFX_BUS
 		add_child(clip_player)
 		combat_clip_players.append(clip_player)

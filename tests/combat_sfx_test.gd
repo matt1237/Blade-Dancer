@@ -2,6 +2,16 @@ class_name CombatSfxTest extends Node
 
 const COMBAT_CATEGORIES: Array[String] = ["low_health", "player_attack", "sword_swing", "parry_clash"]
 
+func test_recorded_combat_clips_use_stream_playback_without_changing_generated_sfx() -> void:
+	var audio_manager: AudioManager = AudioManager.new()
+	add_child(audio_manager)
+	assert(audio_manager.combat_clip_players.size() == AudioManager.COMBAT_CLIP_PLAYER_COUNT)
+	for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+		assert(clip_player.playback_type == AudioServer.PLAYBACK_TYPE_STREAM, "Recorded combat MP3 players must explicitly use Stream playback on Web.")
+	for generated_player: AudioStreamPlayer in audio_manager.players:
+		assert(generated_player.playback_type == AudioServer.PLAYBACK_TYPE_DEFAULT, "Do not alter the unrelated procedural SFX playback in this fix.")
+	audio_manager.free()
+
 func test_low_health_cue_only_triggers_when_a_hit_crosses_twenty_percent() -> void:
 	assert(Player.low_health_hit_threshold_crossed(30.0, 20.0, 100.0), "A hit reaching exactly 20% health should trigger the warning cue.")
 	assert(Player.low_health_hit_threshold_crossed(25.0, 19.0, 100.0), "A hit that drops health below 20% should trigger the warning cue.")

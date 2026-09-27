@@ -6,6 +6,7 @@ const SNAPSHOT_VERSION: String = "v0.1"
 const CHARGED_GUARD_TUNING_KEYS: Array[String] = ["charged_guard_position_charge_enabled", "charged_guard_gestures_enabled", "charged_guard_entry_g_enabled", "charged_guard_entry_z_enabled", "charged_guard_pommel_entry_enabled", "charged_guard_dual_click_entry_enabled", "charged_guard_dual_click_hold_time", "charged_guard_awaken_duration", "charged_guard_near_body_radius", "charged_guard_near_body_rate", "charged_guard_hold_limit", "charged_guard_break_speed", "charged_guard_acquisition_window", "charged_guard_min_arc_energy", "charged_guard_pommel_alignment", "charged_guard_pommel_speed", "charged_guard_pommel_travel", "charged_guard_pommel_intent_time"]
 const AUTHORED_METRONOME_TUNING_KEYS: Array[String] = ["authored_metronome_enabled", "authored_metronome_wake_speed", "authored_metronome_energy_build", "authored_metronome_energy_fade", "authored_metronome_idle_grace", "authored_metronome_sheathe_time"]
 const COUNTER_STEER_HAND_TUNING_KEYS: Array[String] = ["counter_steer_arc_enabled", "counter_steer_arc_compression"]
+const STROKE_ASSIST_HAND_TUNING_KEYS: Array[String] = ["tempo_assist_strength", "directional_arc_opening_strength"]
 
 static func save_all(active_preset: int, hand_settings: Dictionary, contact_settings: Dictionary, blade_settings: Dictionary = {}, weapon_hand_settings: Dictionary = {}) -> bool:
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)

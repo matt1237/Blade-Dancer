@@ -207,9 +207,11 @@ const AUTHORED_METRONOME_SHEATHE_FADE_RATE: float = 8.0
 ## exactly 1.0 -- today's look -- for every other sword style and whenever it is off.
 const SWORD_TRAIL_MIN_VISIBILITY: float = 0.10
 const SWORD_TRAIL_MAX_VISIBILITY: float = 1.15
-const TEMPO_ASSIST_MAX_MULTIPLIER: float = 1.4
+const TEMPO_ASSIST_MAX_MULTIPLIER: float = 2.0
+const TEMPO_ASSIST_STRENGTH_DEFAULT: float = 0.4
 const TEMPO_ASSIST_INPUT_ENGAGEMENT_MIN: float = 0.08
-const DIRECTIONAL_ARC_OPENING_DEGREES: float = 10.0
+const DIRECTIONAL_ARC_OPENING_DEGREES: float = 40.0
+const DIRECTIONAL_ARC_OPENING_STRENGTH_DEFAULT: float = 10.0
 const REVERSAL_ARC_CARRY_PROGRESS: float = 0.30
 const COUNTER_STEER_ARC_COMPRESSION_DEFAULT: float = 0.22
 const COUNTER_STEER_ARC_COMPRESSION_MAX: float = 0.40
@@ -2357,7 +2359,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 				continue
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
-		for hand_key: String in CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS:
+		for hand_key: String in CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS + CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS:
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
 		sword_style = saved_style
@@ -2425,7 +2427,9 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"swing_commitment": return float(values.get("swing_commitment", 0.0))
 		"swing_commitment_duration": return float(values.get("swing_commitment_duration", SWING_COMMITMENT_DURATION_DEFAULT))
 		"tempo_assist_enabled": return float(values.get("tempo_assist_enabled", 0.0))
+		"tempo_assist_strength": return float(values.get("tempo_assist_strength", TEMPO_ASSIST_STRENGTH_DEFAULT))
 		"directional_arc_opening_enabled": return float(values.get("directional_arc_opening_enabled", 0.0))
+		"directional_arc_opening_strength": return float(values.get("directional_arc_opening_strength", DIRECTIONAL_ARC_OPENING_STRENGTH_DEFAULT))
 		"counter_steer_arc_enabled": return float(values.get("counter_steer_arc_enabled", 0.0))
 		"counter_steer_arc_compression": return float(values.get("counter_steer_arc_compression", COUNTER_STEER_ARC_COMPRESSION_DEFAULT))
 		"authored_step_enabled": return float(values.get("authored_step_enabled", 0.0))
@@ -4394,11 +4398,11 @@ func _update_sword(delta: float) -> void:
 		if sound_main != null and sound_main.has_method("play_combat_clip"):
 			sound_main.call("play_combat_clip", "sword_swing")
 	if tempo_enabled:
-		tempo_assist_multiplier = lerpf(1.0, TEMPO_ASSIST_MAX_MULTIPLIER, authored_stroke_drive)
+		tempo_assist_multiplier = 1.0 + authored_stroke_drive * clampf(get_combat_hand_setting("tempo_assist_strength"), 0.0, TEMPO_ASSIST_MAX_MULTIPLIER - 1.0)
 	else:
 		tempo_assist_multiplier = 1.0
 	if get_combat_hand_setting("directional_arc_opening_enabled") >= 0.5:
-		directional_arc_extension_degrees = authored_stroke_drive * DIRECTIONAL_ARC_OPENING_DEGREES
+		directional_arc_extension_degrees = authored_stroke_drive * clampf(get_combat_hand_setting("directional_arc_opening_strength"), 0.0, DIRECTIONAL_ARC_OPENING_DEGREES)
 	else:
 		directional_arc_extension_degrees = 0.0
 	var counter_steer_target: float = _counter_steer_compression_target(player_aim_turn_sign, autonomous_travel_sign)

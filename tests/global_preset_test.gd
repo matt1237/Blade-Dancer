@@ -5,12 +5,13 @@ func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
 	assert(baked_file != null, "The packaged GP2 must ship with Web exports.")
 	var baked: Dictionary = JSON.parse_string(baked_file.get_as_text()) as Dictionary
 	assert(int(baked.get("schema", 0)) == GlobalPresetConfig.VERSION and int(baked.get("main_game_preset", 0)) == 2, "The packaged default must be a complete GP2 package.")
+	var library: Dictionary = GlobalPresetConfig.load_raw_library()
+	var saved_gp2: Dictionary = (library.get("slots", {}) as Dictionary).get("2", {}) as Dictionary
+	assert(baked == saved_gp2, "The packaged GP2 must exactly match the last locally saved developer GP2, including weapon profiles, visuals, forest phases and all tuned settings.")
 	var hands: Dictionary = baked.get("combat_hand_settings", {}) as Dictionary
 	var bind: Dictionary = hands.get("2:9", {}) as Dictionary
-	assert(is_equal_approx(float(bind.get("mouse_drag", 0.0)), 15.0) and is_equal_approx(float(bind.get("max_turn_speed", 0.0)), 810.0), "The packaged Bind profile must carry the authored GP2 sword controls.")
-	var contacts: Dictionary = baked.get("combat_contact_settings", {}) as Dictionary
-	var combat_two: Dictionary = contacts.get("2", {}) as Dictionary
-	assert(is_equal_approx(float(combat_two.get("authored_metronome_enabled", 0.0)), 1.0), "The shipped authored metronome setting must not fall back to the older preset.")
+	for strength_key: String in CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS:
+		assert(bind.has(strength_key), "The shipped Bind form must include the saved %s tuning." % strength_key)
 	var source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
 	var initialize: int = source.find("func _initialize_global_presets()")
 	var web_path: int = source.find("if OS.has_feature(\"web\"):", initialize)
