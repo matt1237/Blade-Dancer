@@ -1294,10 +1294,12 @@ func test_dual_click_needs_a_held_pair_and_ignores_a_fast_click() -> void:
 	for _frame: int in range(6):
 		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
 	assert(player.charged_guard_dual_click_held and not player.charged_guard_locked, "A held pair under the hold time must register as the combo without locking Guard.")
+	assert(is_equal_approx(Player.charged_guard_dual_click_progress(player.charged_guard_dual_click_hold_left, 0.20), 0.5), "The blue entry ring should report half-full after half the hold duration.")
 	# Keeping the pair held past the bar must lock it.
 	for _frame: int in range(12):
 		player._update_charged_guard_dual_click_from_state(true, true, 1.0 / 60.0)
 	assert(player.charged_guard_locked, "Holding both buttons past the hold time must lock Guard.")
+	assert(player.charged_guard_fully_charged and player.charged_guard_flash_left > 0.0, "The existing blue completion flash must take over when the dual-click ring finishes.")
 	player._update_charged_guard_dual_click_from_state(false, false, 1.0 / 60.0)
 	assert(not player.charged_guard_dual_click_held and is_zero_approx(player.charged_guard_dual_click_hold_left), "Releasing the pair must end the combo and clear the hold.")
 	player.free()

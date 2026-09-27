@@ -3780,6 +3780,9 @@ func _charged_guard_entry_armed() -> bool:
 		return false
 	return _charged_guard_entry_ready()
 
+static func charged_guard_dual_click_progress(hold_elapsed: float, required_hold: float) -> float:
+	return clampf(hold_elapsed / maxf(required_hold, 0.01), 0.0, 1.0)
+
 ## The dual mouse-button Guard entry. LMB and RMB must be held together for the tuned hold
 ## time before Guard locks, so a fast click can never acquire it by accident. While the pair is
 ## held it owns both buttons, so the chakram and the grapple do not also fire from the same
@@ -5847,6 +5850,22 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		_draw_pixel_knight()
+	# A held LMB+RMB pair gets its own blue progress ring before Guard locks. The
+	# ring is anchored to the live hilt; once the hold completes, the existing fully
+	# charged Guard flash below takes over instead of leaving a duplicate progress UI.
+	if charged_guard_dual_click_held and not charged_guard_locked and _charged_guard_entry_ready():
+		var entry_transform: Dictionary = _sword_transform()
+		var entry_hand_local: Vector2 = (entry_transform["start"] as Vector2) - global_position
+		var required_hold: float = get_combat_contact_setting("charged_guard_dual_click_hold_time")
+		var entry_progress: float = Player.charged_guard_dual_click_progress(charged_guard_dual_click_hold_left, required_hold)
+		var entry_track: Color = FlowColorUtils.CHARGE_BLUE_TONE
+		entry_track.a = 0.24
+		draw_circle(entry_hand_local, 18.0, Color(0.04, 0.18, 0.42, 0.14))
+		draw_circle(entry_hand_local, 18.0, entry_track, false, 2.0, true)
+		if entry_progress > 0.0:
+			var entry_arc: Color = FlowColorUtils.CHARGE_BLUE_TONE.lerp(FlowColorUtils.CHARGE_WHITE_TONE, entry_progress * 0.35)
+			entry_arc.a = 0.95
+			draw_arc(entry_hand_local, 21.0, -PI * 0.5, -PI * 0.5 + TAU * entry_progress, 32, entry_arc, 3.0, true)
 	# The guard visual starts the moment the guard itself does. Nothing is drawn while the drive is
 	# still banking: the bank is deliberately invisible, and a readout appearing before the guard
 	# did is exactly what made the state look like it was arriving on its own.
