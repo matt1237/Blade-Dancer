@@ -61,6 +61,13 @@ var health: float = 50.0
 ## above rather than changing these runtime values.
 var player_ref: Variant = null
 var knockback: Vector2 = Vector2.ZERO
+## Cosmetic body-only recoil; never moves the collider or alters AI knockback.
+var hit_visual_direction: Vector2 = Vector2.ZERO
+var hit_visual_distance: float = 0.0
+var hit_visual_rotation: float = 0.0
+var hit_visual_elapsed: float = 0.0
+var hit_visual_in: float = 0.06
+var hit_visual_return: float = 0.16
 ## Small, slower-decaying momentum tail from being pulled off balance by a taut grapple.
 var grapple_slide_velocity: Vector2 = Vector2.ZERO
 var fire_timer: float = 1.5
@@ -327,6 +334,21 @@ func _add_hd_animation(frames: SpriteFrames, animation_name: String, atlas: Text
 		frame.region = Rect2(Vector2(float(frame_index) * frame_size.x, 0.0), frame_size)
 		frames.add_frame(animation_name, frame)
 
+func play_hit_reaction(outward: Vector2, impact: float, distance: float, lean_degrees: float, in_time: float, return_time: float) -> void:
+	hit_visual_direction = outward.normalized()
+	hit_visual_distance = maxf(0.0, distance) * clampf(impact, 0.0, 1.0)
+	hit_visual_rotation = deg_to_rad(lean_degrees) * clampf(impact, 0.0, 1.0) * signf(outward.x if absf(outward.x) > 0.01 else 1.0)
+	hit_visual_in = maxf(in_time, 0.01)
+	hit_visual_return = maxf(return_time, 0.01)
+	hit_visual_elapsed = 0.001
+	queue_redraw()
+
+func _hit_visual_ratio() -> float:
+	if hit_visual_elapsed <= 0.0: return 0.0
+	if hit_visual_elapsed < hit_visual_in:
+		return hit_visual_elapsed / hit_visual_in
+	return 1.0 - clampf((hit_visual_elapsed - hit_visual_in) / hit_visual_return, 0.0, 1.0)
+
 func _update_hd_enemy_sprite() -> void:
 	if hd_enemy_sprite == null: return
 	hd_enemy_sprite.visible = _is_hd_visual()
@@ -339,8 +361,9 @@ func _update_hd_enemy_sprite() -> void:
 	var impact_ratio: float = clampf(impact_deformation_left / maxf(impact_deformation_duration, 0.001), 0.0, 1.0)
 	var windup_ratio: float = clampf(windup / maxf(0.01, 0.68), 0.0, 1.0)
 	var charge_pose: float = windup_ratio if charge_pose_enabled else 0.0
-	hd_enemy_sprite.position = Vector2(0.0, -charge_pose * 2.0)
-	hd_enemy_sprite.rotation = (0.04 if facing_left else -0.04) * charge_pose
+	var hit_ratio: float = _hit_visual_ratio()
+	hd_enemy_sprite.position = Vector2(0.0, -charge_pose * 2.0) + hit_visual_direction * hit_visual_distance * hit_ratio
+	hd_enemy_sprite.rotation = (0.04 if facing_left else -0.04) * charge_pose + hit_visual_rotation * hit_ratio
 	hd_enemy_sprite.scale = Vector2(hd_enemy_base_scale * (1.0 + impact_ratio * 0.08 + charge_pose * 0.04), hd_enemy_base_scale * (1.0 - impact_ratio * 0.06 - charge_pose * 0.04))
 	# Classic chargers turn red throughout their windup. Keep that warning in HD
 	# without changing the sprite's transform, collision, or charge timing.
@@ -365,6 +388,10 @@ func tick_moving_weapon_combat(delta: float) -> void:
 	clash_cooldown_left = maxf(0.0, clash_cooldown_left - delta)
 
 func _physics_process(delta: float) -> void:
+	if hit_visual_elapsed > 0.0:
+		hit_visual_elapsed += delta
+		if hit_visual_elapsed >= hit_visual_in + hit_visual_return:
+			hit_visual_elapsed = 0.0
 	_update_hd_enemy_sprite()
 	if player_ref == null: return
 	charge_motion_this_frame = false
@@ -1357,7 +1384,9 @@ func _draw_concrete_body() -> void:
 
 func _draw() -> void:
 	if not _is_hd_visual():
-		draw_set_transform_matrix(_impact_draw_transform())
+		var hit_ratio: float = _hit_visual_ratio()
+		var hit_pose: Transform2D = Transform2D(hit_visual_rotation * hit_ratio, hit_visual_direction * hit_visual_distance * hit_ratio)
+		draw_set_transform_matrix(hit_pose * _impact_draw_transform())
 		_draw_concrete_body()
 		# Weapons, shields, and status overlays stay rigid so the body alone sells the impact.
 		draw_set_transform_matrix(Transform2D.IDENTITY)

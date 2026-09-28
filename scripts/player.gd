@@ -805,6 +805,11 @@ var clash_recovery_left: float = 0.0
 ## contact_drag_recovery_rate units/sec. Replaces the old freeze-based Bite.
 var contact_drag_multiplier: float = 1.0
 var contact_drag_recovery_rate: float = 0.0
+## Contact-only visual geometry correction; never changes aim, swing phase or free sword controls.
+var hit_reaction_offset: Vector2 = Vector2.ZERO
+var hit_reaction_contact: Dictionary = {}
+var hit_reaction_debug_data: Dictionary = {}
+var hit_reaction_debug_left: float = 0.0
 var flesh_contact_slow_left: float = 0.0
 var sword_event_label: String = ""
 var sword_event_point: Vector2 = Vector2.ZERO
@@ -2335,6 +2340,9 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 	]:
 		if not copied_contact.has(setting_name):
 			copied_contact[setting_name] = get_combat_contact_setting(setting_name)
+	for hit_key: String in HitReaction.DEFAULTS:
+		if not copied_contact.has(hit_key):
+			copied_contact[hit_key] = get_combat_contact_setting(hit_key)
 	for authored_key: String in CombatSettingsConfig.AUTHORED_METRONOME_TUNING_KEYS:
 		if not copied_contact.has(authored_key):
 			copied_contact[authored_key] = get_combat_contact_setting(authored_key)
@@ -2549,6 +2557,8 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		if setting == "charged_guard_awaken_duration":
 			return clampf(float(values[setting]), 0.20, 0.35)
 		return float(values[setting])
+	if HitReaction.DEFAULTS.has(setting):
+		return HitReaction.value(values, setting)
 	var distinct: bool = combat_contact_preset >= 2
 	var result: float = 0.0
 	match setting:
@@ -2809,7 +2819,9 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 		var metronome_angle: float = float(transform_data["angle"])
 		transform_data["start"] = global_position + Vector2.RIGHT.rotated(aim_angle) * combat_hand_radius
 		transform_data["angle"] = aim_angle + angle_difference(aim_angle, metronome_angle) * clampf(authored_metronome_swing_blend, 0.0, 1.0)
-	return _apply_charged_guard_pose(transform_data)
+	var resolved_pose: Dictionary = _apply_charged_guard_pose(transform_data)
+	resolved_pose["start"] = (resolved_pose["start"] as Vector2) + hit_reaction_offset
+	return resolved_pose
 
 func _apply_charged_guard_pose(transform_data: Dictionary) -> Dictionary:
 	# One ordered chain owns the sword's pose: the normal aim pipeline, then the authored
@@ -4331,6 +4343,8 @@ static func low_health_hit_threshold_crossed(previous_health: float, current_hea
 
 func _update_sword(delta: float) -> void:
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
+		hit_reaction_contact.clear()
+		hit_reaction_offset = Vector2.ZERO
 		blade_velocity = Vector2.ZERO
 		previous_blade_start = Vector2.ZERO
 		previous_blade_end = Vector2.ZERO
@@ -4428,6 +4442,7 @@ func _update_sword(delta: float) -> void:
 		counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 
 	var transform_data: Dictionary = _sword_transform()
+	_update_hit_reaction_pose(transform_data, delta)
 	var current_angle: float = float(transform_data["angle"])
 
 	# Keep Form I reversal timing unchanged. Form II resets once per actual stab.
@@ -4534,6 +4549,61 @@ func _update_sword(delta: float) -> void:
 		hilt_trail_points.clear()
 	_check_sword_hits(current_start, current_end, delta)
 
+func _update_hit_reaction_pose(pose: Dictionary, delta: float) -> void:
+	var raw_start: Vector2 = (pose["start"] as Vector2) - hit_reaction_offset
+	hit_reaction_debug_left = maxf(0.0, hit_reaction_debug_left - delta)
+	if get_combat_contact_setting("hit_reaction_enabled") < 0.5:
+		hit_reaction_offset = Vector2.ZERO
+		hit_reaction_contact.clear()
+		pose["start"] = raw_start
+		return
+	if hit_reaction_contact.is_empty():
+		hit_reaction_offset = hit_reaction_offset.move_toward(Vector2.ZERO, HitReaction.value({}, "hit_release_speed") * delta)
+		pose["start"] = raw_start + hit_reaction_offset
+		return
+	var killed: bool = bool(hit_reaction_contact.get("killed", false))
+	var origin: Vector2 = hit_reaction_contact["origin"] as Vector2
+	if not killed:
+		# Lethal targets queue_free() on the hit frame. Never cast a saved freed
+		# instance: lethal follow-through uses the cached world-space origin.
+		var target: Variant = hit_reaction_contact.get("enemy")
+		if not is_instance_valid(target):
+			hit_reaction_contact.clear()
+			pose["start"] = raw_start
+			hit_reaction_offset = Vector2.ZERO
+			return
+		var enemy: Node2D = target as Node2D
+		origin = enemy.global_position + (hit_reaction_contact["local_origin"] as Vector2)
+	var direction: Vector2 = Vector2.RIGHT.rotated(float(pose["angle"]))
+	var raw_samples: PackedVector2Array = _blade_polyline_samples(raw_start - direction * BLADE_HILT_INSET, direction)
+	var index: int = clampi(int(hit_reaction_contact["segment"]), 0, raw_samples.size() - 2)
+	var raw_point: Vector2 = raw_samples[index].lerp(raw_samples[index + 1], float(hit_reaction_contact["factor"]))
+	var normal: Vector2 = hit_reaction_contact["normal"] as Vector2
+	var inward_depth: float = (origin - raw_point).dot(normal)
+	var sideways: float = absf((raw_point - origin).cross(normal))
+	var elapsed: float = float(hit_reaction_contact["elapsed"]) + delta
+	hit_reaction_contact["elapsed"] = elapsed
+	var release_speed: float = get_combat_contact_setting("hit_release_speed")
+	if inward_depth < -2.0 or sideways > enemy_body_contact_radius * 1.6 or elapsed > 0.48:
+		hit_reaction_contact.clear()
+		# Inward correction vanishes immediately on withdrawal. Otherwise release smoothly.
+		hit_reaction_offset = Vector2.ZERO if inward_depth < -2.0 else hit_reaction_offset.move_toward(Vector2.ZERO, release_speed * delta)
+		pose["start"] = raw_start + hit_reaction_offset
+		return
+	var depth_limit: float = float(hit_reaction_contact["max_depth"])
+	var resistance: float = get_combat_contact_setting("hit_resistance")
+	if killed and elapsed > get_combat_contact_setting("hit_kill_delay"):
+		depth_limit *= maxf(1.0, get_combat_contact_setting("hit_kill_depth_scale"))
+		resistance *= clampf(get_combat_contact_setting("hit_kill_resistance"), 0.0, 1.0)
+	var correction: float = HitReaction.resist(inward_depth, depth_limit, resistance, get_combat_contact_setting("hit_resistance_curve"))
+	hit_reaction_offset = normal * correction
+	pose["start"] = raw_start + hit_reaction_offset
+	if get_combat_contact_setting("hit_reaction_debug") >= 0.5:
+		hit_reaction_debug_data["depth"] = maxf(0.0, inward_depth - correction)
+		hit_reaction_debug_data["max_depth"] = depth_limit
+		hit_reaction_debug_data["lethal"] = killed and elapsed > get_combat_contact_setting("hit_kill_delay")
+		queue_redraw()
+
 func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 	if clash_recovery_left > 0.0: return
 	var main_scene: Node = get_tree().current_scene
@@ -4614,16 +4684,22 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			if not enemy.is_blade_contact(seg_start, seg_end, get_combat_contact_setting("slide_contact_tolerance")):
 				_end_live_blade_slide()
 		if enemy.has_method("is_shield_blocking") and enemy.is_shield_blocking(seg_start, seg_end, parry_forgiveness):
+			hit_reaction_contact.clear()
+			hit_reaction_offset = Vector2.ZERO
 			if enemy.has_method("shield_parry"): enemy.shield_parry(blade_velocity)
 			_trigger_parry(enemy.global_position)
 			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		if enemy.has_method("try_blade_slide") and enemy.try_blade_slide(seg_start, seg_end, blade_velocity, combat_contact_preset):
+			hit_reaction_contact.clear()
+			hit_reaction_offset = Vector2.ZERO
 			var slide_point: Vector2 = enemy.call("get_slide_contact_global") as Vector2 if enemy.has_method("get_slide_contact_global") else enemy.global_position
 			_trigger_blade_slide(slide_point, enemy)
 			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		if enemy.has_method("is_blade_blocking") and enemy.is_blade_blocking(seg_start, seg_end, parry_forgiveness):
+			hit_reaction_contact.clear()
+			hit_reaction_offset = Vector2.ZERO
 			var directional_parry: bool = true
 			if (combat_contact_preset >= 2 or ParryRules.USE_DIRECTIONAL_PARRY_TEST) and enemy.has_method("get_blade_direction"):
 				directional_parry = ParryRules.classify_weapon_interception(blade_velocity, enemy.get_blade_direction())
@@ -4706,10 +4782,15 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				# normal settings cannot tune this special down into an invisible hit.
 				total_damage_multiplier = charged_guard_thrust_damage_multiplier(total_damage_multiplier)
 			var dealt_damage: float = sword_damage * total_damage_multiplier
+			var reaction_on: bool = get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+			var reaction: Dictionary = HitReaction.analyze(contact, whole_blade_fraction, combat_contact_settings.get(str(combat_contact_preset), {}) as Dictionary) if reaction_on else {}
+			var knockback_scale: float = get_combat_contact_setting("hit_knockback_scale") * lerpf(0.35, 1.0, float(reaction.get("impact", 0.0))) if reaction_on else 1.0
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
-				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
+				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback * knockback_scale, stagger_duration, contact.impact_quality)
 			else:
-				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
+				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback * knockback_scale, stagger_duration, contact.impact_quality)
+			if reaction_on and combat_enemy != null:
+				_start_hit_reaction(contact, combat_enemy, seg_index, reaction)
 			if authored_stroke_drive >= ATTACK_VOICE_SFX_DRIVE_THRESHOLD and main_scene.has_method("play_combat_clip"):
 				main_scene.call("play_combat_clip", "player_attack")
 			var typed_enemy: Enemy = enemy as Enemy
@@ -4737,6 +4818,30 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				_trigger_chakram_bat(active_chakram, active_chakram.global_position)
 		elif chakram_contact_distance > BLADE_RADIUS + 34.0:
 			active_chakram.release_sword_contact()
+
+func _start_hit_reaction(contact: SwordContactData, enemy: Enemy, segment: int, analysis: Dictionary) -> void:
+	var killed: bool = enemy.health <= 0.0
+	var raw_point: Vector2 = current_blade_samples[segment].lerp(current_blade_samples[segment + 1], contact.blade_position) - hit_reaction_offset
+	hit_reaction_contact = {
+		"enemy": enemy, "origin": raw_point, "local_origin": raw_point - enemy.global_position,
+		"normal": contact.impact_normal.normalized(), "segment": segment,
+		"factor": contact.blade_position, "max_depth": analysis["max_depth"],
+		"elapsed": 0.0, "killed": killed, "impact": analysis["impact"]
+	}
+	var impact: float = float(analysis["impact"])
+	if not killed:
+		enemy.play_hit_reaction(contact.impact_normal, impact,
+			get_combat_contact_setting("hit_visual_recoil"), get_combat_contact_setting("hit_visual_rotation"),
+			get_combat_contact_setting("hit_recoil_in"), get_combat_contact_setting("hit_recoil_return"))
+	if get_combat_contact_setting("hit_reaction_debug") >= 0.5:
+		hit_reaction_debug_data = analysis.duplicate()
+		hit_reaction_debug_data["point"] = contact.contact_point
+		hit_reaction_debug_data["velocity"] = contact.blade_velocity
+		hit_reaction_debug_data["normal"] = contact.impact_normal
+		hit_reaction_debug_data["depth"] = 0.0
+		hit_reaction_debug_data["lethal"] = killed
+		hit_reaction_debug_left = 0.65
+		queue_redraw()
 
 func _set_sword_event(label: String, point: Vector2, duration: float = 0.45, debug_extra: Dictionary = {}) -> void:
 	sword_event_label = label
@@ -4843,13 +4948,19 @@ func _trigger_farmable_harvest_hit(hit_position: Vector2) -> void:
 func _trigger_successful_sword_hit(contact: SwordContactData) -> void:
 	_set_sword_event("FLESH HIT", contact.contact_point)
 	var main_scene: Node = get_tree().current_scene
-	var hitstop_duration: float = lerpf(get_combat_contact_setting("flesh_hitstop_min"), get_combat_contact_setting("flesh_hitstop_max"), contact.impact_quality)
+	var hitstop_quality: float = contact.impact_quality
+	if get_combat_contact_setting("hit_reaction_enabled") >= 0.5:
+		hitstop_quality = float(hit_reaction_contact.get("impact", contact.impact_quality))
+	var hitstop_duration: float = lerpf(get_combat_contact_setting("flesh_hitstop_min"), get_combat_contact_setting("flesh_hitstop_max"), hitstop_quality)
+	if get_combat_contact_setting("hit_reaction_enabled") >= 0.5:
+		hitstop_duration *= get_combat_contact_setting("hit_hitstop_scale")
 	if enable_flesh_hit_feedback:
 		flesh_contact_slow_left = flesh_contact_movement_slow_duration
 		velocity += contact.impact_normal * get_combat_contact_setting("flesh_recoil")
 		if main_scene.has_method("request_screen_shake"):
 			main_scene.request_screen_shake(get_combat_contact_setting("flesh_shake_strength") * (0.7 + contact.impact_quality * 0.3), get_combat_contact_setting("flesh_shake_duration"), contact.impact_normal)
-	_trigger_contact_drag(get_combat_contact_setting("flesh_contact_drag") * (0.6 + contact.impact_quality * 0.4), get_combat_contact_setting("flesh_contact_drag_recovery"))
+	if get_combat_contact_setting("hit_reaction_enabled") < 0.5:
+		_trigger_contact_drag(get_combat_contact_setting("flesh_contact_drag") * (0.6 + contact.impact_quality * 0.4), get_combat_contact_setting("flesh_contact_drag_recovery"))
 	if main_scene.has_method("request_hitstop"): main_scene.request_hitstop(hitstop_duration)
 	if main_scene.has_method("spawn_impact_fx"):
 		var spark_intensity: float = strong_hit_spark_intensity if contact.impact_quality >= strong_hit_quality_threshold else 0.65 + contact.impact_quality * 0.55
@@ -5567,6 +5678,10 @@ func prepare_for_map_transition() -> void:
 	current_blade_samples = PackedVector2Array()
 	previous_blade_samples = PackedVector2Array()
 	blade_velocity = Vector2.ZERO
+	hit_reaction_contact.clear()
+	hit_reaction_offset = Vector2.ZERO
+	hit_reaction_debug_data.clear()
+	hit_reaction_debug_left = 0.0
 	chakram_aim_trail_left = 0.0
 	hit_ids.clear()
 	enemy_rehit_cooldowns.clear()
@@ -6177,3 +6292,21 @@ func _draw() -> void:
 	# Draw last so the gold needle remains visible over the sword and crowded combat.
 	if not authored_metronome_sheathed:
 		_draw_metronome_indicator_needle(sword_angle)
+	_draw_hit_reaction_debug()
+
+func _draw_hit_reaction_debug() -> void:
+	if get_combat_contact_setting("hit_reaction_enabled") < 0.5 or get_combat_contact_setting("hit_reaction_debug") < 0.5 or hit_reaction_debug_left <= 0.0 or hit_reaction_debug_data.is_empty():
+		return
+	var point: Vector2 = (hit_reaction_debug_data["point"] as Vector2) - global_position
+	var normal: Vector2 = hit_reaction_debug_data["normal"] as Vector2
+	var velocity_vector: Vector2 = hit_reaction_debug_data["velocity"] as Vector2
+	var tangent: Vector2 = hit_reaction_debug_data["tangent"] as Vector2
+	draw_circle(point, 5.0, Color(1.0, 0.85, 0.12))
+	draw_line(point, point + normal * 28.0, Color(0.3, 0.8, 1.0), 2.0, true)
+	draw_line(point, point + velocity_vector.limit_length(48.0) * 0.12, Color(1.0, 0.35, 0.2), 2.0, true)
+	draw_line(point, point + tangent.limit_length(45.0) * 0.12, Color(0.3, 1.0, 0.5), 2.0, true)
+	var info: String = "%s%s | blade %.2f stab %.2f impact %.2f | depth %.1f / %.1f" % [
+		str(hit_reaction_debug_data.get("kind", "?")), " KILL" if bool(hit_reaction_debug_data.get("lethal", false)) else "",
+		float(hit_reaction_debug_data.get("blade_fraction", 0.0)), float(hit_reaction_debug_data.get("alignment", 0.0)),
+		float(hit_reaction_debug_data.get("impact", 0.0)), float(hit_reaction_debug_data.get("depth", 0.0)), float(hit_reaction_debug_data.get("max_depth", 0.0))]
+	draw_string(ThemeDB.fallback_font, point + Vector2(10.0, -32.0), info, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE)
