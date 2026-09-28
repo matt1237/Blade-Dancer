@@ -3607,11 +3607,11 @@ static func gesture_entry_z_qualified(path: PackedVector2Array, stroke_time: flo
 	var lower_corner: int = -1
 	var farthest_right: float = -INF
 	var farthest_left: float = INF
-	for index: int in range(2, maxi(3, path.size() / 2)):
+	for index: int in range(2, maxi(3, floori(float(path.size()) / 2.0))):
 		if path[index].x >= farthest_right:
 			farthest_right = path[index].x
 			upper_corner = index
-	for index: int in range(path.size() / 2, path.size() - 2):
+	for index: int in range(floori(float(path.size()) / 2.0), path.size() - 2):
 		if path[index].x < farthest_left:
 			farthest_left = path[index].x
 			lower_corner = index
@@ -4534,6 +4534,224 @@ func _update_sword(delta: float) -> void:
 		hilt_trail_points.clear()
 	_check_sword_hits(current_start, current_end, delta)
 
+func _enemy_body_collision_shapes(target: Node2D) -> Array[CollisionShape2D]:
+	var shapes: Array[CollisionShape2D] = []
+	for child: Node in target.get_children():
+		if child is CollisionShape2D:
+			var collision_shape: CollisionShape2D = child as CollisionShape2D
+			if not collision_shape.disabled and collision_shape.shape != null:
+				shapes.append(collision_shape)
+	return shapes
+
+func _enemy_body_collision_shape(target: Node2D) -> CollisionShape2D:
+	var shapes: Array[CollisionShape2D] = _enemy_body_collision_shapes(target)
+	return shapes[0] if not shapes.is_empty() else null
+
+func _scaled_enemy_shape(source: Shape2D, scale_factor: float) -> Shape2D:
+	if is_equal_approx(scale_factor, HitReaction.INNER_BONE_RADIUS_FRACTION):
+		return HitReaction.scale_inner_bone_shape(source)
+	if source == null:
+		return null
+	var result: Shape2D = source.duplicate() as Shape2D
+	if result is CircleShape2D:
+		var circle: CircleShape2D = result as CircleShape2D
+		circle.radius *= scale_factor
+	elif result is RectangleShape2D:
+		var rectangle: RectangleShape2D = result as RectangleShape2D
+		rectangle.size *= scale_factor
+	elif result is CapsuleShape2D:
+		var capsule: CapsuleShape2D = result as CapsuleShape2D
+		capsule.radius *= scale_factor
+		capsule.height *= scale_factor
+	else:
+		return null
+	return result
+
+func _enemy_body_shape_transform(shape_node: CollisionShape2D) -> Transform2D:
+	return shape_node.global_transform
+
+func _shape_separation_distance(shape_node: CollisionShape2D, shape: Shape2D, world_position: Vector2) -> float:
+	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
+	var local_position: Vector2 = shape_transform.affine_inverse() * world_position
+	var scale_basis: Vector2 = shape_transform.get_scale().abs()
+	if shape is CircleShape2D:
+		var circle: CircleShape2D = shape as CircleShape2D
+		return maxf(0.0, local_position.length() - circle.radius) * maxf(0.001, minf(scale_basis.x, scale_basis.y))
+	if shape is RectangleShape2D:
+		var rectangle: RectangleShape2D = shape as RectangleShape2D
+		var outside: Vector2 = (local_position.abs() - rectangle.size * 0.5).max(Vector2.ZERO)
+		return outside.length() * maxf(0.001, minf(scale_basis.x, scale_basis.y))
+	if shape is CapsuleShape2D:
+		var capsule: CapsuleShape2D = shape as CapsuleShape2D
+		var half_segment: float = maxf(0.0, capsule.height * 0.5 - capsule.radius)
+		var closest_axis_point: Vector2 = Vector2(0.0, clampf(local_position.y, -half_segment, half_segment))
+		return maxf(0.0, local_position.distance_to(closest_axis_point) - capsule.radius) * maxf(0.001, minf(scale_basis.x, scale_basis.y))
+	return INF
+
+func _shape_surface_normal(shape_node: CollisionShape2D, shape: Shape2D, world_position: Vector2, fallback_axis: Vector2) -> Vector2:
+	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
+	var local_position: Vector2 = shape_transform.affine_inverse() * world_position
+	var local_normal: Vector2 = Vector2.ZERO
+	if shape is CircleShape2D:
+		local_normal = local_position.normalized()
+	elif shape is RectangleShape2D:
+		var rectangle: RectangleShape2D = shape as RectangleShape2D
+		var half_size: Vector2 = rectangle.size * 0.5
+		var x_depth: float = absf(local_position.x) - half_size.x
+		var y_depth: float = absf(local_position.y) - half_size.y
+		if x_depth >= y_depth:
+			local_normal = Vector2(signf(local_position.x), 0.0)
+		else:
+			local_normal = Vector2(0.0, signf(local_position.y))
+	elif shape is CapsuleShape2D:
+		var capsule: CapsuleShape2D = shape as CapsuleShape2D
+		var cap_center: float = clampf(local_position.y, -maxf(0.0, capsule.height * 0.5 - capsule.radius), maxf(0.0, capsule.height * 0.5 - capsule.radius))
+		local_normal = (local_position - Vector2(0.0, cap_center)).normalized()
+	if local_normal.length_squared() < 0.001:
+		local_normal = -fallback_axis.normalized()
+	if local_normal.length_squared() < 0.001:
+		local_normal = Vector2.UP
+	return (shape_transform.basis_xform(local_normal)).normalized()
+
+func _shape_outer_radius(shape_node: CollisionShape2D) -> float:
+	if shape_node == null or shape_node.shape == null:
+		return enemy_body_contact_radius
+	var shape_scale: Vector2 = shape_node.global_transform.get_scale().abs()
+	if shape_node.shape is CircleShape2D:
+		var circle: CircleShape2D = shape_node.shape as CircleShape2D
+		return circle.radius * maxf(shape_scale.x, shape_scale.y)
+	if shape_node.shape is CapsuleShape2D:
+		var capsule: CapsuleShape2D = shape_node.shape as CapsuleShape2D
+		return capsule.height * 0.5 * maxf(shape_scale.x, shape_scale.y)
+	if shape_node.shape is RectangleShape2D:
+		var rectangle: RectangleShape2D = shape_node.shape as RectangleShape2D
+		return rectangle.size.length() * 0.5 * maxf(shape_scale.x, shape_scale.y)
+	return enemy_body_contact_radius
+
+func _enemy_body_outer_radius(target: Node2D) -> float:
+	var maximum_radius: float = enemy_body_contact_radius
+	for shape_node: CollisionShape2D in _enemy_body_collision_shapes(target):
+		var offset_radius: float = target.global_position.distance_to(shape_node.global_transform.origin)
+		maximum_radius = maxf(maximum_radius, offset_radius + _shape_outer_radius(shape_node))
+	return maximum_radius
+
+func _blade_shape_contact_position(shape_hit: Dictionary, blade_start: Vector2, blade_end: Vector2) -> Vector2:
+	var shape_node: CollisionShape2D = shape_hit.get("node") as CollisionShape2D
+	var shape: Shape2D = shape_hit.get("shape") as Shape2D
+	if shape_node == null or shape == null:
+		return blade_start.lerp(blade_end, 0.5)
+	var blade_shape: CircleShape2D = CircleShape2D.new()
+	blade_shape.radius = BLADE_RADIUS
+	var sample_count: int = maxi(2, ceili(blade_start.distance_to(blade_end) / maxf(BLADE_RADIUS * 1.5, 1.0)))
+	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
+	for sample_index: int in range(sample_count + 1):
+		var point: Vector2 = blade_start.lerp(blade_end, float(sample_index) / float(sample_count))
+		if shape.collide(shape_transform, blade_shape, Transform2D(0.0, point)):
+			return point
+	return blade_start.lerp(blade_end, 0.5)
+
+func _physical_normal_from_shapes(shape_hits: Array[Dictionary], contact_position: Vector2, fallback_position: Vector2) -> Vector2:
+	if not shape_hits.is_empty():
+		var shape_hit: Dictionary = shape_hits[0]
+		var shape_node: CollisionShape2D = shape_hit.get("node") as CollisionShape2D
+		if shape_node != null:
+			var normal: Vector2 = shape_node.global_transform.origin.direction_to(contact_position)
+			if normal.length_squared() > 0.001:
+				return normal.normalized()
+	var fallback: Vector2 = fallback_position.direction_to(contact_position)
+	return fallback.normalized() if fallback.length_squared() > 0.001 else Vector2.UP
+
+func _blade_overlaps_enemy_shape(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D) -> Dictionary:
+	if shape_node == null or shape == null:
+		return {"overlap": false, "normal": Vector2.ZERO}
+	var blade_shape: CircleShape2D = CircleShape2D.new()
+	blade_shape.radius = BLADE_RADIUS
+	return _swept_blade_shape_overlap(previous_start, previous_end, current_start, current_end, shape_node, shape, blade_shape)
+
+func _swept_blade_shape_overlap(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D, blade_shape: CircleShape2D) -> Dictionary:
+	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
+	var blade_length: float = maxf(previous_start.distance_to(previous_end), current_start.distance_to(current_end))
+	var sample_count: int = maxi(2, ceili(blade_length / maxf(BLADE_RADIUS * 1.5, 1.0)))
+	var best_distance: float = INF
+	var best_position: Vector2 = current_start.lerp(current_end, 0.5)
+	for sweep_index: int in range(SwordInteractionResolver.SWEEP_SAMPLES):
+		var sweep_ratio: float = float(sweep_index) / float(SwordInteractionResolver.SWEEP_SAMPLES - 1)
+		var sweep_start: Vector2 = previous_start.lerp(current_start, sweep_ratio)
+		var sweep_end: Vector2 = previous_end.lerp(current_end, sweep_ratio)
+		for sample_index: int in range(sample_count + 1):
+			var sample_position: Vector2 = sweep_start.lerp(sweep_end, float(sample_index) / float(sample_count))
+			var sample_transform: Transform2D = Transform2D(0.0, sample_position)
+			if shape.collide(shape_transform, blade_shape, sample_transform):
+				var segment_ratio: float = float(sample_index) / float(sample_count)
+				var blade_axis: Vector2 = sweep_end - sweep_start
+				var surface_normal: Vector2 = _shape_surface_normal(shape_node, shape, sample_position, blade_axis)
+				return {"overlap": true, "normal": surface_normal, "position": sample_position, "blade_fraction": segment_ratio}
+			var separation: float = _shape_separation_distance(shape_node, shape, sample_position)
+			if separation < best_distance:
+				best_distance = separation
+				best_position = sample_position
+	var contact_limit: float = blade_shape.radius * 1.5
+	return {"overlap": best_distance <= contact_limit, "normal": _shape_surface_normal(shape_node, shape, best_position, current_end - current_start), "position": best_position, "blade_fraction": _closest_path_fraction(best_position, PackedVector2Array([current_start, current_end]))}
+
+func _draw_blade_bone_debug_shapes() -> void:
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		var enemy: Node2D = node as Node2D
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
+			var inner_shape: Shape2D = _scaled_enemy_shape(shape_node.shape, HitReaction.INNER_BONE_RADIUS_FRACTION)
+			if inner_shape == null:
+				continue
+			_draw_debug_enemy_collision_shape(enemy, shape_node.shape, inner_shape, _enemy_body_shape_transform(shape_node))
+
+func _draw_debug_enemy_collision_shape(_enemy: Node2D, outer_shape: Shape2D, inner_shape: Shape2D, shape_transform: Transform2D) -> void:
+	var relative_transform: Transform2D = global_transform.affine_inverse() * shape_transform
+	var shape_scale: Vector2 = relative_transform.get_scale().abs()
+	var angle: float = relative_transform.get_rotation()
+	var outer_color: Color = Color(1.0, 0.32, 0.16, 0.78)
+	var inner_color: Color = Color(0.3, 0.9, 1.0, 0.95)
+	draw_set_transform(relative_transform.origin, angle, shape_scale)
+	if outer_shape is CircleShape2D and inner_shape is CircleShape2D:
+		var outer_circle: CircleShape2D = outer_shape as CircleShape2D
+		var core_circle: CircleShape2D = inner_shape as CircleShape2D
+		draw_arc(Vector2.ZERO, outer_circle.radius, 0.0, TAU, 48, outer_color, 1.5, true)
+		draw_arc(Vector2.ZERO, core_circle.radius, 0.0, TAU, 48, inner_color, 2.0, true)
+	elif outer_shape is RectangleShape2D and inner_shape is RectangleShape2D:
+		var outer_rect: RectangleShape2D = outer_shape as RectangleShape2D
+		var core_rect: RectangleShape2D = inner_shape as RectangleShape2D
+		draw_rect(Rect2(-outer_rect.size * 0.5, outer_rect.size), outer_color, false, 1.5, true)
+		draw_rect(Rect2(-core_rect.size * 0.5, core_rect.size), inner_color, false, 2.0, true)
+	elif outer_shape is CapsuleShape2D and inner_shape is CapsuleShape2D:
+		var outer_capsule: CapsuleShape2D = outer_shape as CapsuleShape2D
+		var core_capsule: CapsuleShape2D = inner_shape as CapsuleShape2D
+		_draw_debug_capsule_outline(outer_capsule.radius, outer_capsule.height, outer_color)
+		_draw_debug_capsule_outline(core_capsule.radius, core_capsule.height, inner_color)
+	elif outer_shape is ConvexPolygonShape2D and inner_shape is ConvexPolygonShape2D:
+		var outer_points: PackedVector2Array = (outer_shape as ConvexPolygonShape2D).points
+		var inner_points: PackedVector2Array = (inner_shape as ConvexPolygonShape2D).points
+		_draw_debug_polygon_outline(outer_points, outer_color)
+		_draw_debug_polygon_outline(inner_points, inner_color)
+	else:
+		var fallback_radius: float = _shape_outer_radius(_enemy_body_collision_shape(_enemy))
+		draw_arc(Vector2.ZERO, fallback_radius, 0.0, TAU, 48, outer_color, 1.5, true)
+		draw_arc(Vector2.ZERO, fallback_radius * HitReaction.INNER_BONE_RADIUS_FRACTION, 0.0, TAU, 48, inner_color, 2.0, true)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_debug_capsule_outline(radius: float, height: float, color: Color) -> void:
+	var cap_center: float = maxf(0.0, height * 0.5 - radius)
+	draw_line(Vector2(-radius, -cap_center), Vector2(-radius, cap_center), color, 1.5, true)
+	draw_line(Vector2(radius, -cap_center), Vector2(radius, cap_center), color, 1.5, true)
+	draw_arc(Vector2(0.0, -cap_center), radius, PI, TAU, 24, color, 1.5, true)
+	draw_arc(Vector2(0.0, cap_center), radius, 0.0, PI, 24, color, 1.5, true)
+
+func _draw_debug_polygon_outline(points: PackedVector2Array, color: Color) -> void:
+	if points.size() < 3:
+		return
+	for point_index: int in range(points.size()):
+		var point: Vector2 = points[point_index]
+		var next_point: Vector2 = points[(point_index + 1) % points.size()]
+		draw_line(point, next_point, color, 1.5, true)
+
 func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 	blade_flesh_overlap_active = false
 	blade_sink_strength_active = 0.0
@@ -4661,8 +4879,49 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			if _stop_charged_guard_thrust_on_contact(): return
 			continue
 		var thrust_contact: bool = charged_guard_gesture_state == ChargedGuardGesture.THRUST
-		var contact: SwordContactData = SwordInteractionResolver.swept_contact(prev_seg_start, prev_seg_end, seg_start, seg_end, enemy.global_position, enemy_body_contact_radius, delta, velocity, sword_movement_damage_contribution, sword_movement_speed_cap)
-		if contact.swept_distance > enemy_body_contact_radius: continue
+		var body_contact_radius: float = _enemy_body_outer_radius(enemy)
+		var available_shapes: Array[CollisionShape2D] = _enemy_body_collision_shapes(enemy)
+		var flesh_shapes: Array[Dictionary] = []
+		var core_shapes: Array[Dictionary] = []
+		var flesh_contact_position: Vector2 = Vector2.ZERO
+		var flesh_contact_normal: Vector2 = Vector2.ZERO
+		var core_contact_normal: Vector2 = Vector2.ZERO
+		var flesh_blade_fraction: float = 0.5
+		var best_flesh_surface_distance: float = INF
+		for collision_shape: CollisionShape2D in available_shapes:
+			var outer_collision_shape: Shape2D = collision_shape.shape
+			var scaled_core: Shape2D = _scaled_enemy_shape(outer_collision_shape, HitReaction.INNER_BONE_RADIUS_FRACTION)
+			if scaled_core == null:
+				continue
+			var shape_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, outer_collision_shape)
+			if bool(shape_hit["overlap"]):
+				var surface_distance: float = _shape_separation_distance(collision_shape, outer_collision_shape, shape_hit["position"] as Vector2)
+				if surface_distance < best_flesh_surface_distance:
+					best_flesh_surface_distance = surface_distance
+					flesh_contact_position = shape_hit["position"] as Vector2
+					flesh_contact_normal = shape_hit["normal"] as Vector2
+					flesh_blade_fraction = float(shape_hit["blade_fraction"])
+				flesh_shapes.clear()
+				flesh_shapes.append({"shape": outer_collision_shape, "node": collision_shape, "transform": _enemy_body_shape_transform(collision_shape)})
+			var core_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, scaled_core)
+			if bool(core_hit["overlap"]):
+				core_contact_normal = core_hit["normal"] as Vector2
+				core_shapes.append({"normal": core_hit["normal"], "shape": scaled_core, "node": collision_shape, "transform": _enemy_body_shape_transform(collision_shape)})
+		var broad_contact_radius: float = maxf(enemy_body_contact_radius, body_contact_radius + BLADE_RADIUS)
+		var contact: SwordContactData = SwordInteractionResolver.swept_contact(prev_seg_start, prev_seg_end, seg_start, seg_end, enemy.global_position, broad_contact_radius, delta, velocity, sword_movement_damage_contribution, sword_movement_speed_cap)
+		if flesh_shapes.is_empty() and core_shapes.is_empty():
+			if contact.swept_distance > broad_contact_radius:
+				continue
+		elif contact.swept_distance > broad_contact_radius:
+			contact.swept_distance = 0.0
+		if not flesh_shapes.is_empty():
+			contact.contact_point = flesh_contact_position
+			contact.impact_normal = flesh_contact_normal
+			contact.blade_position = flesh_blade_fraction
+		elif not core_shapes.is_empty():
+			contact.contact_point = flesh_contact_position
+			contact.impact_normal = core_contact_normal
+			contact.blade_position = flesh_blade_fraction
 		# Hilt Bash is classified by the actual contact position along the whole
 		# (possibly curved) blade, not by distance from the player's body center.
 		var whole_blade_fraction: float = _blade_path_fraction_for_segment(current_blade_samples, seg_index, contact.blade_position)
@@ -4675,10 +4934,6 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			else:
 				_set_sword_event("HILT CONTACT IGNORED", contact.contact_point, 0.18)
 			continue
-		if contact.blade_position > 0.05:
-			flesh_overlap_this_frame = true
-			if get_combat_contact_setting("hit_reaction_enabled") >= 0.5 and get_combat_contact_setting("blade_sink_enabled") >= 0.5:
-				blade_sink_strength_active = maxf(blade_sink_strength_active, get_combat_contact_setting("blade_sink_strength"))
 		var physical_reaction_on: bool = get_combat_contact_setting("hit_reaction_enabled") >= 0.5 and get_combat_contact_setting("blade_physical_reaction_enabled") >= 0.5
 		var is_stab_motion: bool = thrust_contact or sword_style in [SwordStyle.THRUST, SwordStyle.THRUST_METRONOME]
 		if combat_contact_preset == 4:
@@ -4686,14 +4941,22 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			is_stab_motion = is_stab_motion or p4_form_blend < thrust_stage_end * 0.5
 		var target_velocity: Vector2 = (enemy as CharacterBody2D).velocity if enemy is CharacterBody2D else Vector2.ZERO
 		var relative_blade_velocity: Vector2 = contact.blade_velocity - target_velocity
-		var inward_alignment: float = -relative_blade_velocity.normalized().dot(contact.impact_normal.normalized()) if relative_blade_velocity.length_squared() > 1.0 and contact.impact_normal.length_squared() > 0.001 else 0.0
-		if physical_reaction_on and HitReaction.blade_physical_reaction_allowed(is_stab_motion, inward_alignment):
+		var reached_inner_core: bool = not core_shapes.is_empty()
+		var flesh_depth_contact: bool = not flesh_shapes.is_empty()
+		var physical_normal: Vector2 = core_contact_normal if reached_inner_core else contact.impact_normal
+		var inward_alignment: float = -relative_blade_velocity.normalized().dot(physical_normal.normalized()) if relative_blade_velocity.length_squared() > 1.0 and physical_normal.length_squared() > 0.001 else 0.0
+		inward_alignment = -relative_blade_velocity.normalized().dot(physical_normal.normalized()) if relative_blade_velocity.length_squared() > 1.0 and physical_normal.length_squared() > 0.001 else 0.0
+		if flesh_depth_contact:
+			flesh_overlap_this_frame = true
+			if get_combat_contact_setting("hit_reaction_enabled") >= 0.5 and get_combat_contact_setting("blade_sink_enabled") >= 0.5:
+				blade_sink_strength_active = maxf(blade_sink_strength_active, get_combat_contact_setting("blade_sink_strength"))
+		if physical_reaction_on and reached_inner_core and HitReaction.blade_physical_reaction_allowed(is_stab_motion, inward_alignment):
 			var reaction_strength: float = get_combat_contact_setting("blade_physical_reaction_strength")
-			var contact_reaction_angle: float = HitReaction.blade_physical_reaction_angle(contact.blade_velocity, target_velocity, contact.impact_normal, reaction_strength)
+			var contact_reaction_angle: float = HitReaction.blade_bone_reaction_angle(contact.blade_velocity, target_velocity, physical_normal, contact.blade_direction, reaction_strength, is_stab_motion)
 			if absf(contact_reaction_angle) > absf(selected_physical_reaction_angle):
 				selected_physical_reaction_angle = contact_reaction_angle
 			if not is_zero_approx(contact_reaction_angle):
-				_set_sword_event("BLADE GLANCE", contact.contact_point, 0.18)
+				_set_sword_event("BLADE BONE RESISTANCE", contact.contact_point, 0.18)
 		# Player body overlap alone never enters this path: reaching here already
 		# requires actual swept weapon geometry to touch the enemy. Do not cancel a
 		# valid blade hit merely because the combatants' bodies are close together.
@@ -4719,6 +4982,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				commitment_factor = lerpf(1.0, stroke_phase_speed, clampf(commitment_req, 0.0, 1.0))
 			var authored_damage_multiplier: float = lerpf(passive_sword_damage_multiplier, engaged_sword_damage_multiplier, authored_sword_engagement)
 			var impact_direction: Vector2 = contact.impact_normal
+			impact_direction = HitReaction.sword_knockback_direction(impact_direction, global_position, enemy.global_position, get_combat_contact_setting("sword_knockback_away_enabled") >= 0.5)
 			var forte_knockback: float = forte_knockback_multiplier if whole_blade_fraction >= forte_zone_start_fraction and whole_blade_fraction < forte_zone_end_fraction else 1.0
 			var reentry_stagger_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_stagger")), reentry_quality)
 			var reentry_damage_multiplier: float = lerpf(1.0, maxf(1.0, get_combat_hand_setting("bind_reentry_damage")), reentry_quality)
@@ -5873,6 +6137,8 @@ func _draw() -> void:
 		_draw_metronome_indicator_base()
 	_draw_chakram_aim_trail()
 	_draw_dash_aim_preview()
+	if get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5:
+		_draw_blade_bone_debug_shapes()
 	# The body is drawn here, ahead of the guard visuals, the sword, its fire and its
 	# trails, so the weapon and everything attached to it always read on top of the player
 	# instead of being cut off by their own torso. The aim previews stay underneath, where

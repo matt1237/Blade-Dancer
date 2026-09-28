@@ -10,8 +10,10 @@ class BloodDrop extends RefCounted:
 class SplitRemnant extends RefCounted:
 	var world_position: Vector2 = Vector2.ZERO
 	var cut_direction: Vector2 = Vector2.RIGHT
-	var body_color: Color = Color.WHITE
-	var radius: float = 18.0
+	var sprite_scale: float = 1.0
+	var half_textures: Array[ImageTexture] = []
+	var half_offsets: Array[Vector2] = []
+	var half_velocities: Array[Vector2] = []
 	var life: float = 0.0
 	var total_life: float = 0.0
 
@@ -79,6 +81,9 @@ class FloatingDamageNumber extends RefCounted:
 @export_range(0.0, 1.0, 0.05) var enemy_deformation_min_quality: float = 0.65
 ## Maximum compression along the hit direction at a perfect-quality contact.
 @export_range(0.0, 0.2, 0.01) var enemy_deformation_max_compression: float = 0.07
+@export_range(0.0, 3.0, 0.05) var enemy_deformation_hd_strength: float = 2.0
+var hit_squash_strength: float = 200.0
+var kill_blood_chance: float = 30.0
 @export var enemy_deformation_duration: float = 0.1
 @export_range(0.0, 0.1, 0.005) var enemy_deformation_spring_overshoot: float = 0.018
 
@@ -91,6 +96,7 @@ class FloatingDamageNumber extends RefCounted:
 @export_category("High Quality Blood")
 @export var enable_blood_splatter: bool = true
 @export_range(0.0, 1.0, 0.05) var blood_min_quality: float = 0.8
+
 @export var blood_drop_count: int = 9
 @export var blood_drop_speed: float = 150.0
 @export var blood_drop_lifetime: float = 0.42
@@ -261,14 +267,30 @@ func trigger_parry_focus_tuned(impact_position: Vector2, travel_direction: Vecto
 
 func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Vector2, cut_direction: Vector2, contact_quality: float, killed: bool, sword_hit: bool = true, directional_presentation: bool = false) -> void:
 	if not enabled: return
+	var hit_squash_for_contact: float = hit_squash_strength
+	var kill_blood_chance_for_contact: float = kill_blood_chance
+	if enemy != null and is_instance_valid(enemy) and enemy.player_ref != null and sword_hit:
+		hit_squash_for_contact = enemy.player_ref.get_combat_contact_setting("hd_hit_squash_strength")
+		kill_blood_chance_for_contact = enemy.player_ref.get_combat_contact_setting("kill_blood_splatter_chance")
 	if enable_enemy_hit_deformation and contact_quality >= enemy_deformation_min_quality and enemy != null and is_instance_valid(enemy):
 		var quality_range: float = maxf(0.001, 1.0 - enemy_deformation_min_quality)
 		var deformation_strength: float = clampf((contact_quality - enemy_deformation_min_quality) / quality_range, 0.0, 1.0)
-		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, enemy_deformation_max_compression * deformation_strength, enemy_deformation_spring_overshoot, directional_presentation and sword_hit)
+		var hd_enemy: bool = enemy._is_hd_visual() and sword_hit
+		var configured_hd_squash: float = clampf(hit_squash_for_contact / 100.0, 0.0, 3.0)
+		var hd_squash_multiplier: float = configured_hd_squash if hd_enemy else 1.0
+		var maximum_compression: float = minf(0.7, enemy_deformation_max_compression * hd_squash_multiplier)
+		var spring_overshoot: float = minf(0.35, enemy_deformation_spring_overshoot * hd_squash_multiplier)
+		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, maximum_compression * deformation_strength, spring_overshoot * deformation_strength, hd_enemy)
 	if enable_blood_splatter and contact_quality >= blood_min_quality:
-		_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit)
-	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality:
-		_spawn_split_remnant(enemy.global_position, cut_direction, enemy.remnant_color, enemy.remnant_radius)
+		if killed and sword_hit:
+			if randf() * 100.0 < clampf(kill_blood_chance_for_contact, 0.0, 100.0):
+				_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation)
+		elif not killed:
+			_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit)
+	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality and enemy != null and is_instance_valid(enemy) and enemy._is_hd_visual() and enemy.hd_enemy_sprite != null and enemy.hd_enemy_sprite.visible and enemy.hd_enemy_sprite.sprite_frames != null:
+		var snapped_cut_direction: Vector2 = _snap_split_cut_direction(cut_direction)
+		var sprite_texture: Texture2D = enemy.hd_enemy_sprite.sprite_frames.get_frame_texture(enemy.hd_enemy_sprite.animation, enemy.hd_enemy_sprite.frame)
+		_spawn_split_remnant(enemy.global_position, snapped_cut_direction, sprite_texture, enemy.hd_enemy_base_scale, enemy.hd_enemy_sprite.flip_h)
 
 func present_chakram_bat(chakram: Chakram, launch_direction: Vector2, contact_quality: float) -> void:
 	if not enabled or chakram == null or not is_instance_valid(chakram): return
@@ -342,6 +364,8 @@ func _should_trigger_time_slow(contact_quality: float) -> bool:
 	return false
 
 func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false) -> void:
+	if not enable_blood_splatter or contact_quality < blood_min_quality:
+		return
 	var base_direction: Vector2 = impact_velocity.normalized() if impact_velocity.length_squared() > 0.001 else Vector2.RIGHT
 	var scaled_count: int = maxi(1, roundi(float(blood_drop_count) * lerpf(0.7, 1.25, contact_quality)))
 	# The same existing blood emitter keeps its original broad fan when OFF;
@@ -358,12 +382,92 @@ func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_qual
 		drop.life = drop.total_life
 		blood_drops.append(drop)
 
-func _spawn_split_remnant(spawn_position: Vector2, cut_direction: Vector2, body_color: Color, radius: float) -> void:
+func _snap_split_cut_direction(cut_direction: Vector2) -> Vector2:
+	if cut_direction.length_squared() < 0.001:
+		return Vector2.RIGHT
+	var normalized: Vector2 = cut_direction.normalized()
+	if absf(normalized.x) >= absf(normalized.y):
+		return Vector2.RIGHT if normalized.x >= 0.0 else Vector2.LEFT
+	return Vector2.DOWN if normalized.y >= 0.0 else Vector2.UP
+
+func _extract_frame_texture(source: Texture2D) -> ImageTexture:
+	if source == null:
+		return null
+	if source is AtlasTexture:
+		var atlas_texture: AtlasTexture = source as AtlasTexture
+		if atlas_texture.atlas == null:
+			return null
+		var atlas_image: Image = atlas_texture.atlas.get_image()
+		if atlas_image == null or atlas_image.is_empty():
+			return null
+		var region: Rect2i = Rect2i(atlas_texture.region.position, atlas_texture.region.size)
+		if region.size.x <= 0 or region.size.y <= 0:
+			return null
+		var frame_image: Image = atlas_image.get_region(region)
+		if frame_image == null or frame_image.is_empty():
+			return null
+		var source_size: Vector2i = Vector2i(atlas_texture.get_size())
+		if source_size.x > 0 and source_size.y > 0 and Vector2i(atlas_texture.region.size) != source_size:
+			var crop_x: int = maxi(0, floori(float(region.size.x - source_size.x) * 0.5))
+			var crop_y: int = maxi(0, floori(float(region.size.y - source_size.y) * 0.5))
+			var crop_width: int = mini(source_size.x, frame_image.get_width() - crop_x)
+			var crop_height: int = mini(source_size.y, frame_image.get_height() - crop_y)
+			if crop_width > 0 and crop_height > 0:
+				frame_image = frame_image.get_region(Rect2i(crop_x, crop_y, crop_width, crop_height))
+		return ImageTexture.create_from_image(frame_image)
+	var source_image: Image = source.get_image()
+	if source_image == null or source_image.is_empty():
+		return null
+	return ImageTexture.create_from_image(source_image)
+
+func _split_image_halves(source_image: Image, horizontal_cut: bool) -> Array[ImageTexture]:
+	var halves: Array[ImageTexture] = []
+	if source_image == null or source_image.is_empty():
+		return halves
+	var cut_x: int = maxi(1, floori(float(source_image.get_width()) / 2.0))
+	var cut_y: int = maxi(1, floori(float(source_image.get_height()) / 2.0))
+	var regions: Array[Rect2i] = []
+	if horizontal_cut:
+		regions = [Rect2i(0, 0, source_image.get_width(), cut_y), Rect2i(0, cut_y, source_image.get_width(), source_image.get_height() - cut_y)]
+	else:
+		regions = [Rect2i(0, 0, cut_x, source_image.get_height()), Rect2i(cut_x, 0, source_image.get_width() - cut_x, source_image.get_height())]
+	for region: Rect2i in regions:
+		if region.size.x <= 0 or region.size.y <= 0:
+			return []
+		var half_image: Image = source_image.get_region(region)
+		halves.append(ImageTexture.create_from_image(half_image))
+	return halves
+
+func _split_half_textures(source: Texture2D, horizontal_cut: bool) -> Array[ImageTexture]:
+	var frame_texture: ImageTexture = _extract_frame_texture(source)
+	if frame_texture == null:
+		return []
+	return _split_image_halves(frame_texture.get_image(), horizontal_cut)
+
+func _spawn_split_remnant(spawn_position: Vector2, cut_direction: Vector2, source: Texture2D, sprite_scale: float, flip_h: bool) -> void:
+	if source == null:
+		return
+	var extracted_frame: ImageTexture = _extract_frame_texture(source)
+	if extracted_frame == null:
+		return
+	var source_size: Vector2 = extracted_frame.get_size()
+	if source_size.x < 2.0 or source_size.y < 2.0:
+		return
 	var remnant: SplitRemnant = SplitRemnant.new()
+	var snapped_direction: Vector2 = _snap_split_cut_direction(cut_direction)
+	var horizontal_cut: bool = absf(snapped_direction.y) > 0.5
 	remnant.world_position = spawn_position
-	remnant.cut_direction = cut_direction.normalized() if cut_direction.length_squared() > 0.001 else Vector2.RIGHT
-	remnant.body_color = body_color
-	remnant.radius = radius
+	remnant.cut_direction = snapped_direction
+	remnant.sprite_scale = sprite_scale
+	remnant.half_textures = _split_image_halves(extracted_frame.get_image(), horizontal_cut)
+	if remnant.half_textures.size() != 2:
+		return
+	var extent: float = (source_size.y if horizontal_cut else source_size.x) * sprite_scale * 0.5
+	var separation_normal: Vector2 = snapped_direction.orthogonal()
+	if flip_h and not horizontal_cut:
+		separation_normal.x *= -1.0
+	remnant.half_offsets = [-separation_normal * extent * 0.25, separation_normal * extent * 0.25]
+	remnant.half_velocities = [-separation_normal * 38.0 + Vector2.UP * 14.0, separation_normal * 38.0 + Vector2.UP * 14.0]
 	remnant.total_life = split_kill_duration
 	remnant.life = remnant.total_life
 	split_remnants.append(remnant)
@@ -381,6 +485,12 @@ func _update_world_particles(delta: float) -> void:
 	for index: int in range(split_remnants.size() - 1, -1, -1):
 		var remnant: SplitRemnant = split_remnants[index]
 		remnant.life -= delta
+		for half_index: int in range(remnant.half_offsets.size()):
+			var half_velocity: Vector2 = remnant.half_velocities[half_index]
+			half_velocity += Vector2.DOWN * 180.0 * delta
+			half_velocity *= maxf(0.0, 1.0 - delta * 1.4)
+			remnant.half_velocities[half_index] = half_velocity
+			remnant.half_offsets[half_index] += half_velocity * delta
 		if remnant.life <= 0.0: split_remnants.remove_at(index)
 
 func _update_damage_numbers(delta: float) -> void:
@@ -457,34 +567,37 @@ func _draw() -> void:
 func _draw_blood_drops() -> void:
 	for drop: BloodDrop in blood_drops:
 		var life_ratio: float = clampf(drop.life / maxf(drop.total_life, 0.001), 0.0, 1.0)
-		var local_position: Vector2 = drop.world_position - global_position
+		var local_position: Vector2 = _world_to_fx_local(drop.world_position)
 		var drop_color: Color = Color(blood_color.r, blood_color.g, blood_color.b, blood_color.a * life_ratio)
 		var trail_direction: Vector2 = -drop.velocity.normalized() if drop.velocity.length_squared() > 0.001 else Vector2.ZERO
 		draw_line(local_position, local_position + trail_direction * drop.radius * 2.4, drop_color, drop.radius, true)
 		draw_circle(local_position, drop.radius, drop_color)
 
+func _world_to_fx_local(world_position: Vector2) -> Vector2:
+	var parent_node: Node = get_parent()
+	if parent_node is Node2D:
+		return (parent_node as Node2D).to_local(world_position)
+	return to_local(world_position)
+
 func _draw_split_remnants() -> void:
 	for remnant: SplitRemnant in split_remnants:
 		var life_ratio: float = clampf(remnant.life / maxf(remnant.total_life, 0.001), 0.0, 1.0)
-		var progress: float = 1.0 - life_ratio
-		var cut_tangent: Vector2 = remnant.cut_direction
-		var separation_normal: Vector2 = cut_tangent.orthogonal()
-		var base_position: Vector2 = remnant.world_position - global_position + Vector2.DOWN * progress * progress * 18.0
-		var separation: float = split_half_separation * sin(progress * PI * 0.5)
-		var body_color: Color = Color(remnant.body_color.r, remnant.body_color.g, remnant.body_color.b, life_ratio)
-		for half_index: int in range(2):
-			var side: float = -1.0 if half_index == 0 else 1.0
-			var half_center: Vector2 = base_position + separation_normal * separation * 0.5 * side
-			var half_polygon: PackedVector2Array = PackedVector2Array()
-			var start_angle: float = PI if side < 0.0 else 0.0
-			for arc_index: int in range(10):
-				var arc_angle: float = start_angle + float(arc_index) * PI / 9.0
-				var arc_point: Vector2 = cut_tangent * cos(arc_angle) * remnant.radius + separation_normal * sin(arc_angle) * remnant.radius
-				half_polygon.append(half_center + arc_point)
-			draw_colored_polygon(half_polygon, body_color)
-			var seam_alpha: float = life_ratio * maxf(0.0, 1.0 - progress * 3.0)
-			var seam_color: Color = Color(split_cut_flash_color.r, split_cut_flash_color.g, split_cut_flash_color.b, split_cut_flash_color.a * seam_alpha)
-			draw_line(half_center - cut_tangent * remnant.radius, half_center + cut_tangent * remnant.radius, seam_color, 3.0, true)
+		var base_position: Vector2 = _world_to_fx_local(remnant.world_position)
+		for half_index: int in range(remnant.half_textures.size()):
+			var half_texture: ImageTexture = remnant.half_textures[half_index]
+			var half_offset: Vector2 = remnant.half_offsets[half_index]
+			var half_position: Vector2 = base_position + half_offset
+			var half_tint: Color = Color(1.0, 1.0, 1.0, life_ratio)
+			draw_set_transform(half_position, 0.0, Vector2.ONE * remnant.sprite_scale)
+			draw_texture(half_texture, -half_texture.get_size() * 0.5, half_tint)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			var flash_alpha: float = life_ratio * maxf(0.0, 1.0 - (1.0 - life_ratio) * 4.0)
+			if flash_alpha > 0.0:
+				var cut_color: Color = Color(split_cut_flash_color.r, split_cut_flash_color.g, split_cut_flash_color.b, split_cut_flash_color.a * flash_alpha)
+				var cut_tangent: Vector2 = remnant.cut_direction
+				draw_set_transform(half_position, 0.0, Vector2.ONE * remnant.sprite_scale)
+				draw_line(-cut_tangent * 8.0, cut_tangent * 8.0, cut_color, 2.0, true)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _setup_screen_overlay() -> void:
 	overlay_layer = CanvasLayer.new()

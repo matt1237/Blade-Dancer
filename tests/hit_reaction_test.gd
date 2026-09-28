@@ -1,11 +1,11 @@
 class_name HitReactionTest extends Node
 
-func test_hit_reaction_tab_has_seven_controls_and_existing_per_preset_persistence() -> void:
+func test_hit_reaction_tab_has_eleven_controls_and_existing_per_preset_persistence() -> void:
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	var tabs: TabContainer = TabContainer.new()
 	menu._build_hit_reaction_tab(tabs)
 	assert(tabs.get_node("HIT REACTION") is ScrollContainer)
-	assert(menu.contact_controls.size() == 7)
+	assert(menu.contact_controls.size() == HitReaction.DEFAULTS.size())
 	for key: String in HitReaction.DEFAULTS.keys():
 		assert(menu.contact_controls.has(key), "Every canonical Hit Reaction setting must have one visible control: %s" % key)
 		var row: Dictionary = menu.contact_controls[key]
@@ -23,6 +23,10 @@ func test_hit_reaction_tab_has_seven_controls_and_existing_per_preset_persistenc
 	player.set_combat_contact_setting("blade_physical_reaction_strength", 85.0)
 	player.set_combat_contact_setting("blade_sink_enabled", 1.0)
 	player.set_combat_contact_setting("blade_sink_strength", 70.0)
+	player.set_combat_contact_setting("sword_knockback_away_enabled", 1.0)
+	player.set_combat_contact_setting("hd_hit_squash_strength", 250.0)
+	player.set_combat_contact_setting("kill_blood_splatter_chance", 45.0)
+	player.set_combat_contact_setting("blade_bone_debug_enabled", 1.0)
 	player.set_combat_contact_setting("flesh_contact_drag", 99.0)
 	player.set_combat_contact_setting("flesh_contact_drag_recovery", 96.0)
 	player.set_combat_contact_setting("hilt_contact_drag", 98.0)
@@ -37,37 +41,57 @@ func test_hit_reaction_tab_has_seven_controls_and_existing_per_preset_persistenc
 	assert(player.get_combat_contact_setting("blade_physical_reaction_strength") == 85.0)
 	assert(player.get_combat_contact_setting("blade_sink_enabled") == 1.0)
 	assert(player.get_combat_contact_setting("blade_sink_strength") == 70.0)
+	assert(player.get_combat_contact_setting("sword_knockback_away_enabled") == 1.0)
+	assert(player.get_combat_contact_setting("hd_hit_squash_strength") == 250.0)
+	assert(player.get_combat_contact_setting("kill_blood_splatter_chance") == 45.0)
+	assert(player.get_combat_contact_setting("blade_bone_debug_enabled") == 1.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 7)
+	assert(HitReaction.DEFAULTS.size() == 11)
 	player.free()
 	menu.free()
 	tabs.free()
 
-func test_glancing_physical_reaction_deflects_tangentially_but_head_on_and_stabs_pass_through() -> void:
+func test_inner_bone_boundary_allows_deep_cut_and_broadside_or_stab_yield_is_smooth() -> void:
+	assert(is_equal_approx(HitReaction.blade_inner_bone_radius(20.0), 10.0), "The core is 50% of outer radius, leaving a deep flesh cut.")
+	assert(HitReaction.DEFAULTS["hd_hit_squash_strength"] == 200.0)
+	assert(HitReaction.DEFAULTS["kill_blood_splatter_chance"] == 30.0)
+	var circle_shape: CircleShape2D = CircleShape2D.new()
+	circle_shape.radius = 20.0
+	var inner_circle: CircleShape2D = HitReaction.scale_inner_bone_shape(circle_shape) as CircleShape2D
+	assert(is_equal_approx(inner_circle.radius, 10.0))
+	var rectangle_shape: RectangleShape2D = RectangleShape2D.new()
+	rectangle_shape.size = Vector2(40.0, 20.0)
+	var inner_rectangle: RectangleShape2D = HitReaction.scale_inner_bone_shape(rectangle_shape) as RectangleShape2D
+	assert(inner_rectangle.size.is_equal_approx(Vector2(20.0, 10.0)))
+	assert(is_equal_approx(HitReaction.blade_inner_bone_radius(-3.0), 0.0))
 	var normal: Vector2 = Vector2.DOWN
-	var head_on_angle: float = HitReaction.blade_physical_reaction_angle(Vector2.UP * 500.0, Vector2.ZERO, normal, 100.0)
-	var glancing_angle: float = HitReaction.blade_physical_reaction_angle(Vector2(468.0, -175.0), Vector2.ZERO, normal, 100.0)
-	assert(is_zero_approx(head_on_angle), "A committed head-on cut must pass through without blade pinning.")
-	assert(absf(glancing_angle) > 0.1 and absf(glancing_angle) <= HitReaction.MAX_PHYSICAL_REACTION_ANGLE, "A glancing cut should yield along the body's tangent, within the authored arc limit.")
-	assert(not HitReaction.blade_physical_reaction_allowed(true, 0.35), "A stab is always excluded even when its approach angle is glancing.")
-	assert(not HitReaction.blade_physical_reaction_allowed(false, 0.9), "A head-on forte or tip cut passes through.")
-	assert(HitReaction.blade_physical_reaction_allowed(false, 0.35), "Only a glancing cut is eligible for tangential yielding.")
-	var departing_angle: float = HitReaction.blade_physical_reaction_angle(Vector2(468.0, 175.0), Vector2.ZERO, normal, 100.0)
-	assert(is_zero_approx(departing_angle), "A cut already leaving the body receives no physical deflection.")
-	var moving_head_on_angle: float = HitReaction.blade_physical_reaction_angle(Vector2.UP * 500.0, Vector2(0.0, -50.0), normal, 100.0)
-	assert(is_zero_approx(moving_head_on_angle), "Target movement is included when classifying head-on contact.")
-	var approaching: float = HitReaction.advance_blade_physical_reaction(0.0, glancing_angle, 0.016)
+	var tangent_cut: float = HitReaction.blade_bone_reaction_angle(Vector2.RIGHT * 500.0, Vector2.ZERO, normal, Vector2.RIGHT, 100.0, false)
+	var broadside_cut: float = HitReaction.blade_bone_reaction_angle(Vector2.RIGHT * 500.0, Vector2.ZERO, normal, Vector2.UP, 100.0, false)
+	var stab_recoil: float = HitReaction.blade_bone_reaction_angle(Vector2.UP * 500.0, Vector2.ZERO, normal, Vector2.UP, 100.0, true)
+	assert(absf(tangent_cut) > 0.05, "A cut at the core should be guided along its boundary.")
+	assert(absf(broadside_cut) > absf(tangent_cut), "A broadside cut near perpendicular to the blade axis should recoil more to avoid sticking.")
+	assert(absf(stab_recoil) > 0.05, "A stab should rebound smoothly from the inner core.")
+	assert(not HitReaction.blade_physical_reaction_allowed(false, -0.4), "A blade already leaving the target should not be redirected.")
+	var approaching: float = HitReaction.advance_blade_physical_reaction(0.0, broadside_cut, 0.016)
 	var releasing: float = HitReaction.advance_blade_physical_reaction(approaching, 0.0, 0.016)
-	assert(absf(approaching) > 0.0 and absf(approaching) < absf(glancing_angle), "Contact response eases in rather than snapping.")
-	assert(absf(releasing) < absf(approaching), "Once contact ends, the angle eases back to the authored path.")
+	assert(absf(approaching) > 0.0 and absf(approaching) < absf(broadside_cut), "Core response eases in rather than snapping.")
+	assert(absf(releasing) < absf(approaching), "Once contact ends, response eases back to the authored path.")
 
-func test_blade_sink_is_bounded_and_exists_only_during_master_enabled_live_overlap() -> void:
-	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0), 0.82))
-	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 50.0), 0.91))
+func test_blade_sink_uses_full_ninety_percent_range_only_during_master_enabled_overlap() -> void:
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0), 0.1))
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 50.0), 0.55))
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 0.0), 1.0), "Zero strength must never slow the swing.")
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(false, true, true, 100.0), 1.0), "The master switch overrides sink.")
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, false, true, 100.0), 1.0))
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, false, 100.0), 1.0), "No contact tail may slow a free swing.")
+
+func test_sword_knockback_direction_toggle_is_independent_and_only_reverses_when_enabled() -> void:
+	var normal_direction: Vector2 = Vector2.UP
+	var player_position: Vector2 = Vector2.ZERO
+	var target_position: Vector2 = Vector2.RIGHT * 100.0
+	assert(HitReaction.sword_knockback_direction(normal_direction, player_position, target_position, false) == normal_direction)
+	assert(HitReaction.sword_knockback_direction(normal_direction, player_position, target_position, true) == Vector2.RIGHT)
 
 func test_authored_pose_reaction_keeps_the_hand_anchor_and_rotates_the_complete_blade() -> void:
 	var player: Player = Player.new()
@@ -159,8 +183,39 @@ func test_hd_hit_axis_squish_resets_cleanly_after_the_hit() -> void:
 
 func test_hit_axis_deformation_is_preserved_for_hd_without_changing_baseline() -> void:
 	var fx: CombatPresentationFX = CombatPresentationFX.new()
-	var enemy: Enemy = Enemy.new()
-	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.DOWN * 500.0, Vector2.RIGHT, 1.0, false, true, false)
+	fx.enable_split_kill = false
+	var enemy: Enemy = Turkey.new()
+	var hd_player: Player = Player.new()
+	hd_player.visual_style = "hd"
+	hd_player.set_combat_contact_setting("hd_hit_squash_strength", 200.0)
+	hd_player.set_combat_contact_setting("kill_blood_splatter_chance", 30.0)
+	enemy.player_ref = hd_player
+	enemy.impact_deformation_directional_hd = true
+	fx.hit_squash_strength = 0.0
+	hd_player.set_combat_contact_setting("hd_hit_squash_strength", 0.0)
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.DOWN * 500.0, Vector2.RIGHT, 1.0, false, true, true)
+	assert(is_zero_approx(enemy.impact_deformation_compression), "Zero slider suppresses HD squash.")
+	fx.enable_blood_splatter = false
+	hd_player.set_combat_contact_setting("kill_blood_splatter_chance", 0.0)
+	fx.blood_drops.clear()
+	fx.kill_blood_chance = 0.0
+	fx.blood_min_quality = 0.0
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.RIGHT, Vector2.RIGHT, 1.0, true, true, true)
+	assert(fx.blood_drops.is_empty(), "A 0% sword-kill blood chance suppresses the extra kill burst.")
+	fx.enable_blood_splatter = true
+	hd_player.set_combat_contact_setting("kill_blood_splatter_chance", 100.0)
+	fx.kill_blood_chance = 100.0
+	fx.blood_drops.clear()
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.RIGHT, Vector2.RIGHT, 1.0, true, true, true)
+	assert(not fx.blood_drops.is_empty(), "A 100% sword-kill blood chance always adds the kill burst.")
+	assert(fx.split_remnants.is_empty(), "Enemies in classic mode do not split.")
+	fx.hit_squash_strength = 2.0
+	hd_player.set_combat_contact_setting("hd_hit_squash_strength", 200.0)
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.DOWN * 500.0, Vector2.RIGHT, 1.0, false, true, true)
+	assert(enemy.impact_deformation_compression > 0.0, "Default 200% slider enables HD squash.")
+	assert(enemy.impact_deformation_compression <= 0.7)
+	enemy.impact_deformation_directional_hd = false
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.DOWN * 500.0, Vector2.RIGHT, 1.0, false, false, false)
 	assert(not enemy.impact_deformation_directional_hd)
 	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.DOWN * 500.0, Vector2.RIGHT, 1.0, false, true, true)
 	assert(enemy.impact_deformation_directional_hd)
@@ -170,4 +225,5 @@ func test_hit_axis_deformation_is_preserved_for_hd_without_changing_baseline() -
 	squash = enemy._impact_draw_transform()
 	assert(squash.x.length() < squash.y.length(), "Horizontal impact compresses horizontally.")
 	enemy.free()
+	hd_player.free()
 	fx.free()
