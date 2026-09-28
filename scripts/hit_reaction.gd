@@ -1,6 +1,7 @@
 class_name HitReaction extends RefCounted
 ## Shared defaults and contact math for the per-preset Hit Reaction controls.
 ## Presentation, inner-core blade resistance, and live-overlap sink stay separate.
+const DEFAULT_INNER_BONE_SIZE_PERCENT: float = 50.0
 const DEFAULTS: Dictionary = {
 	"hit_reaction_enabled": 0.0,
 	"hit_visual_recoil": 7.0,
@@ -11,38 +12,53 @@ const DEFAULTS: Dictionary = {
 	"blade_sink_strength": 45.0,
 	"sword_knockback_away_enabled": 0.0,
 	"blade_bone_debug_enabled": 0.0,
+	"blade_bone_core_size_percent": DEFAULT_INNER_BONE_SIZE_PERCENT,
 	"hd_hit_squash_strength": 200.0,
-	"kill_blood_splatter_chance": 30.0,
+	"blood_amount_percent": 100.0,
+	"blood_drop_size_percent": 100.0,
 }
 
 const MAX_BLADE_SINK_SLOWDOWN: float = 0.9
-const INNER_BONE_RADIUS_FRACTION: float = 0.5
-const BONE_RESPONSE_SMOOTHING: float = 14.0
-const BONE_REACTION_MAX_ANGLE: float = 0.6108652382
+const INNER_BONE_RADIUS_FRACTION: float = DEFAULT_INNER_BONE_SIZE_PERCENT / 100.0
+const BONE_CONTACT_RESPONSE_SMOOTHING: float = 40.0
+const BONE_RELEASE_RESPONSE_SMOOTHING: float = 16.0
+const BONE_REACTION_MAX_ANGLE: float = 0.872664626
 const MINIMUM_BONE_REACTION_RATIO: float = 0.12
 const MAX_BONE_RECOIL_RATIO: float = 0.7
 const BROADSIDE_RECOIL_START: float = 0.82
+## Contact-time slowdowns ease in and, crucially, ease back out so the un-bite is
+## smooth instead of snapping the swing rate back in a single frame.
+const BLADE_SINK_CONTACT_SMOOTHING: float = 24.0
+const BLADE_SINK_RELEASE_SMOOTHING: float = 12.0
+## The inner core yields as a gentle swing-rate cut, not a rotation: at full
+## strength the live swing advances at this fraction while driving into the core.
+## Much milder than a Bind's bound-sword speed, so the blade resists without stalling.
+const BLADE_CORE_YIELD_FLOOR: float = 0.75
 
 static func value(settings: Dictionary, key: String) -> float:
 	return float(settings.get(key, DEFAULTS.get(key, 0.0)))
 
-static func blade_inner_bone_radius(outer_radius: float) -> float:
-	return maxf(0.0, outer_radius) * INNER_BONE_RADIUS_FRACTION
+static func inner_bone_fraction(size_percent: float) -> float:
+	return clampf(size_percent / 100.0, 0.0, 1.0)
 
-static func scale_inner_bone_shape(outer_shape: Shape2D) -> Shape2D:
+static func blade_inner_bone_radius(outer_radius: float, size_percent: float = INNER_BONE_RADIUS_FRACTION * 100.0) -> float:
+	return maxf(0.0, outer_radius) * inner_bone_fraction(size_percent)
+
+static func scale_inner_bone_shape(outer_shape: Shape2D, size_fraction: float = INNER_BONE_RADIUS_FRACTION) -> Shape2D:
 	if outer_shape == null:
 		return null
+	var scale_fraction: float = clampf(size_fraction, 0.0, 1.0)
 	var inner_shape: Shape2D = outer_shape.duplicate() as Shape2D
 	if inner_shape is CircleShape2D:
 		var circle: CircleShape2D = inner_shape as CircleShape2D
-		circle.radius *= INNER_BONE_RADIUS_FRACTION
+		circle.radius *= scale_fraction
 	elif inner_shape is RectangleShape2D:
 		var rectangle: RectangleShape2D = inner_shape as RectangleShape2D
-		rectangle.size *= INNER_BONE_RADIUS_FRACTION
+		rectangle.size *= scale_fraction
 	elif inner_shape is CapsuleShape2D:
 		var capsule: CapsuleShape2D = inner_shape as CapsuleShape2D
-		capsule.radius *= INNER_BONE_RADIUS_FRACTION
-		capsule.height *= INNER_BONE_RADIUS_FRACTION
+		capsule.radius *= scale_fraction
+		capsule.height *= scale_fraction
 	else:
 		return null
 	return inner_shape
@@ -52,7 +68,8 @@ static func blade_physical_reaction_allowed(_is_stab_motion: bool, inward_alignm
 	return inward_alignment > 0.02
 
 static func advance_blade_physical_reaction(current_angle: float, pending_angle: float, delta: float) -> float:
-	return lerpf(current_angle, pending_angle, clampf(maxf(delta, 0.0) * BONE_RESPONSE_SMOOTHING, 0.0, 1.0))
+	var smoothing: float = BONE_CONTACT_RESPONSE_SMOOTHING if absf(pending_angle) > absf(current_angle) else BONE_RELEASE_RESPONSE_SMOOTHING
+	return lerpf(current_angle, pending_angle, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
 
 ## A shallow-to-deep cut is guided along the core; broadside cuts and stabs yield outward smoothly.
 static func blade_bone_reaction_angle(blade_velocity: Vector2, target_velocity: Vector2, impact_normal: Vector2, blade_axis: Vector2, strength: float, stab_motion: bool) -> float:
@@ -91,3 +108,22 @@ static func blade_sink_time_multiplier(master_enabled: bool, sink_enabled: bool,
 		return 1.0
 	var strength_ratio: float = clampf(strength / 100.0, 0.0, 1.0)
 	return 1.0 - MAX_BLADE_SINK_SLOWDOWN * strength_ratio
+
+## The bite ramps in on contact and eases back out after separation. The smoothed
+## value is the live swing-rate multiplier, so release never snaps the cadence.
+static func advance_blade_sink(current: float, target: float, delta: float) -> float:
+	var smoothing: float = BLADE_SINK_CONTACT_SMOOTHING if target < current else BLADE_SINK_RELEASE_SMOOTHING
+	return lerpf(current, target, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
+
+## Target swing-rate multiplier for the inner core: 1.0 when the blade is not
+## driving inward, easing toward BLADE_CORE_YIELD_FLOOR as it presses deeper.
+static func blade_core_yield_target(strength: float, active: bool, inward_alignment: float) -> float:
+	if not active:
+		return 1.0
+	var strength_ratio: float = clampf(strength / 100.0, 0.0, 1.0)
+	var depth: float = clampf(inward_alignment, 0.0, 1.0)
+	return 1.0 - (1.0 - BLADE_CORE_YIELD_FLOOR) * strength_ratio * depth
+
+static func advance_blade_core_yield(current: float, target: float, delta: float) -> float:
+	var smoothing: float = BONE_CONTACT_RESPONSE_SMOOTHING if target < current else BONE_RELEASE_RESPONSE_SMOOTHING
+	return lerpf(current, target, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))

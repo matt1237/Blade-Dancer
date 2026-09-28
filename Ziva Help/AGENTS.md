@@ -5,7 +5,7 @@ Work on Blade Dancer efficiently, conservatively, and with minimal unnecessary r
 Prefer targeted inspection and small patches over broad rewrites.
 
 ## Golden Rules
-1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules.
+1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules - every single time.
 2. Ask clarifying questions whenever missing information could materially change the implementation or the direction of a discussion. Ask before implementation when scope, intended behavior, constraints, or design choices are unclear; during discussion, ask as soon as a user's preference or meaning is ambiguous. Continue independent work that does not depend on the answer, and do not guess on a consequential decision.
 3. DO NOT scan the entire project unless the task genuinely requires it.
 4. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
@@ -21,6 +21,45 @@ Prefer targeted inspection and small patches over broad rewrites.
 	- what was ruled out
 	- the next most likely cause
 13. Never add a redundant feature, slider, timer/cooldown, state variable, code path, or helper for behavior an existing system already owns. Locate and extend the canonical implementation instead of creating parallel or duplicated logic/UI. If a behavior is genuinely distinct, explain its distinct lifecycle and purpose before adding a separate authority; ask if that distinction is unclear.
+14. ALWAYS compare version control against current files when implementing, tuning, or bug-fixing. Before forming a hypothesis, diff the current files against the last known-good state and read the diff. See "Baseline Comparison Protocol — Git & Working-Tree First" below. A regression is found by diffing what changed, not by re-reasoning the whole subsystem.
+
+## Baseline Comparison Protocol — Git & Working-Tree First
+
+Before implementing, tuning, or bug-fixing anything that touches an existing
+system, compare the current files against the last known-good state. The answer
+to "what changed?" usually lives in version control, not in a fresh hypothesis.
+This is the FIRST step of every implement / tune / fix task — not an optional
+last resort.
+
+Mandatory first steps:
+1. `git status` and `git log --oneline -n 20` — know the recent commits and
+   exactly what is uncommitted in the working tree.
+2. `git diff <last-known-good>..HEAD -- <relevant files>` for every file the task
+   touches, and `git diff -- <file>` for uncommitted work.
+3. Read that diff line by line BEFORE editing anything. Compare baseline vs
+   current for the exact functions/symbols involved.
+4. Only once the diff is understood, form a hypothesis and patch minimally.
+
+Rules:
+- A regression — something that used to work and now does not — MUST be diffed
+  against the last commit where it worked. Find the change that broke it; do not
+  rebuild the system around it.
+- Never rebuild, rewrite, or add parallel systems/tuners for behavior a previous
+  revision already owned and that a small patch can restore.
+- When a symptom "used to be fine," treat the diff between then and now as the
+  primary suspect list — not the entire subsystem.
+- Do not begin speculative rebuilding while a diff against the baseline is
+  unexplored. Three failed hypotheses means: stop, diff, summarize (Rule 12).
+- `git log -S <symbol>` / `git log -p -- <file>` locate when a specific line
+  changed, even across many commits.
+
+Incident (2026-09-28): A one-line regression (`_world_to_fx_local` converted
+particles through the PARENT transform instead of the node's own transform, so
+every particle drew at roughly double its world position, off-screen) presented
+as "the blood is gone." It was misdiagnosed as a dead blood system: a brand-new
+spray was rebuilt and two new tuners added — roughly three hours of prompting.
+`git diff <baseline>..HEAD` located the offending line in minutes. Treat this as
+the canonical failure mode this rule exists to prevent.
 
 ## Efficient Investigation Protocol
 For every task:
@@ -44,6 +83,9 @@ Examples:
 - resource names
 
 Do not recursively read every script.
+Also search version control for the same symbol (`git log -S <symbol>`,
+`git log -p -- <file>`) and diff baseline vs current — see "Baseline Comparison
+Protocol — Git & Working-Tree First".
 
 ### 3. Inspect narrowly
 Open only the files directly connected to the target.

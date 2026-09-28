@@ -785,10 +785,11 @@ var moulinet_aim_direction_smoothed: float = 1.0
 var moulinet_continuous_angle: float = 0.0
 var clash_recovery_left: float = 0.0
 ## Contact-only angular yielding fades back to zero, while sink is a live-overlap cadence multiplier.
-var blade_physical_reaction_angle: float = 0.0
-var blade_physical_reaction_pending_angle: float = 0.0
+var blade_core_yield_pending: float = 1.0
+var blade_core_yield_multiplier: float = 1.0
 var blade_flesh_overlap_active: bool = false
 var blade_sink_strength_active: float = 0.0
+var blade_sink_multiplier: float = 1.0
 var sword_event_label: String = ""
 var sword_event_point: Vector2 = Vector2.ZERO
 var sword_event_left: float = 0.0
@@ -2282,7 +2283,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 	var tgt_contact_key: String = str(tgt_p)
 	var source_contact: Dictionary = combat_contact_settings.get(src_contact_key, {})
 	var copied_contact: Dictionary = source_contact.duplicate(true)
-	for removed_drag_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]:
+	for removed_drag_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
 		copied_contact.erase(removed_drag_key)
 	# If source had no explicit overrides, populate from its resolved getters
 	var saved_preset: int = combat_contact_preset
@@ -2793,10 +2794,10 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 	var resolved_pose: Dictionary = _apply_charged_guard_pose(transform_data)
 	return _apply_flesh_contact_pose(resolved_pose)
 
-## A flesh reaction rotates the complete blade around its authored hand anchor.
-## Sink changes only the live swing cadence; it never translates the visible hilt.
+## The inner core resists by slowing the live swing rate rather than rotating the
+## blade, so it can never look magnetically pinned. Sink likewise only changes the
+## live cadence; neither ever translates the visible hilt.
 func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
-	transform_data["angle"] = float(transform_data["angle"]) + blade_physical_reaction_angle
 	return transform_data
 
 
@@ -4322,8 +4323,9 @@ func _update_sword(delta: float) -> void:
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
-		blade_physical_reaction_pending_angle = 0.0
-		blade_physical_reaction_angle = 0.0
+		blade_core_yield_pending = 1.0
+		blade_core_yield_multiplier = 1.0
+		blade_sink_multiplier = 1.0
 		blade_velocity = Vector2.ZERO
 		previous_blade_start = Vector2.ZERO
 		previous_blade_end = Vector2.ZERO
@@ -4335,8 +4337,9 @@ func _update_sword(delta: float) -> void:
 	if blade_freeze_left > 0.0:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
-		blade_physical_reaction_pending_angle = 0.0
-		blade_physical_reaction_angle = 0.0
+		blade_core_yield_pending = 1.0
+		blade_core_yield_multiplier = HitReaction.advance_blade_core_yield(blade_core_yield_multiplier, 1.0, delta)
+		blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, 1.0, delta)
 		# Clash/parry weapon freeze remains independent of flesh-only effects.
 		# Player and hilt movement still matter. Real movement creates a slight tug/rip through the enemy.
 		var freeze_data: Dictionary = _sword_transform()
@@ -4363,18 +4366,23 @@ func _update_sword(delta: float) -> void:
 		previous_blade_end = f_end
 		return
 	var previous_phase: float = sword_phase
-	blade_physical_reaction_angle = HitReaction.advance_blade_physical_reaction(blade_physical_reaction_angle, blade_physical_reaction_pending_angle, delta)
+	# Ease the core yield toward the contact target set by _check_sword_hits last
+	# frame, then clear the target so a frame without core contact releases it.
+	blade_core_yield_multiplier = HitReaction.advance_blade_core_yield(blade_core_yield_multiplier, blade_core_yield_pending, delta)
+	blade_core_yield_pending = 1.0
 	var swing_frequency: float = _sword_cycle_frequency()
 	var slide_multiplier: float = get_combat_contact_setting("slide_speed")
 	if is_experimental_bind_form() and experimental_bind_active:
 		slide_multiplier = clampf(get_combat_hand_setting("bind_sword_speed"), 0.05, 1.0)
-	# Flesh contact response modifies only the live pose/reach below; free swing phase is unchanged.
-	var sink_multiplier: float = HitReaction.blade_sink_time_multiplier(
+	# Flesh contact response modifies only the live swing cadence; free swing pose is unchanged.
+	# The sink bite eases in on contact and eases back out, so the un-bite never snaps.
+	var sink_target: float = HitReaction.blade_sink_time_multiplier(
 		get_combat_contact_setting("hit_reaction_enabled") >= 0.5,
 		get_combat_contact_setting("blade_sink_enabled") >= 0.5,
 		blade_flesh_overlap_active,
 		blade_sink_strength_active)
-	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * sink_multiplier
+	blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, sink_target, delta)
+	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier
 	if authored_apex_hang_left > 0.0:
 		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
 		sword_delta = 0.0
@@ -4417,7 +4425,7 @@ func _update_sword(delta: float) -> void:
 	# candidate/bind, the configured speed is an actual ceiling. The musical phase
 	# remains continuous; it simply advances deliberately while the blades resist.
 	if is_experimental_bind_form() and (experimental_bind_candidate or experimental_bind_active) and has_live_blade_slide_contact():
-		var constrained_delta: float = delta * slide_multiplier * sink_multiplier
+		var constrained_delta: float = delta * slide_multiplier * blade_sink_multiplier
 		sword_delta = minf(sword_delta, constrained_delta)
 	swing_time += sword_delta
 	sword_phase = wrapf(sword_phase + sword_delta * swing_frequency * TAU, 0.0, TAU)
@@ -4548,21 +4556,20 @@ func _enemy_body_collision_shape(target: Node2D) -> CollisionShape2D:
 	return shapes[0] if not shapes.is_empty() else null
 
 func _scaled_enemy_shape(source: Shape2D, scale_factor: float) -> Shape2D:
-	if is_equal_approx(scale_factor, HitReaction.INNER_BONE_RADIUS_FRACTION):
-		return HitReaction.scale_inner_bone_shape(source)
 	if source == null:
 		return null
+	var safe_scale: float = clampf(scale_factor, 0.0, 1.0)
 	var result: Shape2D = source.duplicate() as Shape2D
 	if result is CircleShape2D:
 		var circle: CircleShape2D = result as CircleShape2D
-		circle.radius *= scale_factor
+		circle.radius *= safe_scale
 	elif result is RectangleShape2D:
 		var rectangle: RectangleShape2D = result as RectangleShape2D
-		rectangle.size *= scale_factor
+		rectangle.size *= safe_scale
 	elif result is CapsuleShape2D:
 		var capsule: CapsuleShape2D = result as CapsuleShape2D
-		capsule.radius *= scale_factor
-		capsule.height *= scale_factor
+		capsule.radius *= safe_scale
+		capsule.height *= safe_scale
 	else:
 		return null
 	return result
@@ -4698,8 +4705,9 @@ func _draw_blade_bone_debug_shapes() -> void:
 		var enemy: Node2D = node as Node2D
 		if enemy == null or not is_instance_valid(enemy):
 			continue
+		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
 		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
-			var inner_shape: Shape2D = _scaled_enemy_shape(shape_node.shape, HitReaction.INNER_BONE_RADIUS_FRACTION)
+			var inner_shape: Shape2D = _scaled_enemy_shape(shape_node.shape, core_fraction)
 			if inner_shape == null:
 				continue
 			_draw_debug_enemy_collision_shape(enemy, shape_node.shape, inner_shape, _enemy_body_shape_transform(shape_node))
@@ -4734,7 +4742,8 @@ func _draw_debug_enemy_collision_shape(_enemy: Node2D, outer_shape: Shape2D, inn
 	else:
 		var fallback_radius: float = _shape_outer_radius(_enemy_body_collision_shape(_enemy))
 		draw_arc(Vector2.ZERO, fallback_radius, 0.0, TAU, 48, outer_color, 1.5, true)
-		draw_arc(Vector2.ZERO, fallback_radius * HitReaction.INNER_BONE_RADIUS_FRACTION, 0.0, TAU, 48, inner_color, 2.0, true)
+		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
+		draw_arc(Vector2.ZERO, fallback_radius * core_fraction, 0.0, TAU, 48, inner_color, 2.0, true)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _draw_debug_capsule_outline(radius: float, height: float, color: Color) -> void:
@@ -4755,9 +4764,8 @@ func _draw_debug_polygon_outline(points: PackedVector2Array, color: Color) -> vo
 func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 	blade_flesh_overlap_active = false
 	blade_sink_strength_active = 0.0
-	blade_physical_reaction_pending_angle = 0.0
+	blade_core_yield_pending = 1.0
 	var flesh_overlap_this_frame: bool = false
-	var selected_physical_reaction_angle: float = 0.0
 	if clash_recovery_left > 0.0: return
 	var main_scene: Node = get_tree().current_scene
 	for campfire_node: Node in get_tree().get_nodes_in_group("zungar_campfire"):
@@ -4888,9 +4896,10 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var core_contact_normal: Vector2 = Vector2.ZERO
 		var flesh_blade_fraction: float = 0.5
 		var best_flesh_surface_distance: float = INF
+		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
 		for collision_shape: CollisionShape2D in available_shapes:
 			var outer_collision_shape: Shape2D = collision_shape.shape
-			var scaled_core: Shape2D = _scaled_enemy_shape(outer_collision_shape, HitReaction.INNER_BONE_RADIUS_FRACTION)
+			var scaled_core: Shape2D = _scaled_enemy_shape(outer_collision_shape, core_fraction)
 			if scaled_core == null:
 				continue
 			var shape_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, outer_collision_shape)
@@ -4952,11 +4961,10 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				blade_sink_strength_active = maxf(blade_sink_strength_active, get_combat_contact_setting("blade_sink_strength"))
 		if physical_reaction_on and reached_inner_core and HitReaction.blade_physical_reaction_allowed(is_stab_motion, inward_alignment):
 			var reaction_strength: float = get_combat_contact_setting("blade_physical_reaction_strength")
-			var contact_reaction_angle: float = HitReaction.blade_bone_reaction_angle(contact.blade_velocity, target_velocity, physical_normal, contact.blade_direction, reaction_strength, is_stab_motion)
-			if absf(contact_reaction_angle) > absf(selected_physical_reaction_angle):
-				selected_physical_reaction_angle = contact_reaction_angle
-			if not is_zero_approx(contact_reaction_angle):
-				_set_sword_event("BLADE BONE RESISTANCE", contact.contact_point, 0.18)
+			var core_yield: float = HitReaction.blade_core_yield_target(reaction_strength, true, inward_alignment)
+			if core_yield < blade_core_yield_pending:
+				blade_core_yield_pending = core_yield
+				_set_sword_event("BLADE CORE YIELD", contact.contact_point, 0.18)
 		# Player body overlap alone never enters this path: reaching here already
 		# requires actual swept weapon geometry to touch the enemy. Do not cancel a
 		# valid blade hit merely because the combatants' bodies are close together.
@@ -5007,7 +5015,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			var typed_enemy: Enemy = enemy as Enemy
 			var current_main: Node = get_tree().current_scene
 			if typed_enemy != null and current_main.has_method("spawn_enemy_hit_presentation"):
-				current_main.spawn_enemy_hit_presentation(typed_enemy, contact.contact_point, contact.blade_velocity, contact.blade_direction, contact.impact_quality, typed_enemy.health <= 0.0, true, reaction_on)
+				current_main.spawn_enemy_hit_presentation(typed_enemy, contact.contact_point, contact.blade_velocity, contact.blade_direction, contact.impact_quality, typed_enemy.health <= 0.0, true, true)
 			_trigger_successful_sword_hit(contact)
 			if reentry_quality > 0.0:
 				_consume_experimental_reentry(contact, reentry_quality)
@@ -5030,9 +5038,8 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		elif chakram_contact_distance > BLADE_RADIUS + 34.0:
 			active_chakram.release_sword_contact()
 	blade_flesh_overlap_active = flesh_overlap_this_frame
-	blade_physical_reaction_pending_angle = selected_physical_reaction_angle
 	if get_combat_contact_setting("hit_reaction_enabled") < 0.5 or get_combat_contact_setting("blade_physical_reaction_enabled") < 0.5:
-		blade_physical_reaction_angle = HitReaction.advance_blade_physical_reaction(blade_physical_reaction_angle, 0.0, delta)
+		blade_core_yield_pending = 1.0
 
 func _set_sword_event(label: String, point: Vector2, duration: float = 0.45, debug_extra: Dictionary = {}) -> void:
 	sword_event_label = label
@@ -5137,7 +5144,7 @@ func _trigger_successful_sword_hit(contact: SwordContactData) -> void:
 		var spark_intensity: float = strong_hit_spark_intensity if contact.impact_quality >= strong_hit_quality_threshold else 0.65 + contact.impact_quality * 0.55
 		if combat_contact_preset == 4:
 			spark_intensity *= lerpf(0.75, 1.45, clampf(flow / 100.0, 0.0, 1.0))
-		main_scene.spawn_impact_fx(contact.contact_point, spark_intensity)
+		main_scene.spawn_impact_fx(contact.contact_point, spark_intensity, ImpactFX.ImpactType.FLESH)
 	if main_scene.has_method("spawn_tuned_combat_presentation"):
 		var flesh_imp: float = get_combat_contact_setting("flesh_impact")
 		if combat_contact_preset == 4:

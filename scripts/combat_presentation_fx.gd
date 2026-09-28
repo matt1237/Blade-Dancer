@@ -80,11 +80,10 @@ class FloatingDamageNumber extends RefCounted:
 @export var enable_enemy_hit_deformation: bool = true
 @export_range(0.0, 1.0, 0.05) var enemy_deformation_min_quality: float = 0.65
 ## Maximum compression along the hit direction at a perfect-quality contact.
-@export_range(0.0, 0.2, 0.01) var enemy_deformation_max_compression: float = 0.07
+@export_range(0.0, 0.7, 0.01) var enemy_deformation_max_compression: float = 0.35
 @export_range(0.0, 3.0, 0.05) var enemy_deformation_hd_strength: float = 2.0
-var hit_squash_strength: float = 200.0
-var kill_blood_chance: float = 30.0
-@export var enemy_deformation_duration: float = 0.1
+@export var hit_squash_strength: float = 200.0
+@export var enemy_deformation_duration: float = 0.24
 @export_range(0.0, 0.1, 0.005) var enemy_deformation_spring_overshoot: float = 0.018
 
 @export_category("Chakram Bat Deformation")
@@ -95,13 +94,13 @@ var kill_blood_chance: float = 30.0
 
 @export_category("High Quality Blood")
 @export var enable_blood_splatter: bool = true
-@export_range(0.0, 1.0, 0.05) var blood_min_quality: float = 0.8
+@export_range(0.0, 1.0, 0.05) var blood_min_quality: float = 0.05
 
-@export var blood_drop_count: int = 9
-@export var blood_drop_speed: float = 150.0
-@export var blood_drop_lifetime: float = 0.42
-@export var blood_spread_degrees: float = 55.0
-@export var blood_color: Color = Color(0.55, 0.025, 0.035, 0.95)
+@export var blood_drop_count: int = 22
+@export var blood_drop_speed: float = 220.0
+@export var blood_drop_lifetime: float = 0.9
+@export var blood_spread_degrees: float = 60.0
+@export var blood_color: Color = Color(0.62, 0.02, 0.03, 0.96)
 
 @export_category("High Quality Split Kill")
 @export var enable_split_kill: bool = true
@@ -268,29 +267,39 @@ func trigger_parry_focus_tuned(impact_position: Vector2, travel_direction: Vecto
 func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Vector2, cut_direction: Vector2, contact_quality: float, killed: bool, sword_hit: bool = true, directional_presentation: bool = false) -> void:
 	if not enabled: return
 	var hit_squash_for_contact: float = hit_squash_strength
-	var kill_blood_chance_for_contact: float = kill_blood_chance
 	if enemy != null and is_instance_valid(enemy) and enemy.player_ref != null and sword_hit:
-		hit_squash_for_contact = enemy.player_ref.get_combat_contact_setting("hd_hit_squash_strength")
-		kill_blood_chance_for_contact = enemy.player_ref.get_combat_contact_setting("kill_blood_splatter_chance")
+		if enemy._is_hd_visual():
+			hit_squash_for_contact = enemy.player_ref.get_combat_contact_setting("hd_hit_squash_strength")
 	if enable_enemy_hit_deformation and contact_quality >= enemy_deformation_min_quality and enemy != null and is_instance_valid(enemy):
 		var quality_range: float = maxf(0.001, 1.0 - enemy_deformation_min_quality)
 		var deformation_strength: float = clampf((contact_quality - enemy_deformation_min_quality) / quality_range, 0.0, 1.0)
 		var hd_enemy: bool = enemy._is_hd_visual() and sword_hit
 		var configured_hd_squash: float = clampf(hit_squash_for_contact / 100.0, 0.0, 3.0)
 		var hd_squash_multiplier: float = configured_hd_squash if hd_enemy else 1.0
-		var maximum_compression: float = minf(0.7, enemy_deformation_max_compression * hd_squash_multiplier)
+		var compression_base: float = 0.23 if hd_enemy else enemy_deformation_max_compression
+		var maximum_compression: float = minf(0.7, compression_base * hd_squash_multiplier)
 		var spring_overshoot: float = minf(0.35, enemy_deformation_spring_overshoot * hd_squash_multiplier)
 		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, maximum_compression * deformation_strength, spring_overshoot * deformation_strength, hd_enemy)
-	if enable_blood_splatter and contact_quality >= blood_min_quality:
-		if killed and sword_hit:
-			if randf() * 100.0 < clampf(kill_blood_chance_for_contact, 0.0, 100.0):
-				_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation)
-		elif not killed:
-			_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit)
-	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality and enemy != null and is_instance_valid(enemy) and enemy._is_hd_visual() and enemy.hd_enemy_sprite != null and enemy.hd_enemy_sprite.visible and enemy.hd_enemy_sprite.sprite_frames != null:
+	if enable_blood_splatter and (killed or contact_quality >= blood_min_quality):
+		# Blood Amount / Droplet Size are per-preset tuner sliders (100% == the
+		# authored baseline); fall back to the baseline when no player is present.
+		var blood_amount_scale: float = 1.0
+		var blood_size_scale: float = 1.0
+		if enemy != null and is_instance_valid(enemy) and enemy.player_ref != null:
+			blood_amount_scale = clampf(enemy.player_ref.get_combat_contact_setting("blood_amount_percent") / 100.0, 0.0, 4.0)
+			blood_size_scale = clampf(enemy.player_ref.get_combat_contact_setting("blood_drop_size_percent") / 100.0, 0.0, 4.0)
+		_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit, blood_amount_scale, blood_size_scale)
+	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality and enemy != null and is_instance_valid(enemy) and enemy._is_hd_visual() and enemy.hd_enemy_sprite != null and enemy.hd_enemy_sprite.sprite_frames != null:
 		var snapped_cut_direction: Vector2 = _snap_split_cut_direction(cut_direction)
 		var sprite_texture: Texture2D = enemy.hd_enemy_sprite.sprite_frames.get_frame_texture(enemy.hd_enemy_sprite.animation, enemy.hd_enemy_sprite.frame)
-		_spawn_split_remnant(enemy.global_position, snapped_cut_direction, sprite_texture, enemy.hd_enemy_base_scale, enemy.hd_enemy_sprite.flip_h)
+		var sprite_world_position: Vector2 = enemy.hd_enemy_sprite.to_global(enemy.hd_enemy_sprite.position)
+		var sprite_canvas_transform: Transform2D = enemy.hd_enemy_sprite.get_global_transform_with_canvas()
+		var sprite_scale: float = sqrt(absf(sprite_canvas_transform.determinant()))
+		if is_zero_approx(sprite_scale):
+			sprite_scale = enemy.hd_enemy_base_scale
+		_spawn_split_remnant(sprite_world_position, snapped_cut_direction, sprite_texture, sprite_scale, enemy.hd_enemy_sprite.flip_h)
+		enemy.hd_enemy_sprite.hide()
+		enemy.queue_free()
 
 func present_chakram_bat(chakram: Chakram, launch_direction: Vector2, contact_quality: float) -> void:
 	if not enabled or chakram == null or not is_instance_valid(chakram): return
@@ -363,22 +372,28 @@ func _should_trigger_time_slow(contact_quality: float) -> bool:
 	if contact_quality >= medium_hit_quality_threshold: return time_slow_on_medium_hits
 	return false
 
-func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false) -> void:
-	if not enable_blood_splatter or contact_quality < blood_min_quality:
+func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false, amount_scale: float = 1.0, size_scale: float = 1.0) -> void:
+	if not enable_blood_splatter:
 		return
-	var base_direction: Vector2 = impact_velocity.normalized() if impact_velocity.length_squared() > 0.001 else Vector2.RIGHT
-	var scaled_count: int = maxi(1, roundi(float(blood_drop_count) * lerpf(0.7, 1.25, contact_quality)))
-	# The same existing blood emitter keeps its original broad fan when OFF;
-	# when ON, its blade-travel direction becomes legible without a new FX system.
+	# Spray is thrown along the blade's own travel direction (impact_velocity),
+	# so a cut always flings blood the way the sword was moving. Sword hits keep
+	# a tight directional jet; other impacts fan out broadly.
+	var blade_travel: Vector2 = impact_velocity.normalized() if impact_velocity.length_squared() > 1.0 else Vector2.RIGHT
+	var quality_scale: float = lerpf(0.7, 1.4, clampf(contact_quality, 0.0, 1.0))
+	var safe_amount: float = maxf(0.0, amount_scale)
+	var safe_size: float = maxf(0.0, size_scale)
+	var scaled_count: int = maxi(0, roundi(float(blood_drop_count) * quality_scale * safe_amount))
+	if scaled_count <= 0:
+		return
 	var spread: float = blood_spread_degrees * (0.4 if directional_presentation else 1.0)
 	for index: int in range(scaled_count):
 		var drop: BloodDrop = BloodDrop.new()
-		drop.world_position = contact_point + Vector2(randf_range(-3.0, 3.0), randf_range(-3.0, 3.0))
+		drop.world_position = contact_point + Vector2(randf_range(-2.0, 2.0), randf_range(-2.0, 2.0))
 		var spread_angle: float = deg_to_rad(randf_range(-spread, spread))
-		var speed: float = blood_drop_speed * randf_range(0.45, 1.15) * lerpf(0.8, 1.2, contact_quality)
-		drop.velocity = base_direction.rotated(spread_angle) * speed
-		drop.radius = randf_range(1.25, 3.2) * lerpf(0.8, 1.15, contact_quality)
-		drop.total_life = blood_drop_lifetime * randf_range(0.75, 1.2)
+		var speed: float = blood_drop_speed * randf_range(0.55, 1.3) * quality_scale
+		drop.velocity = blade_travel.rotated(spread_angle) * speed
+		drop.radius = randf_range(2.0, 4.6) * lerpf(0.9, 1.25, clampf(contact_quality, 0.0, 1.0)) * safe_size
+		drop.total_life = blood_drop_lifetime * randf_range(0.7, 1.25)
 		drop.life = drop.total_life
 		blood_drops.append(drop)
 
@@ -456,18 +471,19 @@ func _spawn_split_remnant(spawn_position: Vector2, cut_direction: Vector2, sourc
 	var remnant: SplitRemnant = SplitRemnant.new()
 	var snapped_direction: Vector2 = _snap_split_cut_direction(cut_direction)
 	var horizontal_cut: bool = absf(snapped_direction.y) > 0.5
+	var frame_image: Image = extracted_frame.get_image()
+	if flip_h:
+		frame_image.flip_x()
 	remnant.world_position = spawn_position
 	remnant.cut_direction = snapped_direction
 	remnant.sprite_scale = sprite_scale
-	remnant.half_textures = _split_image_halves(extracted_frame.get_image(), horizontal_cut)
+	remnant.half_textures = _split_image_halves(frame_image, horizontal_cut)
 	if remnant.half_textures.size() != 2:
 		return
 	var extent: float = (source_size.y if horizontal_cut else source_size.x) * sprite_scale * 0.5
 	var separation_normal: Vector2 = snapped_direction.orthogonal()
-	if flip_h and not horizontal_cut:
-		separation_normal.x *= -1.0
-	remnant.half_offsets = [-separation_normal * extent * 0.25, separation_normal * extent * 0.25]
-	remnant.half_velocities = [-separation_normal * 38.0 + Vector2.UP * 14.0, separation_normal * 38.0 + Vector2.UP * 14.0]
+	remnant.half_offsets = [-separation_normal * extent * 0.5, separation_normal * extent * 0.5]
+	remnant.half_velocities = [-separation_normal * 110.0 + Vector2.UP * 34.0, separation_normal * 110.0 + Vector2.UP * 34.0]
 	remnant.total_life = split_kill_duration
 	remnant.life = remnant.total_life
 	split_remnants.append(remnant)
@@ -479,8 +495,8 @@ func _update_world_particles(delta: float) -> void:
 		if drop.life <= 0.0:
 			blood_drops.remove_at(index)
 			continue
-		drop.velocity += Vector2.DOWN * 180.0 * delta
-		drop.velocity *= maxf(0.0, 1.0 - delta * 2.2)
+		drop.velocity += Vector2.DOWN * 640.0 * delta
+		drop.velocity *= maxf(0.0, 1.0 - delta * 1.3)
 		drop.world_position += drop.velocity * delta
 	for index: int in range(split_remnants.size() - 1, -1, -1):
 		var remnant: SplitRemnant = split_remnants[index]
@@ -568,21 +584,39 @@ func _draw_blood_drops() -> void:
 	for drop: BloodDrop in blood_drops:
 		var life_ratio: float = clampf(drop.life / maxf(drop.total_life, 0.001), 0.0, 1.0)
 		var local_position: Vector2 = _world_to_fx_local(drop.world_position)
-		var drop_color: Color = Color(blood_color.r, blood_color.g, blood_color.b, blood_color.a * life_ratio)
-		var trail_direction: Vector2 = -drop.velocity.normalized() if drop.velocity.length_squared() > 0.001 else Vector2.ZERO
-		draw_line(local_position, local_position + trail_direction * drop.radius * 2.4, drop_color, drop.radius, true)
+		var fade: float = clampf(life_ratio * 1.7, 0.0, 1.0)
+		var drop_color: Color = Color(blood_color.r, blood_color.g, blood_color.b, blood_color.a * fade)
+		# Motion smear behind each droplet, so the spray reads as travelling.
+		if drop.velocity.length_squared() > 1.0:
+			var trail_direction: Vector2 = -drop.velocity.normalized()
+			var trail_color: Color = Color(drop_color.r, drop_color.g, drop_color.b, drop_color.a * 0.7)
+			draw_line(local_position, local_position + trail_direction * drop.radius * 2.6, trail_color, drop.radius * 0.9, true)
 		draw_circle(local_position, drop.radius, drop_color)
+		# Wet highlight core.
+		var highlight: Color = Color(minf(1.0, blood_color.r + 0.28), blood_color.g + 0.02, blood_color.b + 0.02, drop_color.a)
+		draw_circle(local_position, drop.radius * 0.45, highlight)
 
 func _world_to_fx_local(world_position: Vector2) -> Vector2:
-	var parent_node: Node = get_parent()
-	if parent_node is Node2D:
-		return (parent_node as Node2D).to_local(world_position)
+	# _draw() renders in THIS node's local space, and trigger_tuned() moves the
+	# node to the impact point (global_position = impact_position). Converting via
+	# the parent would drop the node's own offset, so particles would render at
+	# roughly double their world position (off-screen). Convert through self.
 	return to_local(world_position)
 
 func _draw_split_remnants() -> void:
 	for remnant: SplitRemnant in split_remnants:
 		var life_ratio: float = clampf(remnant.life / maxf(remnant.total_life, 0.001), 0.0, 1.0)
 		var base_position: Vector2 = _world_to_fx_local(remnant.world_position)
+		var half_size: Vector2 = remnant.half_textures[0].get_size()
+		var source_size: Vector2 = half_size * 2.0
+		var cut_line_start: Vector2 = Vector2.ZERO
+		var cut_line_end: Vector2 = Vector2.ZERO
+		if absf(remnant.cut_direction.y) > 0.5:
+			cut_line_start = Vector2(-source_size.x * 0.5, 0.0)
+			cut_line_end = Vector2(source_size.x * 0.5, 0.0)
+		else:
+			cut_line_start = Vector2(0.0, -source_size.y * 0.5)
+			cut_line_end = Vector2(0.0, source_size.y * 0.5)
 		for half_index: int in range(remnant.half_textures.size()):
 			var half_texture: ImageTexture = remnant.half_textures[half_index]
 			var half_offset: Vector2 = remnant.half_offsets[half_index]
@@ -591,13 +625,12 @@ func _draw_split_remnants() -> void:
 			draw_set_transform(half_position, 0.0, Vector2.ONE * remnant.sprite_scale)
 			draw_texture(half_texture, -half_texture.get_size() * 0.5, half_tint)
 			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-			var flash_alpha: float = life_ratio * maxf(0.0, 1.0 - (1.0 - life_ratio) * 4.0)
-			if flash_alpha > 0.0:
-				var cut_color: Color = Color(split_cut_flash_color.r, split_cut_flash_color.g, split_cut_flash_color.b, split_cut_flash_color.a * flash_alpha)
-				var cut_tangent: Vector2 = remnant.cut_direction
-				draw_set_transform(half_position, 0.0, Vector2.ONE * remnant.sprite_scale)
-				draw_line(-cut_tangent * 8.0, cut_tangent * 8.0, cut_color, 2.0, true)
-				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var flash_alpha: float = life_ratio * maxf(0.0, 1.0 - (1.0 - life_ratio) * 4.0)
+		if flash_alpha > 0.0:
+			var cut_color: Color = Color(split_cut_flash_color.r, split_cut_flash_color.g, split_cut_flash_color.b, split_cut_flash_color.a * flash_alpha)
+			draw_set_transform(base_position, 0.0, Vector2.ONE * remnant.sprite_scale)
+			draw_line(cut_line_start, cut_line_end, cut_color, 2.0, true)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _setup_screen_overlay() -> void:
 	overlay_layer = CanvasLayer.new()

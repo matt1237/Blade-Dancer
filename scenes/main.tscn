@@ -51,6 +51,7 @@ enabled = false
 environment = SubResource("Environment_fx")
 
 [node name="CombatPresentationFX" type="Node2D" parent="." unique_id=1409471463]
+z_index = 3
 script = ExtResource("9_presentation_fx")
 
 [node name="Player" parent="." unique_id=1620303111 instance=ExtResource("2_player")]

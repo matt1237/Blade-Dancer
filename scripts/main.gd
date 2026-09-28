@@ -1536,7 +1536,7 @@ func _materialize_combat_settings() -> Dictionary:
 		var contact_key: String = str(preset)
 		var raw_contact: Variant = contact_settings.get(contact_key, {})
 		var contact_values: Dictionary = (raw_contact as Dictionary).duplicate(true) if raw_contact is Dictionary else {}
-		for removed_drag_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]:
+		for removed_drag_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
 			contact_values.erase(removed_drag_key)
 		player.combat_contact_preset = preset
 		for key: String in contact_keys:

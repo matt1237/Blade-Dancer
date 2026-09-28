@@ -116,8 +116,10 @@
 			"slide_zoom_duration": 0.08,
 			"sword_knockback_away_enabled": 0.0,
 			"blade_bone_debug_enabled": 0.0,
+			"blade_bone_core_size_percent": 50.0,
 			"hd_hit_squash_strength": 200.0,
-			"kill_blood_splatter_chance": 30.0
+			"blood_amount_percent": 100.0,
+			"blood_drop_size_percent": 100.0
 		},
 		"2": {
 			"apex_hang_duration": 0.2,
@@ -231,17 +233,19 @@
 			"slide_travel": 60.0,
 			"slide_zoom": 0.0,
 			"slide_zoom_duration": 0.08,
+			"blade_bone_core_size_percent": 50.0,
 			"hit_reaction_enabled": 1.0,
 			"hit_visual_recoil": 20.0,
 			"hit_visual_rotation": 0.0,
-			"blade_physical_reaction_enabled": 0.0,
-			"blade_physical_reaction_strength": 55.0,
+			"blade_physical_reaction_enabled": 1.0,
+			"blade_physical_reaction_strength": 80.0,
 			"blade_sink_enabled": 0.0,
 			"blade_sink_strength": 45.0,
 			"sword_knockback_away_enabled": 0.0,
 			"blade_bone_debug_enabled": 0.0,
 			"hd_hit_squash_strength": 200.0,
-			"kill_blood_splatter_chance": 30.0
+			"blood_amount_percent": 100.0,
+			"blood_drop_size_percent": 100.0
 		},
 		"3": {
 			"apex_hang_duration": 0.14,
@@ -358,8 +362,10 @@
 			"slide_zoom_duration": 0.08,
 			"sword_knockback_away_enabled": 0.0,
 			"blade_bone_debug_enabled": 0.0,
+			"blade_bone_core_size_percent": 50.0,
 			"hd_hit_squash_strength": 200.0,
-			"kill_blood_splatter_chance": 30.0
+			"blood_amount_percent": 100.0,
+			"blood_drop_size_percent": 100.0
 		},
 		"4": {
 			"apex_hang_duration": 0.14,
@@ -476,8 +482,10 @@
 			"slide_zoom_duration": 0.08,
 			"sword_knockback_away_enabled": 0.0,
 			"blade_bone_debug_enabled": 0.0,
+			"blade_bone_core_size_percent": 50.0,
 			"hd_hit_squash_strength": 200.0,
-			"kill_blood_splatter_chance": 30.0
+			"blood_amount_percent": 100.0,
+			"blood_drop_size_percent": 100.0
 		}
 	},
 	"combat_hand_settings": {

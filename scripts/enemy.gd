@@ -371,10 +371,11 @@ func _update_hd_enemy_sprite() -> void:
 	hd_enemy_sprite.rotation = (0.04 if facing_left else -0.04) * charge_pose + hit_visual_rotation * hit_ratio
 	var sprite_pose: Transform2D = Transform2D(hd_enemy_sprite.rotation, hd_enemy_sprite.position)
 	if impact_deformation_directional_hd and impact_deformation_left > 0.0:
-		# Reuse the existing hit-axis deformation instead of a screen-axis squash.
+		# The impact transform acts on the sprite frame; keep authored rotation,
+		# pose and base scale composed with the same directional pancake.
 		var base_scale: float = hd_enemy_base_scale * (1.0 + charge_pose * 0.04)
 		var scale_pose: Transform2D = Transform2D(Vector2(base_scale, 0.0), Vector2(0.0, base_scale), Vector2.ZERO)
-		hd_enemy_sprite.transform = sprite_pose * _impact_draw_transform() * scale_pose
+		hd_enemy_sprite.transform = sprite_pose * scale_pose * _impact_draw_transform()
 	else:
 		# Assign the entire basis so no skew from the previous directional hit lingers.
 		var scale_x: float = hd_enemy_base_scale * (1.0 + impact_ratio * 0.08 + charge_pose * 0.04)
@@ -1104,15 +1105,19 @@ func _impact_draw_transform() -> Transform2D:
 	if impact_deformation_left <= 0.0: return Transform2D.IDENTITY
 	var progress: float = 1.0 - impact_deformation_left / maxf(impact_deformation_duration, 0.001)
 	var deformation_amount: float = 0.0
-	if progress < 0.55:
-		deformation_amount = lerpf(impact_deformation_compression, 0.0, progress / 0.55)
+	if progress < 0.42:
+		var squash_in: float = smoothstep(0.0, 0.42, progress)
+		deformation_amount = impact_deformation_compression * squash_in
+	elif progress < 0.68:
+		var pancake_hold: float = (progress - 0.42) / 0.26
+		deformation_amount = impact_deformation_compression * (1.0 - 0.14 * pancake_hold)
 	else:
-		var spring_progress: float = (progress - 0.55) / 0.45
-		deformation_amount = -impact_deformation_overshoot * sin(spring_progress * PI)
+		var recovery_progress: float = clampf((progress - 0.68) / 0.32, 0.0, 1.0)
+		deformation_amount = lerpf(impact_deformation_compression * 0.86, -impact_deformation_overshoot, smoothstep(0.0, 1.0, recovery_progress))
 	var impact_axis: Vector2 = impact_deformation_direction
 	var perpendicular_axis: Vector2 = impact_axis.orthogonal()
 	var impact_scale: float = 1.0 - deformation_amount
-	var perpendicular_scale: float = 1.0 + deformation_amount * 0.75
+	var perpendicular_scale: float = 1.0 + deformation_amount * 0.9
 	var x_axis: Vector2 = impact_axis * (impact_scale * impact_axis.x) + perpendicular_axis * (perpendicular_scale * perpendicular_axis.x)
 	var y_axis: Vector2 = impact_axis * (impact_scale * impact_axis.y) + perpendicular_axis * (perpendicular_scale * perpendicular_axis.y)
 	return Transform2D(x_axis, y_axis, Vector2.ZERO)

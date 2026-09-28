@@ -1,6 +1,6 @@
 class_name ImpactFX extends Node2D
 
-enum ImpactType { GENERIC, CLASH, PARRY }
+enum ImpactType { GENERIC, CLASH, PARRY, FLESH }
 
 @export var lifetime: float = 0.18
 @export var intensity: float = 1.0
@@ -55,6 +55,16 @@ func _draw() -> void:
 				var end: Vector2 = direction * (16.0 + progress * 42.0) * intensity
 				draw_line(start, end, Color(1.0, 0.38, 0.08, alpha * 0.85), 3.0 * (1.0 - progress * 0.6), true)
 				draw_line(start, start + (end - start) * 0.7, Color(1.0, 0.95, 0.75, alpha), 1.5, true)
+
+		ImpactType.FLESH:
+			# Deep crimson flesh wound — deliberately NOT the gold metal-spark look,
+			# so cutting a body reads as blood, while gold stays exclusive to
+			# weapon-vs-weapon clash contact.
+			draw_circle(Vector2.ZERO, lerpf(5.0, 16.0, progress) * intensity, Color(0.45, 0.02, 0.05, alpha * 0.3))
+			for direction: Vector2 in directions:
+				var start: Vector2 = direction * (3.0 + progress * 4.0)
+				var end: Vector2 = direction * (10.0 + progress * 22.0) * intensity
+				draw_line(start, end, Color(0.5, 0.03, 0.06, alpha * 0.8), lerpf(2.5, 0.5, progress), true)
 
 		_:
 			# Generic sparks (yellow/amber)

@@ -18,7 +18,7 @@ func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
 	var baked_contacts: Dictionary = comparable_baked.get("combat_contact_settings", {}) as Dictionary
 	var saved_contacts: Dictionary = comparable_saved.get("combat_contact_settings", {}) as Dictionary
 	var new_reaction_keys: Array = HitReaction.DEFAULTS.keys()
-	var retired_drag_keys: Array[String] = ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]
+	var retired_drag_keys: Array[String] = ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]
 	for preset_key: String in ["1", "2", "3", "4"]:
 		var baked_values: Dictionary = baked_contacts.get(preset_key, {}) as Dictionary
 		var saved_values: Dictionary = saved_contacts.get(preset_key, {}) as Dictionary
@@ -60,8 +60,9 @@ func test_hit_reaction_settings_and_removed_drag_migration_are_serialized_per_pr
 		assert(preset_two.has(key), "The shipped GP2 needs its canonical Hit Reaction setting: %s." % key)
 	for preset_key: String in ["1", "2", "3", "4"]:
 		var values: Dictionary = contact_settings.get(preset_key, {}) as Dictionary
-		for removed_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]:
-			assert(not values.has(removed_key), "Shipped GP2 must not contain retired drag settings: %s." % removed_key)
+		assert(float(values.get("blade_bone_core_size_percent", -1.0)) == 50.0, "Every shipped combat preset needs the 50% default bone-core size.")
+		for removed_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
+			assert(not values.has(removed_key), "Shipped GP2 must not contain retired settings: %s." % removed_key)
 
 func test_global_library_has_three_complete_slots() -> void:
 	var library: Dictionary = GlobalPresetConfig.load_library()
