@@ -10,6 +10,8 @@ func _configure_concrete_enemy() -> void:
 	score_value = elite_score_value
 	remnant_color = Color("7d3548")
 	remnant_radius = 24.0
+	death_sound_category = "goblin_things"
+	death_sound_pitch = 0.88
 
 func _run_concrete_ai(delta: float) -> void:
 	_elite(delta)

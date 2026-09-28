@@ -9,6 +9,8 @@ class BloodPool extends RefCounted:
 	var max_radius: float = 28.0
 	var life: float = 0.0
 	var total_life: float = 2.0
+	## Per-pool colour, so a tinted enemy (e.g. the green Bug) pools its own blood.
+	var color: Color = Color(0.42, 0.015, 0.03, 0.9)
 
 @export var pool_total_life: float = 2.0
 @export var pool_limit: int = 40
@@ -16,10 +18,13 @@ class BloodPool extends RefCounted:
 
 var pools: Array[BloodPool] = []
 
-func spawn_pool(world_position: Vector2, base_radius: float) -> void:
+func spawn_pool(world_position: Vector2, base_radius: float, tint: Color = Color(-1.0, -1.0, -1.0, -1.0)) -> void:
 	var pool: BloodPool = BloodPool.new()
 	# Sit the pool slightly below the kill so it reads as pooling at the feet.
 	pool.world_position = world_position + Vector2(0.0, 6.0)
+	# A supplied tint keeps the pool's own opacity/behaviour but takes the caller's
+	# hue, so a green Bug leaves a green puddle while everything else stays red.
+	pool.color = pool_color if tint.a < 0.0 else Color(tint.r, tint.g, tint.b, pool_color.a)
 	pool.max_radius = clampf(base_radius, 10.0, 70.0)
 	pool.radius = pool.max_radius * 0.5
 	pool.total_life = pool_total_life
@@ -45,10 +50,10 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	for pool: BloodPool in pools:
 		var life_ratio: float = clampf(pool.life / maxf(pool.total_life, 0.001), 0.0, 1.0)
-		var alpha: float = pool_color.a * clampf(life_ratio / 0.45, 0.0, 1.0)
+		var alpha: float = pool.color.a * clampf(life_ratio / 0.45, 0.0, 1.0)
 		var local_position: Vector2 = to_local(pool.world_position)
-		_draw_puddle(local_position, pool.radius, Color(pool_color.r, pool_color.g, pool_color.b, alpha))
-		_draw_puddle(local_position, pool.radius * 0.62, Color(pool_color.r * 0.7, pool_color.g * 0.6, pool_color.b * 0.6, alpha))
+		_draw_puddle(local_position, pool.radius, Color(pool.color.r, pool.color.g, pool.color.b, alpha))
+		_draw_puddle(local_position, pool.radius * 0.62, Color(pool.color.r * 0.7, pool.color.g * 0.6, pool.color.b * 0.6, alpha))
 
 func _draw_puddle(center: Vector2, radius: float, color: Color) -> void:
 	# Flattened ellipse built by hand: primitives can ignore draw transforms for

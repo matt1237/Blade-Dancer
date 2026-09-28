@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://dfg6f5dkcaw4s"
+path="res://.godot/imported/goblin_shriek_+_deat_#2-1790627615780.mp3-2b6df45e0861f73bc07ea8befcfb1f71.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Enemy SFX/Goblin Things/goblin_shriek_+_deat_#2-1790627615780.mp3"
+dest_files=["res://.godot/imported/goblin_shriek_+_deat_#2-1790627615780.mp3-2b6df45e0861f73bc07ea8befcfb1f71.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

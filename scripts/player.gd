@@ -4336,6 +4336,9 @@ static func low_health_hit_threshold_crossed(previous_health: float, current_hea
 	return previous_health > threshold and current_health <= threshold
 
 func _update_sword(delta: float) -> void:
+	# The bone-stop cooldown ticks every frame, even while sheathed or inside a
+	# clash/parry freeze, so a queued catch cannot outlive those early returns.
+	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
@@ -4400,12 +4403,13 @@ func _update_sword(delta: float) -> void:
 	# The sink bite eases in on contact and eases back out, so the un-bite never snaps.
 	# A minimum dwell holds the contact alive after a fast pass, so even a one-frame
 	# overlap produces a felt, brief drag instead of an invisible blip.
-	# Sword Stickiness (the blade-hold duration authority): how long the blade's own
-	# hold lingers after the last flesh-contact frame before it eases back out. 0
-	# releases almost immediately, so the length of the grab is this one number.
-	var sink_dwell: float = clampf(get_combat_contact_setting("blade_sink_dwell_time"), 0.0, 0.30)
-	if blade_flesh_overlap_active:
-		blade_sink_contact_left = sink_dwell
+	# Sword Stickiness is the single hold budget: how long the blade's own hold
+	# lingers after the last flesh-contact frame before it eases back out. It is
+	# re-armed on contact but deliberately NOT while a bone stop is frozen, so the
+	# freeze is spent inside this one window rather than stacked on top of it.
+	var stickiness: float = clampf(get_combat_contact_setting("blade_sink_dwell_time"), 0.0, 0.30)
+	if blade_flesh_overlap_active and blade_bone_stop_left <= 0.0:
+		blade_sink_contact_left = stickiness
 	else:
 		blade_sink_contact_left = maxf(0.0, blade_sink_contact_left - delta)
 	var sink_contact_active: bool = blade_flesh_overlap_active or blade_sink_contact_left > 0.0
@@ -4418,8 +4422,8 @@ func _update_sword(delta: float) -> void:
 	blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, sink_target, delta)
 	# The bone reaction lives on its own channel, so the clash/parry freeze and the
 	# metronome clock stay untouched. The short stop punctuates the catch; the
-	# bounded glance then eases the blade back to its live swing angle.
-	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
+	# bounded glance then eases the blade back to its live swing angle. The stop's
+	# cooldown already ticked at the top of this function.
 	blade_glance_angle = move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)
 	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier
 	if blade_bone_stop_left > 0.0:
@@ -5010,7 +5014,9 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			# C then B: a brief stop when the blade catches the inner core, then a
 			# bounded glance off it. The cooldown makes this punctuation, not a bind.
 			if get_combat_contact_setting("blade_bone_stop_enabled") >= 0.5 and blade_bone_stop_cooldown_left <= 0.0:
-				blade_bone_stop_left = clampf(get_combat_contact_setting("blade_bone_stop_duration"), 0.0, 0.12)
+				blade_bone_stop_left = HitReaction.bone_stop_within_hold(
+					clampf(get_combat_contact_setting("blade_bone_stop_duration"), 0.0, 0.12),
+					clampf(get_combat_contact_setting("blade_sink_dwell_time"), 0.0, 0.30))
 				blade_bone_stop_cooldown_left = clampf(get_combat_contact_setting("blade_bone_stop_cooldown"), 0.0, 2.0)
 				var glide_sign: float = signf(cos(sword_phase))
 				if glide_sign == 0.0:

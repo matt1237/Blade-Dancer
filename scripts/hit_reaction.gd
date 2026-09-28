@@ -11,8 +11,9 @@ const DEFAULTS: Dictionary = {
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
 	"blade_sink_depth_percent": 70.0,
-	## Surfaced as "Sword Stickiness": the single blade-hold duration authority.
-	"blade_sink_dwell_time": 0.07,
+	## Surfaced as "Sword Stickiness": the single blade-hold duration authority, and
+	## the ceiling the bone stop nests inside (see bone_stop_within_hold).
+	"blade_sink_dwell_time": 0.10,
 	"blade_bone_stop_enabled": 0.0,
 	"blade_bone_stop_duration": 0.04,
 	"blade_bone_stop_cooldown": 0.6,
@@ -145,6 +146,14 @@ static func blade_sink_time_multiplier(master_enabled: bool, sink_enabled: bool,
 static func advance_blade_sink(current: float, target: float, delta: float) -> float:
 	var smoothing: float = BLADE_SINK_CONTACT_SMOOTHING if target < current else BLADE_SINK_RELEASE_SMOOTHING
 	return lerpf(current, target, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
+
+## Option A: the bone stop nests INSIDE the Sword Stickiness hold budget rather
+## than adding to it, so a core catch can never stack with the flesh tail into one
+## long stall. The freeze is capped by the stickiness window - it may shorten the
+## catch, but the blade is never held longer than a single budget. One knob, one
+## hold: raise Sword Stickiness to keep the catch intact, lower it for a crisp cut.
+static func bone_stop_within_hold(bone_stop_duration: float, stickiness: float) -> float:
+	return clampf(minf(maxf(bone_stop_duration, 0.0), maxf(stickiness, 0.0)), 0.0, 0.30)
 
 ## Target swing-rate multiplier for the inner core: 1.0 when the blade is not
 ## driving inward, easing toward the yielded floor as it presses deeper. The floor

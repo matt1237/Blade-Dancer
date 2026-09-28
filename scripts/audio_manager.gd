@@ -32,6 +32,36 @@ const COMBAT_CLIP_POOLS: Dictionary = {
 	]
 }
 
+## Enemy death cries. Bug, Wolf, and Turkey each own a clip; the Goblin (spear),
+## Sword Goblin, Archer Goblin, and Shield Ogre all share "Goblin Things", drawn at
+## random. Per-play pitch below keeps the shared clips from sounding identical.
+const ENEMY_DEATH_CLIPS: Dictionary = {
+	"bug_death": [
+		preload("res://assets/audio/Enemy SFX/Bugs/bug_getting_splatter_#2-1790627400426.mp3")
+	],
+	"wolf_death": [
+		preload("res://assets/audio/Enemy SFX/Wolves/Dog_yelping_#2-1790627159853.mp3")
+	],
+	"turkey_death": [
+		preload("res://assets/audio/Enemy SFX/Turkey/Turkey_gobbling_#3-1790627030456.mp3")
+	],
+	"goblin_things": [
+		preload("res://assets/audio/Enemy SFX/Goblin Things/Ogre_Brute_gurgling_#4-1790628214636.mp3"),
+		preload("res://assets/audio/Enemy SFX/Goblin Things/Ogre_Brute_gurgling_#4-1790628269409.mp3"),
+		preload("res://assets/audio/Enemy SFX/Goblin Things/goblin_dying_#3-1790627565063.mp3"),
+		preload("res://assets/audio/Enemy SFX/Goblin Things/goblin_gurgling_and__#1-1790627547230.mp3"),
+		preload("res://assets/audio/Enemy SFX/Goblin Things/goblin_gurgling_and__#3-1790627537748.mp3"),
+		preload("res://assets/audio/Enemy SFX/Goblin Things/goblin_shriek_+_deat_#2-1790627615780.mp3")
+	]
+}
+## Random pitch spread applied on top of an enemy's base death pitch, so repeats of
+## the shared clips differ.
+const ENEMY_DEATH_PITCH_JITTER: float = 0.04
+## Pitch clamp: past roughly 0.85-1.15, resampling a recorded voice starts to read as
+## metallic/scratchy, so per-enemy character and jitter deliberately stay inside it.
+const ENEMY_DEATH_PITCH_MIN: float = 0.85
+const ENEMY_DEATH_PITCH_MAX: float = 1.15
+
 var players: Array[AudioStreamPlayer] = []
 var combat_clip_players: Array[AudioStreamPlayer] = []
 var combat_clip_player_cursor: int = 0
@@ -80,6 +110,16 @@ func play_combat_clip(category: String) -> void:
 	if clips.is_empty() or combat_clip_players.is_empty():
 		return
 	var selected_clip: AudioStream = clips[randi_range(0, clips.size() - 1)] as AudioStream
+	var clip_volume_db: float = SWORD_SWING_VOLUME_DB if category == "sword_swing" else 0.0
+	_play_pooled_clip(selected_clip, randf_range(0.97, 1.03), clip_volume_db)
+	if category == "player_attack":
+		player_attack_clip_ready_at_msec = Time.get_ticks_msec() + PLAYER_ATTACK_CLIP_COOLDOWN_MSEC
+
+## Play a recorded clip on the next free pooled stream player, advancing the shared
+## cursor, so overlapping clips (e.g. several deaths at once) never cut each other off.
+func _play_pooled_clip(clip: AudioStream, pitch_scale: float, volume_db: float) -> void:
+	if clip == null or combat_clip_players.is_empty():
+		return
 	var selected_player: AudioStreamPlayer = null
 	for offset: int in range(combat_clip_players.size()):
 		var candidate_index: int = (combat_clip_player_cursor + offset) % combat_clip_players.size()
@@ -92,12 +132,21 @@ func play_combat_clip(category: String) -> void:
 		selected_player = combat_clip_players[combat_clip_player_cursor]
 		combat_clip_player_cursor = (combat_clip_player_cursor + 1) % combat_clip_players.size()
 	selected_player.stop()
-	selected_player.stream = selected_clip
-	selected_player.pitch_scale = randf_range(0.97, 1.03)
-	selected_player.volume_db = SWORD_SWING_VOLUME_DB if category == "sword_swing" else 0.0
+	selected_player.stream = clip
+	selected_player.pitch_scale = pitch_scale
+	selected_player.volume_db = volume_db
 	selected_player.play()
-	if category == "player_attack":
-		player_attack_clip_ready_at_msec = Time.get_ticks_msec() + PLAYER_ATTACK_CLIP_COOLDOWN_MSEC
+
+## Enemy death cry. Picks a random clip from the enemy's pool and applies the
+## archetype's base pitch (deeper for the Ogre, higher for the Archer) plus a small
+## random jitter, clamped so it never turns metallic/scratchy.
+func play_enemy_death(category: String, base_pitch: float = 1.0) -> void:
+	var clips: Array = ENEMY_DEATH_CLIPS.get(category, [])
+	if clips.is_empty():
+		return
+	var selected_clip: AudioStream = clips[randi_range(0, clips.size() - 1)] as AudioStream
+	var jittered_pitch: float = base_pitch * randf_range(1.0 - ENEMY_DEATH_PITCH_JITTER, 1.0 + ENEMY_DEATH_PITCH_JITTER)
+	_play_pooled_clip(selected_clip, clampf(jittered_pitch, ENEMY_DEATH_PITCH_MIN, ENEMY_DEATH_PITCH_MAX), 0.0)
 
 func _sound_index(sound_name: String) -> int:
 	match sound_name:

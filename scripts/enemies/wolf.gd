@@ -9,6 +9,7 @@ func _configure_concrete_enemy() -> void:
 	loot_material_name = CookingConfig.WOLF_MEAT_MATERIAL
 	loot_material_chance = LootConfig.WOLF_MEAT_DROP_CHANCE
 	remnant_color = Color("8f473f")
+	death_sound_category = "wolf_death"
 
 func _run_concrete_ai(delta: float) -> void:
 	_charger(delta)

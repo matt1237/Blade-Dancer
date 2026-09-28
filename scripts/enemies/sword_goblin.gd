@@ -40,6 +40,7 @@ func _configure_concrete_enemy() -> void:
 	loot_material_name = "Mushroom"
 	loot_material_chance = LootConfig.MUSHROOM_DROP_CHANCE
 	remnant_color = Color("a65d35")
+	death_sound_category = "goblin_things"
 	blade_length = 46.0
 
 func _ready() -> void:

@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://db8q5qvjwk3si"
+path="res://.godot/imported/Dog_yelping_#2-1790627159853.mp3-12758a7f1709f6917658c86b0c058c4c.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Enemy SFX/Wolves/Dog_yelping_#2-1790627159853.mp3"
+dest_files=["res://.godot/imported/Dog_yelping_#2-1790627159853.mp3-12758a7f1709f6917658c86b0c058c4c.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

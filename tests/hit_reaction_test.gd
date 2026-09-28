@@ -225,6 +225,40 @@ func test_blood_amount_and_droplet_size_settings_scale_the_spray() -> void:
 	assert(largest_big > largest_base, "Blood Droplet Size must scale the droplet radius.")
 	fx.free()
 
+func test_bug_bleeds_green_while_default_enemies_stay_red() -> void:
+	# The Bug carries its own blood tint; every other enemy leaves it unset and so
+	# falls back to the FX default red.
+	var bug: Bug = WaveSpawner.BUG_SCENE.instantiate() as Bug
+	bug._configure_concrete_enemy()
+	assert(bug.blood_tint.a > 0.0, "The Bug must opt into a blood tint.")
+	assert(bug.blood_tint.g > bug.blood_tint.r and bug.blood_tint.g > bug.blood_tint.b, "The Bug's blood tint must read green.")
+	var goblin: Goblin = WaveSpawner.GOBLIN_SCENE.instantiate() as Goblin
+	goblin._configure_concrete_enemy()
+	assert(goblin.blood_tint.a <= 0.0, "An untinted enemy must fall back to the FX red.")
+	bug.free()
+	goblin.free()
+
+func test_blood_tint_recolours_the_spray_and_the_pool() -> void:
+	var green: Color = Color(0.2, 0.8, 0.2, 0.96)
+	var fx: CombatPresentationFX = CombatPresentationFX.new()
+	fx.blood_drop_count = 8
+	fx._spawn_blood(Vector2.ZERO, Vector2.RIGHT * 500.0, 1.0, true, 1.0, 1.0, green)
+	assert(fx.blood_drops.size() > 0)
+	for drop: CombatPresentationFX.BloodDrop in fx.blood_drops:
+		assert(drop.color.g > drop.color.r and drop.color.g > drop.color.b, "A tinted spray must carry the tint colour on every droplet.")
+	fx.blood_drops.clear()
+	fx._spawn_blood(Vector2.ZERO, Vector2.RIGHT * 500.0, 1.0, true)
+	for drop: CombatPresentationFX.BloodDrop in fx.blood_drops:
+		assert(drop.color.is_equal_approx(fx.blood_color), "An untinted spray keeps the FX default red.")
+	fx.free()
+	var decals: BloodDecals = BloodDecals.new()
+	decals.spawn_pool(Vector2.ZERO, 20.0, green)
+	assert(decals.pools.size() == 1 and is_equal_approx(decals.pools[0].color.g, green.g), "A tinted pool keeps the supplied hue.")
+	decals.pools.clear()
+	decals.spawn_pool(Vector2.ZERO, 20.0)
+	assert(decals.pools.size() == 1 and decals.pools[0].color.is_equal_approx(decals.pool_color), "An untinted pool keeps the default red.")
+	decals.free()
+
 func test_contact_chance_lerps_from_the_gate_up_to_the_slider_ceiling() -> void:
 	# At or below the hidden quality gate the roll is zero, so a merely qualifying
 	# hit never fires; it climbs smoothly to the slider ceiling only at perfect
@@ -376,15 +410,16 @@ func test_hit_reaction_blade_and_blood_sections_are_collapsed_dropdowns() -> voi
 	assert(scroll.find_child("HitReactionSections", true, false) == null, "The old nested TabContainer section host must be gone.")
 	var headers: Array[Button] = []
 	_collect_buttons(scroll, headers)
-	var blade_header: Button = null
-	var blood_header: Button = null
+	var expected_sections: Array[String] = ["Blade Sink", "Blade Physical Reaction", "Enemy Visual FX", "Blood & Death"]
+	var found: Dictionary = {}
 	for header: Button in headers:
-		if header.text.ends_with("Blade Response"):
-			blade_header = header
-		elif header.text.ends_with("Blood & Death"):
-			blood_header = header
-	assert(blade_header != null and blood_header != null, "HIT REACTION must expose Blade Response and Blood & Death dropdown sections.")
-	assert(blade_header.text.begins_with("▶ ") and blood_header.text.begins_with("▶ "), "Every Hit Reaction section must start collapsed on init, ignoring any saved open state.")
+		for section_name: String in expected_sections:
+			if header.text.ends_with(section_name):
+				found[section_name] = header
+	for section_name: String in expected_sections:
+		assert(found.has(section_name), "HIT REACTION must expose a %s dropdown section." % section_name)
+		var header: Button = found[section_name]
+		assert(header.text.begins_with("▶ "), "Section %s must start collapsed on init, ignoring any saved open state." % section_name)
 	menu.free()
 	tabs.free()
 
@@ -393,3 +428,13 @@ func _collect_buttons(node: Node, out: Array[Button]) -> void:
 		out.append(node as Button)
 	for child: Node in node.get_children():
 		_collect_buttons(child, out)
+
+func test_bone_stop_nests_inside_the_sword_stickiness_hold_budget() -> void:
+	# Option A: the bone stop can never outlast the Sword Stickiness hold, so a core
+	# catch cannot stack with the flesh tail into one unpredictable long stall.
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_sink_dwell_time"], 0.10), "Sword Stickiness defaults to 0.10 s, the single hold budget.")
+	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.08, 0.10), 0.08), "A short catch inside a longer hold is kept intact.")
+	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.08, 0.05), 0.05), "A catch longer than the hold is clipped to the hold, never added on top of it.")
+	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.08, 0.0), 0.0), "A zero hold budget freezes nothing.")
+	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.5, 0.30), 0.30), "The catch stays within the hold and the 0.30 s ceiling.")
+	assert(is_equal_approx(HitReaction.bone_stop_within_hold(-0.1, 0.10), 0.0), "A negative catch duration clamps to zero.")

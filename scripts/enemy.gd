@@ -3,6 +3,14 @@ class_name Enemy extends CharacterBody2D
 enum GrappleWeight { LIGHT, MEDIUM, HEAVY }
 enum RangedCoverPhase { SEEK, HIDDEN, PEEK }
 const PROJECTILE_SCENE_PATH: String = "res://scenes/enemy_projectile.tscn"
+## Chance that a defeated enemy plays its death cry. Deliberately below 1.0 so a
+## pile-up of kills reads as a fight, not a wall of identical screams.
+const DEATH_SOUND_CHANCE: float = 0.85
+
+## Whether a death cry should play for the given 0..1 roll. Separated out so the
+## threshold can be unit-tested without depending on randomness.
+static func death_sound_should_play(roll: float) -> bool:
+	return roll < DEATH_SOUND_CHANCE
 @export_category("Enemy Identity and Rewards")
 ## Shared base stats. Concrete enemy classes configure identity-specific values.
 @export var max_health: float = 50.0
@@ -25,6 +33,16 @@ var wave_stat_multiplier: float = 1.0
 @export_range(0.0, 1.0, 0.01) var loot_material_chance: float = 0.0
 @export var remnant_color: Color = Color("8d4ac4")
 @export var remnant_radius: float = 18.0
+## When alpha > 0, this enemy's blood spray and kill pool use this colour instead
+## of the CombatPresentationFX default. Leave transparent for the default red; the
+## Bug sets it to a green so it bleeds its own colour.
+@export var blood_tint: Color = Color(0.0, 0.0, 0.0, 0.0)
+## Death-cry clip pool, set per concrete class in _configure_concrete_enemy (like
+## remnant_color and blood_tint). Empty means this enemy dies silently.
+@export var death_sound_category: String = ""
+## Base pitch for the death cry; the audio manager adds a small random jitter on top
+## and clamps it, so this only sets the archetype's character (deeper/higher).
+@export var death_sound_pitch: float = 1.0
 ## The runtime score awarded when this enemy is defeated.
 var score_value: int = 100
 ## Ogre health remains separately tuneable for backward-compatible inspector values.
@@ -1143,6 +1161,10 @@ func take_damage(amount: float, force: Vector2 = Vector2.ZERO, stagger_duration:
 	if health <= 0.0 and not death_emitted:
 		death_emitted = true
 		defeated.emit(score_value)
+		# Death cry: one random clip from this archetype's pool, pitched for character,
+		# on most kills but not all (see DEATH_SOUND_CHANCE).
+		if not death_sound_category.is_empty() and death_sound_should_play(randf()) and main_scene != null and main_scene.has_method("play_enemy_death"):
+			main_scene.play_enemy_death(death_sound_category, death_sound_pitch)
 		if not bool(get_meta("training_no_drops", false)) and main_scene.has_method("try_spawn_drop"):
 			main_scene.try_spawn_drop(global_position, self)
 		queue_free()

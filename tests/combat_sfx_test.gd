@@ -64,3 +64,69 @@ func test_each_combat_clip_category_plays_a_clip_from_its_pool() -> void:
 				assigned_channel_count += 1
 		assert(assigned_channel_count > 0, "Each event category must assign an imported clip to a playback channel.")
 	audio_manager.free()
+
+func test_every_enemy_archetype_maps_to_a_death_cry_pool() -> void:
+	var scenes: Array[PackedScene] = [WaveSpawner.TURKEY_SCENE, WaveSpawner.GOBLIN_SCENE, WaveSpawner.SWORD_GOBLIN_SCENE, WaveSpawner.ARCHER_GOBLIN_SCENE, WaveSpawner.BUG_SCENE, WaveSpawner.WOLF_SCENE, WaveSpawner.OGRE_SCENE]
+	for scene: PackedScene in scenes:
+		var enemy: Enemy = scene.instantiate() as Enemy
+		enemy._configure_concrete_enemy()
+		assert(not enemy.death_sound_category.is_empty(), "%s must declare a death-cry pool." % enemy.spawn_identity)
+		assert(AudioManager.ENEMY_DEATH_CLIPS.has(enemy.death_sound_category), "%s's pool must exist in the audio manager." % enemy.spawn_identity)
+		var pool: Array = AudioManager.ENEMY_DEATH_CLIPS[enemy.death_sound_category]
+		assert(not pool.is_empty(), "%s's death-cry pool must not be empty." % enemy.spawn_identity)
+		enemy.free()
+
+func test_enemy_death_cry_plays_on_most_but_not_every_kill() -> void:
+	assert(is_equal_approx(Enemy.DEATH_SOUND_CHANCE, 0.85), "Enemy death audio should play 85% of the time.")
+	assert(Enemy.death_sound_should_play(0.0), "A roll at the bottom of the range plays the cry.")
+	assert(Enemy.death_sound_should_play(0.8499), "A roll below the threshold plays the cry.")
+	assert(not Enemy.death_sound_should_play(0.85), "A roll at the threshold stays silent.")
+	assert(not Enemy.death_sound_should_play(0.9999), "The top of the range stays silent.")
+
+func test_goblin_family_shares_one_pool_with_distinct_pitch_character() -> void:
+	# Spear Goblin, Sword Goblin, Archer Goblin, and Shield Ogre share "Goblin Things"
+	# but are pitched apart so they read as different creatures from the same folder.
+	var ogre: Ogre = WaveSpawner.OGRE_SCENE.instantiate() as Ogre
+	var archer: ArcherGoblin = WaveSpawner.ARCHER_GOBLIN_SCENE.instantiate() as ArcherGoblin
+	var sword: SwordGoblin = WaveSpawner.SWORD_GOBLIN_SCENE.instantiate() as SwordGoblin
+	var spear: Goblin = WaveSpawner.GOBLIN_SCENE.instantiate() as Goblin
+	for enemy: Enemy in [ogre, archer, sword, spear]: enemy._configure_concrete_enemy()
+	for enemy: Enemy in [ogre, archer, sword, spear]:
+		assert(enemy.death_sound_category == "goblin_things", "%s must share the Goblin Things pool." % enemy.spawn_identity)
+	assert(ogre.death_sound_pitch < 1.0, "The Shield Ogre must be pitched deeper.")
+	assert(archer.death_sound_pitch > 1.0, "The Archer Goblin must be pitched higher.")
+	assert(is_equal_approx(spear.death_sound_pitch, 1.0) and is_equal_approx(sword.death_sound_pitch, 1.0), "The melee goblins stay at their natural pitch.")
+	ogre.free()
+	archer.free()
+	sword.free()
+	spear.free()
+
+func test_enemy_death_cry_picks_a_clip_and_clamps_its_pitch() -> void:
+	var audio_manager: AudioManager = AudioManager.new()
+	add_child(audio_manager)
+	for attempt: int in range(5):
+		for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+			clip_player.stop()
+			clip_player.stream = null
+		audio_manager.play_enemy_death("goblin_things", 1.0)
+		var played: AudioStreamPlayer = null
+		for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+			if clip_player.stream != null: played = clip_player
+		assert(played != null, "A known pool must assign an imported clip to a playback channel.")
+		assert(played.pitch_scale >= AudioManager.ENEMY_DEATH_PITCH_MIN - 0.001 and played.pitch_scale <= AudioManager.ENEMY_DEATH_PITCH_MAX + 0.001, "A neutral death pitch must stay inside the anti-metallic clamp.")
+	# An extreme base pitch is clamped rather than passed through — that clamp is what
+	# keeps the recorded voice from turning metallic/scratchy.
+	for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+		clip_player.stop()
+		clip_player.stream = null
+	audio_manager.play_enemy_death("goblin_things", 2.0)
+	for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+		if clip_player.stream != null:
+			assert(is_equal_approx(clip_player.pitch_scale, AudioManager.ENEMY_DEATH_PITCH_MAX), "A too-high base pitch must clamp to the maximum.")
+	# An unknown pool is a silent no-op, never an error.
+	audio_manager.play_enemy_death("does_not_exist", 1.0)
+	# Silence the pooled players before teardown so no playback outlives the manager.
+	for clip_player: AudioStreamPlayer in audio_manager.combat_clip_players:
+		clip_player.stop()
+		clip_player.stream = null
+	audio_manager.free()

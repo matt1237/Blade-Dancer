@@ -9,6 +9,7 @@ func _configure_concrete_enemy() -> void:
 	loot_material_name = "Mushroom"
 	loot_material_chance = LootConfig.MUSHROOM_DROP_CHANCE
 	remnant_color = Color("bd5ee6")
+	death_sound_category = "goblin_things"
 	duelist_metronome = randf() < duelist_metronome_chance
 
 func _run_concrete_ai(delta: float) -> void:

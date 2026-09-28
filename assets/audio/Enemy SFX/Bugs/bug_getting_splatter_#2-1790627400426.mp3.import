@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://bxfh4kcxu5j7k"
+path="res://.godot/imported/bug_getting_splatter_#2-1790627400426.mp3-30b3f1f914d8b0df01b81dbcc029767a.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Enemy SFX/Bugs/bug_getting_splatter_#2-1790627400426.mp3"
+dest_files=["res://.godot/imported/bug_getting_splatter_#2-1790627400426.mp3-30b3f1f914d8b0df01b81dbcc029767a.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

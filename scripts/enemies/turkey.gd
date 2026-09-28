@@ -7,6 +7,7 @@ func _configure_concrete_enemy() -> void:
 	loot_material_name = "Turkey"
 	loot_material_chance = LootConfig.TURKEY_DROP_CHANCE
 	remnant_color = Color("6d3c55")
+	death_sound_category = "turkey_death"
 
 func _run_concrete_ai(delta: float) -> void:
 	_chaser(delta)

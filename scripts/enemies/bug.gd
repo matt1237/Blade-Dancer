@@ -6,6 +6,8 @@ func _configure_concrete_enemy() -> void:
 	participates_in_melee_engagement = false
 	score_value = ranged_score_value
 	remnant_color = Color("4e83d1")
+	blood_tint = Color(0.28, 0.78, 0.20, 0.96)
+	death_sound_category = "bug_death"
 	ranged_cover_cooldown_left = randf_range(ranged_initial_cooldown_min, ranged_initial_cooldown_max)
 
 func _run_concrete_ai(delta: float) -> void:

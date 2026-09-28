@@ -6,6 +6,8 @@ class BloodDrop extends RefCounted:
 	var radius: float = 2.0
 	var life: float = 0.0
 	var total_life: float = 0.0
+	## Per-drop colour, so a tinted enemy (e.g. the green Bug) sprays its own blood.
+	var color: Color = Color(0.62, 0.02, 0.03, 0.96)
 
 class SplitRemnant extends RefCounted:
 	var world_position: Vector2 = Vector2.ZERO
@@ -104,6 +106,9 @@ class FloatingDamageNumber extends RefCounted:
 @export var blood_drop_lifetime: float = 0.9
 @export var blood_spread_degrees: float = 60.0
 @export var blood_color: Color = Color(0.62, 0.02, 0.03, 0.96)
+## Sentinel meaning "no caller tint supplied": fall back to blood_color. Any real
+## tint has a non-negative alpha, so a negative alpha marks the unset case.
+const BLOOD_TINT_UNSET: Color = Color(-1.0, -1.0, -1.0, -1.0)
 
 @export_category("High Quality Split Kill")
 @export var enable_split_kill: bool = true
@@ -294,6 +299,11 @@ func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Ve
 		var spring_overshoot: float = minf(0.35, enemy_deformation_spring_overshoot * hd_squash_multiplier)
 		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, maximum_compression * deformation_strength, spring_overshoot * deformation_strength, hd_enemy)
 	var contact_player: Player = null if enemy == null or not is_instance_valid(enemy) else enemy.player_ref
+	# A tinted enemy (the Bug) bleeds its own colour; everyone else falls back to
+	# the FX default red. Tint only changes the pellet colour, not the blood amount.
+	var blood_tint: Color = BLOOD_TINT_UNSET
+	if enemy != null and is_instance_valid(enemy) and enemy.blood_tint.a > 0.0:
+		blood_tint = enemy.blood_tint
 	var blood_chance_max: float = float(HitReaction.DEFAULTS.get("blood_chance_percent", 60.0))
 	var split_chance_max: float = float(HitReaction.DEFAULTS.get("split_kill_chance_percent", 80.0))
 	if contact_player != null:
@@ -310,7 +320,7 @@ func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Ve
 		if contact_player != null:
 			blood_amount_scale = clampf(contact_player.get_combat_contact_setting("blood_amount_percent") / 100.0, 0.0, 4.0)
 			blood_size_scale = clampf(contact_player.get_combat_contact_setting("blood_drop_size_percent") / 100.0, 0.0, 4.0)
-		_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit, blood_amount_scale, blood_size_scale)
+		_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit, blood_amount_scale, blood_size_scale, blood_tint)
 	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality and enemy != null and is_instance_valid(enemy) and enemy._is_hd_visual() and enemy.hd_enemy_sprite != null and enemy.hd_enemy_sprite.sprite_frames != null:
 		if randf() < HitReaction.contact_chance(split_chance_max, split_kill_min_quality, contact_quality):
 			var snapped_cut_direction: Vector2 = _snap_split_cut_direction(cut_direction)
@@ -323,7 +333,7 @@ func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Ve
 			if is_zero_approx(sprite_scale):
 				sprite_scale = enemy.hd_enemy_base_scale
 			_spawn_split_remnant(sprite_world_position, snapped_cut_direction, sprite_texture, sprite_scale, enemy.hd_enemy_sprite.flip_h, impact_velocity)
-			_spawn_split_blood_pool(sprite_world_position, sprite_texture, sprite_scale)
+			_spawn_split_blood_pool(sprite_world_position, sprite_texture, sprite_scale, blood_tint)
 			enemy.hd_enemy_sprite.hide()
 			enemy.queue_free()
 
@@ -398,9 +408,10 @@ func _should_trigger_time_slow(contact_quality: float) -> bool:
 	if contact_quality >= medium_hit_quality_threshold: return time_slow_on_medium_hits
 	return false
 
-func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false, amount_scale: float = 1.0, size_scale: float = 1.0) -> void:
+func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false, amount_scale: float = 1.0, size_scale: float = 1.0, spawn_tint: Color = BLOOD_TINT_UNSET) -> void:
 	if not enable_blood_splatter:
 		return
+	var drop_color: Color = blood_color if spawn_tint == BLOOD_TINT_UNSET else spawn_tint
 	# Spray is thrown along the blade's own travel direction (impact_velocity),
 	# so a cut always flings blood the way the sword was moving. Sword hits keep
 	# a tight directional jet; other impacts fan out broadly.
@@ -421,6 +432,7 @@ func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_qual
 		drop.radius = randf_range(2.0, 4.6) * lerpf(0.9, 1.25, clampf(contact_quality, 0.0, 1.0)) * safe_size
 		drop.total_life = blood_drop_lifetime * randf_range(0.7, 1.25)
 		drop.life = drop.total_life
+		drop.color = drop_color
 		blood_drops.append(drop)
 
 func _snap_split_cut_direction(cut_direction: Vector2) -> Vector2:
@@ -526,7 +538,7 @@ func _spawn_split_remnant(spawn_position: Vector2, cut_direction: Vector2, sourc
 	remnant.life = remnant.total_life
 	split_remnants.append(remnant)
 
-func _spawn_split_blood_pool(spawn_position: Vector2, source: Texture2D, sprite_scale: float) -> void:
+func _spawn_split_blood_pool(spawn_position: Vector2, source: Texture2D, sprite_scale: float, spawn_tint: Color = BLOOD_TINT_UNSET) -> void:
 	if not is_inside_tree():
 		return
 	var decals: Node = get_tree().get_first_node_in_group("blood_decals")
@@ -534,7 +546,7 @@ func _spawn_split_blood_pool(spawn_position: Vector2, source: Texture2D, sprite_
 		return
 	var source_width: float = source.get_size().x if source != null else 64.0
 	var pool_radius: float = clampf(source_width * sprite_scale * 0.45, 12.0, 70.0)
-	decals.call("spawn_pool", spawn_position, pool_radius)
+	decals.call("spawn_pool", spawn_position, pool_radius, spawn_tint)
 
 func _update_world_particles(delta: float) -> void:
 	for index: int in range(blood_drops.size() - 1, -1, -1):
@@ -635,7 +647,7 @@ func _draw_blood_drops() -> void:
 		var life_ratio: float = clampf(drop.life / maxf(drop.total_life, 0.001), 0.0, 1.0)
 		var local_position: Vector2 = _world_to_fx_local(drop.world_position)
 		var fade: float = clampf(life_ratio * 1.7, 0.0, 1.0)
-		var drop_color: Color = Color(blood_color.r, blood_color.g, blood_color.b, blood_color.a * fade)
+		var drop_color: Color = Color(drop.color.r, drop.color.g, drop.color.b, drop.color.a * fade)
 		# Motion smear behind each droplet, so the spray reads as travelling.
 		if drop.velocity.length_squared() > 1.0:
 			var trail_direction: Vector2 = -drop.velocity.normalized()
@@ -643,7 +655,7 @@ func _draw_blood_drops() -> void:
 			draw_line(local_position, local_position + trail_direction * drop.radius * 2.6, trail_color, drop.radius * 0.9, true)
 		draw_circle(local_position, drop.radius, drop_color)
 		# Wet highlight core.
-		var highlight: Color = Color(minf(1.0, blood_color.r + 0.28), blood_color.g + 0.02, blood_color.b + 0.02, drop_color.a)
+		var highlight: Color = Color(minf(1.0, drop.color.r + 0.28), drop.color.g + 0.02, drop.color.b + 0.02, drop_color.a)
 		draw_circle(local_position, drop.radius * 0.45, highlight)
 
 func _world_to_fx_local(world_position: Vector2) -> Vector2:

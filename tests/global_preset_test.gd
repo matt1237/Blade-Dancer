@@ -58,9 +58,14 @@ func test_hit_reaction_settings_and_removed_drag_migration_are_serialized_per_pr
 	var preset_two: Dictionary = contact_settings.get("2", {}) as Dictionary
 	for key: String in HitReaction.DEFAULTS.keys():
 		assert(preset_two.has(key), "The shipped GP2 needs its canonical Hit Reaction setting: %s." % key)
+	# The shipped default carries the deliberately authored bone-core sizes — the tuned
+	# 30% on the main GP2 preset and the 50% default on the others — and never ships the
+	# bone-debug overlay, whichever preset is inspected.
+	var expected_bone_core_size: Dictionary = {"1": 50.0, "2": 30.0, "3": 50.0, "4": 50.0}
 	for preset_key: String in ["1", "2", "3", "4"]:
 		var values: Dictionary = contact_settings.get(preset_key, {}) as Dictionary
-		assert(float(values.get("blade_bone_core_size_percent", -1.0)) == 50.0, "Every shipped combat preset needs the 50% default bone-core size.")
+		assert(is_equal_approx(float(values.get("blade_bone_core_size_percent", -1.0)), float(expected_bone_core_size[preset_key])), "Shipped preset %s must carry its authored bone-core size." % preset_key)
+		assert(float(values.get("blade_bone_debug_enabled", 0.0)) == 0.0, "Shipped preset %s must not enable the bone-debug overlay." % preset_key)
 		for removed_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
 			assert(not values.has(removed_key), "Shipped GP2 must not contain retired settings: %s." % removed_key)
 

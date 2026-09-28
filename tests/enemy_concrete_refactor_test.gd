@@ -30,9 +30,19 @@ func test_ai_and_equipment_capabilities_are_explicit() -> void:
 func test_wave_unlocks_preserve_original_named_composition() -> void:
 	var spawner: WaveSpawner = WaveSpawner.new()
 	spawner.current_wave = 1
-	assert(spawner._available_enemy_scenes() == [WaveSpawner.TURKEY_SCENE])
+	assert(spawner._available_enemy_scenes() == [WaveSpawner.TURKEY_SCENE], "Wave 1 should be Turkey only.")
 	spawner.current_wave = 5
-	assert(spawner._available_enemy_scenes() == NAMED_SCENES)
+	var available: Array[PackedScene] = spawner._available_enemy_scenes()
+	# The later "Swords and bows!" update added the Sword and Archer Goblin variants
+	# to the spawn table, so wave 5 is no longer the original five alone. The original
+	# named composition must still unlock, in order, alongside those variants.
+	var original_order: Array[PackedScene] = [WaveSpawner.TURKEY_SCENE, WaveSpawner.GOBLIN_SCENE, WaveSpawner.BUG_SCENE, WaveSpawner.WOLF_SCENE, WaveSpawner.OGRE_SCENE]
+	var cursor: int = 0
+	for scene: PackedScene in available:
+		if cursor < original_order.size() and scene == original_order[cursor]:
+			cursor += 1
+	assert(cursor == original_order.size(), "Wave 5 must still unlock every original named enemy in order.")
+	assert(available.has(WaveSpawner.SWORD_GOBLIN_SCENE) and available.has(WaveSpawner.ARCHER_GOBLIN_SCENE), "Wave 5 must also unlock the Sword and Archer Goblin variants.")
 	spawner.free()
 
 func test_base_and_non_ogre_enemies_do_not_block_chakram() -> void:

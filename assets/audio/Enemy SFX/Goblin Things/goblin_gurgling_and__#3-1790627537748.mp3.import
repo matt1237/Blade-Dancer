@@ -1,0 +1,19 @@
+[remap]
+
+importer="mp3"
+type="AudioStreamMP3"
+uid="uid://c40mgyo5if5bj"
+path="res://.godot/imported/goblin_gurgling_and__#3-1790627537748.mp3-9b5be5182b154b8b6370235eda88c1f3.mp3str"
+
+[deps]
+
+source_file="res://assets/audio/Enemy SFX/Goblin Things/goblin_gurgling_and__#3-1790627537748.mp3"
+dest_files=["res://.godot/imported/goblin_gurgling_and__#3-1790627537748.mp3-9b5be5182b154b8b6370235eda88c1f3.mp3str"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4
