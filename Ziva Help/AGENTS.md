@@ -5,7 +5,7 @@ Work on Blade Dancer efficiently, conservatively, and with minimal unnecessary r
 Prefer targeted inspection and small patches over broad rewrites.
 
 ## Golden Rules
-1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules - every single time.
+1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules - every single time. The protocol applies to discussion as much as to implementation: on the FIRST `/discuss`-style prompt of a session, read this `AGENTS.md` and `COLLABORATION_PROTOCOL.md` in full before responding. Discussion mode is not an exemption from the protocol - it is the moment the protocol matters most, because decisions made in discussion set the course of the work that follows.
 2. Ask clarifying questions whenever missing information could materially change the implementation or the direction of a discussion. Ask before implementation when scope, intended behavior, constraints, or design choices are unclear; during discussion, ask as soon as a user's preference or meaning is ambiguous. Continue independent work that does not depend on the answer, and do not guess on a consequential decision.
 3. DO NOT scan the entire project unless the task genuinely requires it.
 4. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
@@ -22,6 +22,7 @@ Prefer targeted inspection and small patches over broad rewrites.
 	- the next most likely cause
 13. Never add a redundant feature, slider, timer/cooldown, state variable, code path, or helper for behavior an existing system already owns. Locate and extend the canonical implementation instead of creating parallel or duplicated logic/UI. If a behavior is genuinely distinct, explain its distinct lifecycle and purpose before adding a separate authority; ask if that distinction is unclear.
 14. ALWAYS compare version control against current files when implementing, tuning, or bug-fixing. Before forming a hypothesis, diff the current files against the last known-good state and read the diff. See "Baseline Comparison Protocol — Git & Working-Tree First" below. A regression is found by diffing what changed, not by re-reasoning the whole subsystem.
+15. Reference the LIVE PLAYER SAVE — not the packaged launch defaults — whenever testing, iterating, implementing, or discussing. See "Live Save vs. Packaged Defaults" below. The values Matt actually plays are in the live GP2 save; the packaged `res://data/default_global_preset.json` matters ONLY when packaging a build or discussing an Itch/release upload. Never cite packaged values as if they were what Matt is playing. When in doubt about a setting's current value, read the live save first.
 
 ## Baseline Comparison Protocol — Git & Working-Tree First
 
@@ -60,6 +61,31 @@ as "the blood is gone." It was misdiagnosed as a dead blood system: a brand-new
 spray was rebuilt and two new tuners added — roughly three hours of prompting.
 `git diff <baseline>..HEAD` located the offending line in minutes. Treat this as
 the canonical failure mode this rule exists to prevent.
+
+## Live Save vs. Packaged Defaults
+
+Matt plays from his live save. That save is the source of truth for every test, tuning
+pass, implementation, and discussion. The packaged file is a ship artifact only — it is
+NOT what Matt experiences while iterating, and quoting it as "current" has caused repeated,
+confusing mistakes.
+
+- LIVE SAVE (what Matt is actually playing): `user://blade_dancer_global_presets.json`,
+  read the slot named by `active_slot`. On this machine it resolves to
+  `C:/Users/ratnu/AppData/Roaming/Godot/app_userdata/Blade Dancer/blade_dancer_global_presets.json`.
+- PACKAGED LAUNCH DEFAULTS: `res://data/default_global_preset.json`. Reference this ONLY
+  when packaging a build, or when discussing an Itch / release upload. In every other
+  context it is the wrong file.
+- Before stating any setting's current value, READ THE LIVE SAVE. If the live save and the
+  packaged file disagree, the live save wins for all gameplay work (the two commonly
+  diverge because the packaged file is only re-baked at release time).
+- Never edit the live save by hand — it is Matt's. Read it freely.
+- Adding a key or changing a value in the live save does not ship it. New defaults reach
+  players only when the packaged file is re-baked, which is a deliberate, user-approved
+  packaging step — not part of a normal tuning pass.
+
+Revised 2026-09-28 after repeatedly citing `data/default_global_preset.json` for settings
+that differed from Matt's live GP2 save (e.g. the blade-response block is ON and near maxed
+in the live save but OFF in the packaged file).
 
 ## Efficient Investigation Protocol
 For every task:

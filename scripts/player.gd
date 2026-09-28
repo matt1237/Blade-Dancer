@@ -43,6 +43,9 @@ const ICE_PATCH_SCRIPT: Script = preload("res://scripts/ice_patch.gd")
 const METRONOME_VISUALIZER_SCRIPT: Script = preload("res://scripts/ui/metronome_visualizer.gd")
 const BLADE_LENGTH: float = 84.0
 const BLADE_HILT_INSET: float = 14.0
+## Bone glance recovery: the bounded post-stop deflection eases back to the live
+## swing angle at this rate, so the slide-off is smooth rather than a snap.
+const BLADE_GLANCE_RECOVERY_SPEED: float = 3.2
 const CHARGED_GUARD_MIN_HAND_RADIUS: float = 18.0
 ## How long a detected player reversal gets a brief commitment response penalty.
 ## This is intentionally short: holding the mouse still never keeps the sword heavy.
@@ -790,6 +793,15 @@ var blade_core_yield_multiplier: float = 1.0
 var blade_flesh_overlap_active: bool = false
 var blade_sink_strength_active: float = 0.0
 var blade_sink_multiplier: float = 1.0
+## Live flesh-contact tail. Holds a minimum dwell once the blade touches flesh so
+## a one-frame pass still produces a felt, brief drag rather than nothing.
+var blade_sink_contact_left: float = 0.0
+## Bone stop: a short per-swing halt when the blade catches the inner core, then a
+## bounded glance. Kept on its own channel so the clash/parry freeze and the musical
+## metronome clock keep running independently.
+var blade_bone_stop_left: float = 0.0
+var blade_bone_stop_cooldown_left: float = 0.0
+var blade_glance_angle: float = 0.0
 var sword_event_label: String = ""
 var sword_event_point: Vector2 = Vector2.ZERO
 var sword_event_left: float = 0.0
@@ -2798,6 +2810,10 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 ## blade, so it can never look magnetically pinned. Sink likewise only changes the
 ## live cadence; neither ever translates the visible hilt.
 func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
+	# Bone glance: a bounded, fast-decaying deflection of the rendered pose. It is
+	# the only pose stage the bone reaction owns, so the free swing is never pinned.
+	if blade_glance_angle != 0.0:
+		transform_data["angle"] = float(transform_data["angle"]) + blade_glance_angle
 	return transform_data
 
 
@@ -4323,9 +4339,12 @@ func _update_sword(delta: float) -> void:
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
+		blade_sink_contact_left = 0.0
 		blade_core_yield_pending = 1.0
 		blade_core_yield_multiplier = 1.0
 		blade_sink_multiplier = 1.0
+		blade_bone_stop_left = 0.0
+		blade_glance_angle = 0.0
 		blade_velocity = Vector2.ZERO
 		previous_blade_start = Vector2.ZERO
 		previous_blade_end = Vector2.ZERO
@@ -4337,9 +4356,12 @@ func _update_sword(delta: float) -> void:
 	if blade_freeze_left > 0.0:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
+		blade_sink_contact_left = 0.0
 		blade_core_yield_pending = 1.0
 		blade_core_yield_multiplier = HitReaction.advance_blade_core_yield(blade_core_yield_multiplier, 1.0, delta)
 		blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, 1.0, delta)
+		blade_bone_stop_left = 0.0
+		blade_glance_angle = move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)
 		# Clash/parry weapon freeze remains independent of flesh-only effects.
 		# Player and hilt movement still matter. Real movement creates a slight tug/rip through the enemy.
 		var freeze_data: Dictionary = _sword_transform()
@@ -4376,13 +4398,33 @@ func _update_sword(delta: float) -> void:
 		slide_multiplier = clampf(get_combat_hand_setting("bind_sword_speed"), 0.05, 1.0)
 	# Flesh contact response modifies only the live swing cadence; free swing pose is unchanged.
 	# The sink bite eases in on contact and eases back out, so the un-bite never snaps.
+	# A minimum dwell holds the contact alive after a fast pass, so even a one-frame
+	# overlap produces a felt, brief drag instead of an invisible blip.
+	# Sword Stickiness (the blade-hold duration authority): how long the blade's own
+	# hold lingers after the last flesh-contact frame before it eases back out. 0
+	# releases almost immediately, so the length of the grab is this one number.
+	var sink_dwell: float = clampf(get_combat_contact_setting("blade_sink_dwell_time"), 0.0, 0.30)
+	if blade_flesh_overlap_active:
+		blade_sink_contact_left = sink_dwell
+	else:
+		blade_sink_contact_left = maxf(0.0, blade_sink_contact_left - delta)
+	var sink_contact_active: bool = blade_flesh_overlap_active or blade_sink_contact_left > 0.0
 	var sink_target: float = HitReaction.blade_sink_time_multiplier(
 		get_combat_contact_setting("hit_reaction_enabled") >= 0.5,
 		get_combat_contact_setting("blade_sink_enabled") >= 0.5,
-		blade_flesh_overlap_active,
-		blade_sink_strength_active)
+		sink_contact_active,
+		get_combat_contact_setting("blade_sink_strength"),
+		get_combat_contact_setting("blade_sink_depth_percent"))
 	blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, sink_target, delta)
+	# The bone reaction lives on its own channel, so the clash/parry freeze and the
+	# metronome clock stay untouched. The short stop punctuates the catch; the
+	# bounded glance then eases the blade back to its live swing angle.
+	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
+	blade_glance_angle = move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)
 	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier
+	if blade_bone_stop_left > 0.0:
+		sword_delta = 0.0
+		blade_bone_stop_left = maxf(0.0, blade_bone_stop_left - delta)
 	if authored_apex_hang_left > 0.0:
 		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
 		sword_delta = 0.0
@@ -4961,10 +5003,20 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				blade_sink_strength_active = maxf(blade_sink_strength_active, get_combat_contact_setting("blade_sink_strength"))
 		if physical_reaction_on and reached_inner_core and HitReaction.blade_physical_reaction_allowed(is_stab_motion, inward_alignment):
 			var reaction_strength: float = get_combat_contact_setting("blade_physical_reaction_strength")
-			var core_yield: float = HitReaction.blade_core_yield_target(reaction_strength, true, inward_alignment)
+			var core_yield: float = HitReaction.blade_core_yield_target(reaction_strength, true, inward_alignment, get_combat_contact_setting("blade_core_yield_percent"))
 			if core_yield < blade_core_yield_pending:
 				blade_core_yield_pending = core_yield
 				_set_sword_event("BLADE CORE YIELD", contact.contact_point, 0.18)
+			# C then B: a brief stop when the blade catches the inner core, then a
+			# bounded glance off it. The cooldown makes this punctuation, not a bind.
+			if get_combat_contact_setting("blade_bone_stop_enabled") >= 0.5 and blade_bone_stop_cooldown_left <= 0.0:
+				blade_bone_stop_left = clampf(get_combat_contact_setting("blade_bone_stop_duration"), 0.0, 0.12)
+				blade_bone_stop_cooldown_left = clampf(get_combat_contact_setting("blade_bone_stop_cooldown"), 0.0, 2.0)
+				var glide_sign: float = signf(cos(sword_phase))
+				if glide_sign == 0.0:
+					glide_sign = 1.0
+				blade_glance_angle = deg_to_rad(clampf(get_combat_contact_setting("blade_glance_angle_degrees"), 0.0, 20.0)) * glide_sign
+				_set_sword_event("BONE STOP", contact.contact_point, 0.2)
 		# Player body overlap alone never enters this path: reaching here already
 		# requires actual swept weapon geometry to touch the enemy. Do not cancel a
 		# valid blade hit merely because the combatants' bodies are close together.

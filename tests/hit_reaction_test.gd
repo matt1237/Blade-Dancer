@@ -1,6 +1,6 @@
 class_name HitReactionTest extends Node
 
-func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persistence() -> void:
+func test_hit_reaction_tab_has_twenty_two_controls_and_existing_per_preset_persistence() -> void:
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	var tabs: TabContainer = TabContainer.new()
 	menu._build_hit_reaction_tab(tabs)
@@ -12,6 +12,20 @@ func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persiste
 		var control: HSlider = row["slider"] as HSlider
 		if key == "blade_bone_core_size_percent":
 			assert(control.min_value == 10.0 and control.max_value == 100.0 and control.step == 5.0)
+		elif key == "blade_sink_depth_percent":
+			assert(control.min_value == 0.0 and control.max_value == 100.0 and control.step == 1.0, "Sink Depth must tune in 1% steps.")
+		elif key == "blade_sink_dwell_time":
+			assert(control.min_value == 0.0 and control.max_value == 0.30 and control.step == 0.01, "Sword Stickiness must tune 0 to 0.30s in 0.01s steps.")
+		elif key == "blade_bone_stop_enabled":
+			assert(control.min_value == 0.0 and control.max_value == 1.0 and control.step == 1.0)
+		elif key == "blade_bone_stop_duration":
+			assert(control.min_value == 0.0 and control.max_value == 0.12 and control.step == 0.01)
+		elif key == "blade_bone_stop_cooldown":
+			assert(control.min_value == 0.0 and control.max_value == 2.0 and control.step == 0.05)
+		elif key == "blade_glance_angle_degrees":
+			assert(control.min_value == 0.0 and control.max_value == 20.0 and control.step == 1.0, "The bone glance must stay capped at a safe 20 degrees.")
+		elif key == "blade_core_yield_percent":
+			assert(control.min_value == 0.0 and control.max_value == 100.0 and control.step == 1.0)
 		elif key == "blood_amount_percent" or key == "blood_drop_size_percent":
 			assert(control.min_value == 0.0 and control.max_value == 300.0 and control.step == 5.0)
 		elif key == "blood_chance_percent" or key == "split_kill_chance_percent":
@@ -29,6 +43,13 @@ func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persiste
 	player.set_combat_contact_setting("blade_physical_reaction_strength", 85.0)
 	player.set_combat_contact_setting("blade_sink_enabled", 1.0)
 	player.set_combat_contact_setting("blade_sink_strength", 70.0)
+	player.set_combat_contact_setting("blade_sink_depth_percent", 55.0)
+	player.set_combat_contact_setting("blade_sink_dwell_time", 0.14)
+	player.set_combat_contact_setting("blade_bone_stop_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_stop_duration", 0.09)
+	player.set_combat_contact_setting("blade_bone_stop_cooldown", 1.20)
+	player.set_combat_contact_setting("blade_glance_angle_degrees", 16.0)
+	player.set_combat_contact_setting("blade_core_yield_percent", 35.0)
 	player.set_combat_contact_setting("sword_knockback_away_enabled", 1.0)
 	player.set_combat_contact_setting("hd_hit_squash_strength", 250.0)
 	player.set_combat_contact_setting("blade_bone_debug_enabled", 1.0)
@@ -51,6 +72,13 @@ func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persiste
 	assert(player.get_combat_contact_setting("blade_physical_reaction_strength") == 85.0)
 	assert(player.get_combat_contact_setting("blade_sink_enabled") == 1.0)
 	assert(player.get_combat_contact_setting("blade_sink_strength") == 70.0)
+	assert(player.get_combat_contact_setting("blade_sink_depth_percent") == 55.0)
+	assert(player.get_combat_contact_setting("blade_sink_dwell_time") == 0.14)
+	assert(player.get_combat_contact_setting("blade_bone_stop_enabled") == 1.0)
+	assert(player.get_combat_contact_setting("blade_bone_stop_duration") == 0.09)
+	assert(player.get_combat_contact_setting("blade_bone_stop_cooldown") == 1.20)
+	assert(player.get_combat_contact_setting("blade_glance_angle_degrees") == 16.0)
+	assert(player.get_combat_contact_setting("blade_core_yield_percent") == 35.0)
 	assert(player.get_combat_contact_setting("sword_knockback_away_enabled") == 1.0)
 	assert(player.get_combat_contact_setting("hd_hit_squash_strength") == 250.0)
 	assert(player.get_combat_contact_setting("blade_bone_debug_enabled") == 1.0)
@@ -61,7 +89,7 @@ func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persiste
 	assert(player.get_combat_contact_setting("split_kill_chance_percent") == 70.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 15)
+	assert(HitReaction.DEFAULTS.size() == 22)
 	player.free()
 	menu.free()
 	tabs.free()
@@ -98,9 +126,11 @@ func test_inner_bone_boundary_allows_deep_cut_and_broadside_or_stab_yield_is_smo
 	assert(absf(approaching) > 0.0 and absf(approaching) < absf(broadside_cut), "Core response eases in rather than snapping.")
 	assert(absf(releasing) < absf(approaching), "Once contact ends, response eases back to the authored path.")
 
-func test_blade_sink_uses_full_ninety_percent_range_only_during_master_enabled_overlap() -> void:
-	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0), 0.1))
-	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 50.0), 0.55))
+func test_blade_sink_depth_and_strength_compose_and_only_apply_during_contact() -> void:
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0), 0.30), "Full strength uses the default 70% Depth ceiling, so the swing advances at 30%.")
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 50.0), 0.65), "Strength uses only half of the Depth ceiling.")
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0, 100.0), 0.0), "A 100% Depth ceiling at full strength stops the swing entirely.")
+	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0, 0.0), 1.0), "A 0% Depth ceiling never slows the swing.")
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 0.0), 1.0), "Zero strength must never slow the swing.")
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(false, true, true, 100.0), 1.0), "The master switch overrides sink.")
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, false, true, 100.0), 1.0))
@@ -124,11 +154,23 @@ func test_core_yield_slows_the_swing_without_rotating_or_translating_the_blade()
 	assert(is_equal_approx(HitReaction.blade_core_yield_target(100.0, false, 1.0), 1.0), "No inward core contact means no yield.")
 	assert(is_equal_approx(HitReaction.blade_core_yield_target(80.0, true, 0.0), 1.0), "Zero inward alignment means no yield.")
 	assert(HitReaction.blade_core_yield_target(60.0, true, 0.5) > target, "A weaker or shallower drive yields less.")
+	var glanced: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0, "arc_degrees": 60.0})
+	assert(is_equal_approx(float(glanced["angle"]), 0.0), "A zero glance leaves the authored angle untouched.")
+	player.blade_glance_angle = 0.2
+	var deflected: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0, "arc_degrees": 60.0})
+	assert(is_equal_approx(float(deflected["angle"]), 0.2), "The bone glance deflects the rendered pose by exactly its bounded angle.")
+	assert((deflected["start"] as Vector2) == authored_start, "Even a deflecting glance may never translate the authored hilt anchor.")
 	var eased_in: float = HitReaction.advance_blade_core_yield(1.0, target, 0.016)
 	assert(eased_in < 1.0 and eased_in > target, "The yield eases in rather than snapping to full resistance.")
 	var released: float = HitReaction.advance_blade_core_yield(eased_in, 1.0, 0.016)
 	assert(released > eased_in and released < 1.0, "After separation the swing rate eases back rather than snapping to full speed.")
 	player.free()
+
+func test_blade_core_yield_percent_scales_the_gentle_floor() -> void:
+	assert(is_equal_approx(HitReaction.blade_core_yield_target(100.0, true, 1.0, 60.0), 0.85), "The default 60% Core Yield is gentler than the old 0.75 floor.")
+	assert(is_equal_approx(HitReaction.blade_core_yield_target(100.0, true, 1.0, 100.0), 0.75), "100% Core Yield restores the old full-strength floor.")
+	assert(is_equal_approx(HitReaction.blade_core_yield_target(100.0, true, 1.0, 0.0), 1.0), "0% Core Yield turns the continuous resistance off.")
+	assert(is_equal_approx(HitReaction.blade_core_yield_target(100.0, false, 1.0, 60.0), 1.0), "No inward core contact means no yield at any percent.")
 
 func test_blade_sink_bite_eases_in_and_smoothly_releases() -> void:
 	var bit: float = HitReaction.advance_blade_sink(1.0, 0.1, 0.016)
@@ -222,7 +264,7 @@ func test_removed_pose_and_drag_authorities_are_not_called() -> void:
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	assert(not source.contains("_update_hit_reaction_pose") and not source.contains("hit_reaction_offset"))
 	assert(not source.contains("_trigger_contact_drag") and not source.contains("contact_drag_multiplier"))
-	assert(not source.contains("blade_physical_reaction_angle"), "The rotated blade reaction was replaced by a gentle swing-rate yield.")
+	assert(not source.contains("blade_physical_reaction_angle"), "The old unbounded rotated blade reaction was replaced by a bounded, tunable bone glance plus a swing-rate yield.")
 	assert(not source.contains("hit_knockback_scale") and not source.contains("hit_hitstop_scale"))
 	assert(not source.contains("HitReaction.analyze") and not source.contains("HitReaction.resist"))
 	for retired_setting: String in ["flesh_contact_drag", "hilt_contact_drag", "farmable_contact_drag", "kill_blood_splatter_chance"]:
@@ -321,3 +363,33 @@ func test_hit_axis_deformation_is_preserved_for_hd_without_changing_baseline() -
 	enemy.free()
 	hd_player.free()
 	fx.free()
+
+func test_hit_reaction_blade_and_blood_sections_are_collapsed_dropdowns() -> void:
+	# The deep tuners live in always-collapsed dropdown sections - the same idiom the
+	# Combat Presets tab uses - not a nested TabContainer. Their open state is never
+	# saved or restored, so every launch starts collapsed for a clean menu.
+	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
+	var tabs: TabContainer = TabContainer.new()
+	menu._build_hit_reaction_tab(tabs)
+	var scroll: Node = tabs.get_node("HIT REACTION")
+	assert(scroll != null, "HIT REACTION must remain a ScrollContainer tab.")
+	assert(scroll.find_child("HitReactionSections", true, false) == null, "The old nested TabContainer section host must be gone.")
+	var headers: Array[Button] = []
+	_collect_buttons(scroll, headers)
+	var blade_header: Button = null
+	var blood_header: Button = null
+	for header: Button in headers:
+		if header.text.ends_with("Blade Response"):
+			blade_header = header
+		elif header.text.ends_with("Blood & Death"):
+			blood_header = header
+	assert(blade_header != null and blood_header != null, "HIT REACTION must expose Blade Response and Blood & Death dropdown sections.")
+	assert(blade_header.text.begins_with("▶ ") and blood_header.text.begins_with("▶ "), "Every Hit Reaction section must start collapsed on init, ignoring any saved open state.")
+	menu.free()
+	tabs.free()
+
+func _collect_buttons(node: Node, out: Array[Button]) -> void:
+	if node is Button:
+		out.append(node as Button)
+	for child: Node in node.get_children():
+		_collect_buttons(child, out)

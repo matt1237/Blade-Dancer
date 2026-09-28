@@ -10,6 +10,14 @@ const DEFAULTS: Dictionary = {
 	"blade_physical_reaction_strength": 55.0,
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
+	"blade_sink_depth_percent": 70.0,
+	## Surfaced as "Sword Stickiness": the single blade-hold duration authority.
+	"blade_sink_dwell_time": 0.07,
+	"blade_bone_stop_enabled": 0.0,
+	"blade_bone_stop_duration": 0.04,
+	"blade_bone_stop_cooldown": 0.6,
+	"blade_glance_angle_degrees": 10.0,
+	"blade_core_yield_percent": 60.0,
 	"sword_knockback_away_enabled": 0.0,
 	"blade_bone_debug_enabled": 0.0,
 	"blade_bone_core_size_percent": DEFAULT_INNER_BONE_SIZE_PERCENT,
@@ -21,6 +29,10 @@ const DEFAULTS: Dictionary = {
 }
 
 const MAX_BLADE_SINK_SLOWDOWN: float = 0.9
+## Blade Sink is the flesh-speed channel only: Depth is the ceiling slowdown
+## reachable at full Strength, so 70% Depth + 100% Strength advances the live
+## swing at 0.30 (a touch gentler than a Bind's 0.18 bound-sword speed).
+const DEFAULT_BLADE_SINK_DEPTH_PERCENT: float = 70.0
 const INNER_BONE_RADIUS_FRACTION: float = DEFAULT_INNER_BONE_SIZE_PERCENT / 100.0
 const BONE_CONTACT_RESPONSE_SMOOTHING: float = 40.0
 const BONE_RELEASE_RESPONSE_SMOOTHING: float = 16.0
@@ -30,7 +42,7 @@ const MAX_BONE_RECOIL_RATIO: float = 0.7
 const BROADSIDE_RECOIL_START: float = 0.82
 ## Contact-time slowdowns ease in and, crucially, ease back out so the un-bite is
 ## smooth instead of snapping the swing rate back in a single frame.
-const BLADE_SINK_CONTACT_SMOOTHING: float = 24.0
+const BLADE_SINK_CONTACT_SMOOTHING: float = 40.0
 const BLADE_SINK_RELEASE_SMOOTHING: float = 12.0
 ## The inner core yields as a gentle swing-rate cut, not a rotation: at full
 ## strength the live swing advances at this fraction while driving into the core.
@@ -119,11 +131,14 @@ static func sword_knockback_direction(default_direction: Vector2, player_positio
 	return away_direction if away_direction.length_squared() > 0.001 else default_direction
 
 ## Sink is a live contact-time rate only. Separation or either switch restores 1.0.
-static func blade_sink_time_multiplier(master_enabled: bool, sink_enabled: bool, flesh_overlap: bool, strength: float) -> float:
-	if not master_enabled or not sink_enabled or not flesh_overlap:
+## Depth is the ceiling slowdown reachable at full Strength; Strength scales how
+## much of that ceiling is used, so the two sliders stay independently tunable.
+static func blade_sink_time_multiplier(master_enabled: bool, sink_enabled: bool, contact_active: bool, strength: float, depth_percent: float = DEFAULT_BLADE_SINK_DEPTH_PERCENT) -> float:
+	if not master_enabled or not sink_enabled or not contact_active:
 		return 1.0
 	var strength_ratio: float = clampf(strength / 100.0, 0.0, 1.0)
-	return 1.0 - MAX_BLADE_SINK_SLOWDOWN * strength_ratio
+	var depth_ratio: float = clampf(depth_percent / 100.0, 0.0, 1.0)
+	return 1.0 - depth_ratio * strength_ratio
 
 ## The bite ramps in on contact and eases back out after separation. The smoothed
 ## value is the live swing-rate multiplier, so release never snaps the cadence.
@@ -132,13 +147,16 @@ static func advance_blade_sink(current: float, target: float, delta: float) -> f
 	return lerpf(current, target, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
 
 ## Target swing-rate multiplier for the inner core: 1.0 when the blade is not
-## driving inward, easing toward BLADE_CORE_YIELD_FLOOR as it presses deeper.
-static func blade_core_yield_target(strength: float, active: bool, inward_alignment: float) -> float:
+## driving inward, easing toward the yielded floor as it presses deeper. The floor
+## is the old 0.75 cap scaled by the Core Yield percent, so the slider only ever
+## makes the continuous bone resistance gentler, never harsher.
+static func blade_core_yield_target(strength: float, active: bool, inward_alignment: float, yield_percent: float = 100.0) -> float:
 	if not active:
 		return 1.0
 	var strength_ratio: float = clampf(strength / 100.0, 0.0, 1.0)
+	var yield_ratio: float = clampf(yield_percent / 100.0, 0.0, 1.0)
 	var depth: float = clampf(inward_alignment, 0.0, 1.0)
-	return 1.0 - (1.0 - BLADE_CORE_YIELD_FLOOR) * strength_ratio * depth
+	return 1.0 - (1.0 - BLADE_CORE_YIELD_FLOOR) * yield_ratio * strength_ratio * depth
 
 static func advance_blade_core_yield(current: float, target: float, delta: float) -> float:
 	var smoothing: float = BONE_CONTACT_RESPONSE_SMOOTHING if target < current else BONE_RELEASE_RESPONSE_SMOOTHING
