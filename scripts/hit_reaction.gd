@@ -16,6 +16,8 @@ const DEFAULTS: Dictionary = {
 	"hd_hit_squash_strength": 200.0,
 	"blood_amount_percent": 100.0,
 	"blood_drop_size_percent": 100.0,
+	"blood_chance_percent": 60.0,
+	"split_kill_chance_percent": 80.0,
 }
 
 const MAX_BLADE_SINK_SLOWDOWN: float = 0.9
@@ -37,6 +39,20 @@ const BLADE_CORE_YIELD_FLOOR: float = 0.75
 
 static func value(settings: Dictionary, key: String) -> float:
 	return float(settings.get(key, DEFAULTS.get(key, 0.0)))
+
+## Probability (0..1) that a contact actually fires, given a visible max-chance
+## slider and a hidden minimum-quality gate. The chance ramps from zero AT the
+## gate up to the slider's ceiling at perfect contact (quality 1.0), so even a
+## 100% ceiling still will not fire on every merely-qualifying hit.
+static func contact_chance(max_percent: float, min_quality: float, quality: float) -> float:
+	var ceiling: float = clampf(max_percent / 100.0, 0.0, 1.0)
+	if ceiling <= 0.0:
+		return 0.0
+	if quality < min_quality:
+		return 0.0
+	if min_quality >= 1.0:
+		return ceiling
+	return ceiling * smoothstep(min_quality, 1.0, clampf(quality, 0.0, 1.0))
 
 static func inner_bone_fraction(size_percent: float) -> float:
 	return clampf(size_percent / 100.0, 0.0, 1.0)

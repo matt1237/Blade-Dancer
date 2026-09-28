@@ -153,6 +153,33 @@ Avoid shotgun debugging.
 Note: this order fits *logic* bugs well. It does not fit visual/feel work
 (art, animation, effects) — see "Art & Feel Iteration" below for that case.
 
+## Effect Validity — Not Present vs. Not Distinguishable
+
+When an effect "isn't taking," prove it is EXECUTING before touching any value:
+does the call actually fire, does the draw actually run, are the inputs sane?
+Guessing at magnitude while the code never executes is the fastest way to burn a
+session.
+
+Then separate the two failure modes — they need opposite responses:
+- **Not present** (the effect never happens / never draws / is culled / renders
+  off-screen): a wiring, execution, or coordinate bug. Debug the PATH. Do not
+  tune.
+- **Not distinguishable** (the effect runs but is visually lost — too small, too
+  brief, too low-contrast, overdrawn by a later stage): tune magnitude, timing,
+  colour, and layer order.
+
+Rule: if two tuning passes produce no visible change, the APPROACH is probably
+wrong. Stop nudging values; escalate to a structural hypothesis, reconsider the
+method, or hand back a plain "this approach isn't working, here's why." Never
+spend hours tuning a system that may be fundamentally broken.
+
+Incident (2026-09-28): "the blood is gone" was treated as a dead system and a
+brand-new spray was rebuilt and tuned — but the blood was never absent; a
+one-line coordinate regression drew it off-screen. That is a "not present"
+class bug wearing a "not distinguishable" mask. Proving execution first would
+have caught it in minutes. See "Baseline Comparison Protocol — Git &
+Working-Tree First".
+
 ## Context Budget
 Treat context as expensive.
 - Prefer summaries over dumping entire files.

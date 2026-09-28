@@ -16,6 +16,7 @@
 [ext_resource type="Script" uid="uid://crsx47ons3hhp" path="res://scripts/forest_ambient_fx.gd" id="16_forest_ambient_fx"]
 [ext_resource type="PackedScene" path="res://scenes/chasm/chasm_stage.tscn" id="17_chasm_stage"]
 [ext_resource type="PackedScene" path="res://scenes/ui/mobile_controls.tscn" id="18_mobile_controls"]
+[ext_resource type="Script" path="res://scripts/blood_decals.gd" id="19_blood_decals"]
 
 [sub_resource type="Environment" id="Environment_fx"]
 background_mode = 3
@@ -65,6 +66,10 @@ script = ExtResource("11_engagement")
 
 [node name="ArenaGenerator" parent="." unique_id=1396902278 instance=ExtResource("10_terrain")]
 z_index = 1
+
+[node name="BloodDecals" type="Node2D" parent="." unique_id=1396902279 groups=["blood_decals"]]
+z_index = 1
+script = ExtResource("19_blood_decals")
 
 [node name="WaveSpawner" type="Node2D" parent="." unique_id=876560019]
 script = ExtResource("4_spawner")

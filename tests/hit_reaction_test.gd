@@ -1,6 +1,6 @@
 class_name HitReactionTest extends Node
 
-func test_hit_reaction_tab_has_thirteen_controls_and_existing_per_preset_persistence() -> void:
+func test_hit_reaction_tab_has_fifteen_controls_and_existing_per_preset_persistence() -> void:
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	var tabs: TabContainer = TabContainer.new()
 	menu._build_hit_reaction_tab(tabs)
@@ -14,6 +14,8 @@ func test_hit_reaction_tab_has_thirteen_controls_and_existing_per_preset_persist
 			assert(control.min_value == 10.0 and control.max_value == 100.0 and control.step == 5.0)
 		elif key == "blood_amount_percent" or key == "blood_drop_size_percent":
 			assert(control.min_value == 0.0 and control.max_value == 300.0 and control.step == 5.0)
+		elif key == "blood_chance_percent" or key == "split_kill_chance_percent":
+			assert(control.min_value == 0.0 and control.max_value == 100.0 and control.step == 5.0)
 		assert(control.tooltip_text.contains("← LEFT") and control.tooltip_text.contains("→ RIGHT") and control.tooltip_text.contains("TIP:"), "Every Hit Reaction control needs complete feel guidance: %s" % key)
 	var switch: HSlider = (menu.contact_controls["hit_reaction_enabled"] as Dictionary)["slider"] as HSlider
 	assert(switch.step == 1.0 and switch.min_value == 0.0 and switch.max_value == 1.0)
@@ -33,6 +35,8 @@ func test_hit_reaction_tab_has_thirteen_controls_and_existing_per_preset_persist
 	player.set_combat_contact_setting("blade_bone_core_size_percent", 70.0)
 	player.set_combat_contact_setting("blood_amount_percent", 150.0)
 	player.set_combat_contact_setting("blood_drop_size_percent", 120.0)
+	player.set_combat_contact_setting("blood_chance_percent", 45.0)
+	player.set_combat_contact_setting("split_kill_chance_percent", 70.0)
 	player.set_combat_contact_setting("flesh_contact_drag", 99.0)
 	player.set_combat_contact_setting("flesh_contact_drag_recovery", 96.0)
 	player.set_combat_contact_setting("hilt_contact_drag", 98.0)
@@ -53,9 +57,11 @@ func test_hit_reaction_tab_has_thirteen_controls_and_existing_per_preset_persist
 	assert(player.get_combat_contact_setting("blade_bone_core_size_percent") == 70.0)
 	assert(player.get_combat_contact_setting("blood_amount_percent") == 150.0)
 	assert(player.get_combat_contact_setting("blood_drop_size_percent") == 120.0)
+	assert(player.get_combat_contact_setting("blood_chance_percent") == 45.0)
+	assert(player.get_combat_contact_setting("split_kill_chance_percent") == 70.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 13)
+	assert(HitReaction.DEFAULTS.size() == 15)
 	player.free()
 	menu.free()
 	tabs.free()
@@ -177,6 +183,40 @@ func test_blood_amount_and_droplet_size_settings_scale_the_spray() -> void:
 	assert(largest_big > largest_base, "Blood Droplet Size must scale the droplet radius.")
 	fx.free()
 
+func test_contact_chance_lerps_from_the_gate_up_to_the_slider_ceiling() -> void:
+	# At or below the hidden quality gate the roll is zero, so a merely qualifying
+	# hit never fires; it climbs smoothly to the slider ceiling only at perfect
+	# contact, which is exactly what stops a fixed threshold from always firing.
+	assert(is_equal_approx(HitReaction.contact_chance(100.0, 0.5, 0.5), 0.0))
+	assert(is_equal_approx(HitReaction.contact_chance(100.0, 0.5, 1.0), 1.0))
+	assert(is_equal_approx(HitReaction.contact_chance(80.0, 0.5, 0.75), 0.4))
+	assert(is_equal_approx(HitReaction.contact_chance(50.0, 0.0, 1.0), 0.5))
+	assert(is_equal_approx(HitReaction.contact_chance(100.0, 0.88, 0.88), 0.0))
+	assert(is_equal_approx(HitReaction.contact_chance(100.0, 0.88, 0.94), 0.5), "Halfway between the split gate and 1.0 is a 50% ceiling allowance.")
+	assert(is_equal_approx(HitReaction.contact_chance(0.0, 0.0, 1.0), 0.0), "A 0% ceiling never fires.")
+	assert(HitReaction.contact_chance(100.0, 0.4, 0.6) < HitReaction.contact_chance(100.0, 0.4, 0.9), "Higher quality means a higher chance.")
+
+func test_zero_chance_disables_blood_while_full_chance_fires() -> void:
+	# Behavioral check on the FX gate: a 0% ceiling suppresses the spray entirely,
+	# and a 100% ceiling at perfect quality lets a qualifying hit through.
+	var fx: CombatPresentationFX = CombatPresentationFX.new()
+	var player: Player = Player.new()
+	player.visual_style = "hd"
+	player.set_combat_contact_setting("blood_chance_percent", 0.0)
+	player.set_combat_contact_setting("split_kill_chance_percent", 0.0)
+	var enemy: Enemy = Turkey.new()
+	enemy.player_ref = player
+	fx.blood_min_quality = 0.0
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.RIGHT * 500.0, Vector2.RIGHT, 1.0, true, true, true)
+	assert(fx.blood_drops.is_empty(), "A 0% Blood Chance never sprays, even on a perfect kill.")
+	fx.blood_drops.clear()
+	player.set_combat_contact_setting("blood_chance_percent", 100.0)
+	fx.present_enemy_hit(enemy, Vector2.ZERO, Vector2.RIGHT * 500.0, Vector2.RIGHT, 1.0, true, true, true)
+	assert(not fx.blood_drops.is_empty(), "A 100% Blood Chance sprays on a perfect hit.")
+	enemy.free()
+	player.free()
+	fx.free()
+
 func test_removed_pose_and_drag_authorities_are_not_called() -> void:
 	var source: String = FileAccess.get_file_as_string("res://scripts/player.gd")
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
@@ -237,6 +277,10 @@ func test_hit_axis_deformation_is_preserved_for_hd_without_changing_baseline() -
 	var hd_player: Player = Player.new()
 	hd_player.visual_style = "hd"
 	hd_player.set_combat_contact_setting("hd_hit_squash_strength", 200.0)
+	# Pin both rolls to 100% so the deterministic blood assertions below hold at
+	# perfect contact quality; the quality-lerp itself is covered separately.
+	hd_player.set_combat_contact_setting("blood_chance_percent", 100.0)
+	hd_player.set_combat_contact_setting("split_kill_chance_percent", 100.0)
 	enemy.player_ref = hd_player
 	enemy.impact_deformation_directional_hd = true
 	fx.hit_squash_strength = 0.0
