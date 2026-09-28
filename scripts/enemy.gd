@@ -52,6 +52,7 @@ var impact_deformation_duration: float = 0.0
 var impact_deformation_compression: float = 0.0
 var impact_deformation_overshoot: float = 0.0
 var impact_deformation_direction: Vector2 = Vector2.RIGHT
+var impact_deformation_directional_hd: bool = false
 
 var health: float = 50.0
 
@@ -66,8 +67,8 @@ var hit_visual_direction: Vector2 = Vector2.ZERO
 var hit_visual_distance: float = 0.0
 var hit_visual_rotation: float = 0.0
 var hit_visual_elapsed: float = 0.0
-var hit_visual_in: float = 0.06
-var hit_visual_return: float = 0.16
+const HIT_VISUAL_IN = 0.06
+const HIT_VISUAL_RETURN = 0.16
 ## Small, slower-decaying momentum tail from being pulled off balance by a taut grapple.
 var grapple_slide_velocity: Vector2 = Vector2.ZERO
 var fire_timer: float = 1.5
@@ -334,20 +335,24 @@ func _add_hd_animation(frames: SpriteFrames, animation_name: String, atlas: Text
 		frame.region = Rect2(Vector2(float(frame_index) * frame_size.x, 0.0), frame_size)
 		frames.add_frame(animation_name, frame)
 
-func play_hit_reaction(outward: Vector2, impact: float, distance: float, lean_degrees: float, in_time: float, return_time: float) -> void:
-	hit_visual_direction = outward.normalized()
-	hit_visual_distance = maxf(0.0, distance) * clampf(impact, 0.0, 1.0)
-	hit_visual_rotation = deg_to_rad(lean_degrees) * clampf(impact, 0.0, 1.0) * signf(outward.x if absf(outward.x) > 0.01 else 1.0)
-	hit_visual_in = maxf(in_time, 0.01)
-	hit_visual_return = maxf(return_time, 0.01)
+func play_hit_reaction(impact_velocity: Vector2, contact_point: Vector2, quality: float, distance: float, lean_degrees: float) -> void:
+	# Visual response only: the real body, collision, knockback, and AI never move here.
+	hit_visual_direction = impact_velocity.normalized() if impact_velocity.length_squared() > 0.001 else global_position.direction_to(contact_point) * -1.0
+	var strength: float = clampf(quality, 0.0, 1.0)
+	hit_visual_distance = maxf(0.0, distance) * strength
+	# A contact high/low on the body has its own rotational leverage; a center
+	# hit still leans away from a sideways incoming blade.
+	var lever: float = (contact_point - global_position).cross(hit_visual_direction)
+	var lean_sign: float = signf(lever) if absf(lever) > 1.0 else signf(hit_visual_direction.x)
+	hit_visual_rotation = deg_to_rad(lean_degrees) * strength * lean_sign
 	hit_visual_elapsed = 0.001
 	queue_redraw()
 
 func _hit_visual_ratio() -> float:
 	if hit_visual_elapsed <= 0.0: return 0.0
-	if hit_visual_elapsed < hit_visual_in:
-		return hit_visual_elapsed / hit_visual_in
-	return 1.0 - clampf((hit_visual_elapsed - hit_visual_in) / hit_visual_return, 0.0, 1.0)
+	if hit_visual_elapsed < HIT_VISUAL_IN:
+		return hit_visual_elapsed / HIT_VISUAL_IN
+	return 1.0 - clampf((hit_visual_elapsed - HIT_VISUAL_IN) / HIT_VISUAL_RETURN, 0.0, 1.0)
 
 func _update_hd_enemy_sprite() -> void:
 	if hd_enemy_sprite == null: return
@@ -364,7 +369,17 @@ func _update_hd_enemy_sprite() -> void:
 	var hit_ratio: float = _hit_visual_ratio()
 	hd_enemy_sprite.position = Vector2(0.0, -charge_pose * 2.0) + hit_visual_direction * hit_visual_distance * hit_ratio
 	hd_enemy_sprite.rotation = (0.04 if facing_left else -0.04) * charge_pose + hit_visual_rotation * hit_ratio
-	hd_enemy_sprite.scale = Vector2(hd_enemy_base_scale * (1.0 + impact_ratio * 0.08 + charge_pose * 0.04), hd_enemy_base_scale * (1.0 - impact_ratio * 0.06 - charge_pose * 0.04))
+	var sprite_pose: Transform2D = Transform2D(hd_enemy_sprite.rotation, hd_enemy_sprite.position)
+	if impact_deformation_directional_hd and impact_deformation_left > 0.0:
+		# Reuse the existing hit-axis deformation instead of a screen-axis squash.
+		var base_scale: float = hd_enemy_base_scale * (1.0 + charge_pose * 0.04)
+		var scale_pose: Transform2D = Transform2D(Vector2(base_scale, 0.0), Vector2(0.0, base_scale), Vector2.ZERO)
+		hd_enemy_sprite.transform = sprite_pose * _impact_draw_transform() * scale_pose
+	else:
+		# Assign the entire basis so no skew from the previous directional hit lingers.
+		var scale_x: float = hd_enemy_base_scale * (1.0 + impact_ratio * 0.08 + charge_pose * 0.04)
+		var scale_y: float = hd_enemy_base_scale * (1.0 - impact_ratio * 0.06 - charge_pose * 0.04)
+		hd_enemy_sprite.transform = sprite_pose * Transform2D(Vector2(scale_x, 0.0), Vector2(0.0, scale_y), Vector2.ZERO)
 	# Classic chargers turn red throughout their windup. Keep that warning in HD
 	# without changing the sprite's transform, collision, or charge timing.
 	var warning_tint: Color = Color.WHITE
@@ -390,7 +405,7 @@ func tick_moving_weapon_combat(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if hit_visual_elapsed > 0.0:
 		hit_visual_elapsed += delta
-		if hit_visual_elapsed >= hit_visual_in + hit_visual_return:
+		if hit_visual_elapsed >= HIT_VISUAL_IN + HIT_VISUAL_RETURN:
 			hit_visual_elapsed = 0.0
 	_update_hd_enemy_sprite()
 	if player_ref == null: return
@@ -1076,8 +1091,9 @@ func _distance_to_segment(point: Vector2, start: Vector2, end: Vector2) -> float
 	var factor: float = clampf((point - start).dot(segment) / length_squared, 0.0, 1.0)
 	return point.distance_to(start + segment * factor)
 
-func play_impact_deformation(impact_velocity: Vector2, duration: float, compression: float, spring_overshoot: float) -> void:
+func play_impact_deformation(impact_velocity: Vector2, duration: float, compression: float, spring_overshoot: float, directional_hd: bool = false) -> void:
 	impact_deformation_direction = impact_velocity.normalized() if impact_velocity.length_squared() > 0.001 else Vector2.RIGHT
+	impact_deformation_directional_hd = directional_hd
 	impact_deformation_duration = maxf(duration, 0.001)
 	impact_deformation_left = impact_deformation_duration
 	impact_deformation_compression = maxf(0.0, compression)

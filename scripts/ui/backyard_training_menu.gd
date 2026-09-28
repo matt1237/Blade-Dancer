@@ -712,34 +712,16 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	box.add_theme_constant_override("separation", 10)
 	scroll.add_child(box)
 	var heading: Label = Label.new()
-	heading.text = "FLESH CONTACT · active combat preset (save with Global Presets)"
+	heading.text = "SWORD HIT PRESENTATION · active combat preset (save with Global Presets)"
 	heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(heading)
-	_create_contact_slider(box, "hit_reaction_enabled", "HIT REACTION — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Master switch for new flesh-only sword geometry and enemy visual recoil. Existing contact remains unchanged when off.", "OFF: original contact behavior.", "ON: soft body resistance, tip stabs and lethal release.", "Toggle while fighting to compare; no free-sword movement or shield rules are changed."))
-	_create_contact_slider(box, "hit_reaction_debug", "Contact Debug — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Draw actual flesh contact, velocity, normal, tangent and live penetration data.", "OFF: no overlay.", "ON: colored contact vectors and numerical readout.", "Yellow dot = contact; blue = outward normal; orange = velocity; green = tangent."))
-	var impact: VBoxContainer = _create_section_header(box, "IMPACT / STAB", true)
-	_create_contact_slider(impact, "hit_impact_scale", "Impact Strength", 0.2, 3.0, 0.05, "×", _form_three_feel_tip("Scales contact-point speed and inward velocity into a 0–1 physical impact score.", "Weak reaction.", "Strong reaction from the same strike.", "Set this before adjusting recoil or hitstop."))
-	_create_contact_slider(impact, "hit_normal_weight", "Inward Velocity Weight", 0.0, 1.0, 0.05, "×", _form_three_feel_tip("Distinguishes perpendicular hits from shallow grazing motion.", "All contact-point speed counts.", "Only inward velocity counts.", "High values make sideways grazes quieter without losing tangential movement."))
-	_create_contact_slider(impact, "hit_min_speed", "Minimum Impact Speed", 0.0, 250.0, 5.0, " px/s", _form_three_feel_tip("Contact-point speed below this contributes almost no recoil.", "Even light taps register.", "Only faster strikes register strongly.", "Do not use this to hide collision; grazing contacts still slide."))
-	var penetration: VBoxContainer = _create_section_header(box, "BLADE PENETRATION", true)
-	_create_contact_slider(penetration, "hit_forte_depth", "Forte Penetration", 0.0, 15.0, 0.5, " px", _form_three_feel_tip("Soft-body entry allowance near the hilt.", "Forte feels firm.", "Forte yields further.", "Keep shallower than tip penetration."))
-	_create_contact_slider(penetration, "hit_tip_depth", "Tip Slash Penetration", 2.0, 32.0, 0.5, " px", _form_three_feel_tip("Soft-body entry allowance toward the tip during a slash.", "Shallow tip cuts.", "Deeper tip cuts.", "Stabs add their own forward-motion bonus on top."))
-	_create_contact_slider(penetration, "hit_blade_curve", "Blade Penetration Curve", 0.5, 4.0, 0.1, " power", _form_three_feel_tip("Shapes a continuous forte-to-tip penetration taper.", "Depth grows early along the blade.", "Depth is reserved for near the tip.", "Avoid hard blade zones."))
-	_create_contact_slider(penetration, "hit_stab_bonus", "Forward Tip Stab Bonus", 0.0, 35.0, 0.5, " px", _form_three_feel_tip("Additional entry for tip-first motion along the blade, not for a sideways tip slash.", "Slash and stab have similar depth.", "Aligned tip stabs embed much deeper.", "Pullback always releases; no magnetic attachment."))
-	_create_contact_slider(penetration, "hit_resistance", "Inward Resistance", 0.0, 1.0, 0.05, "×", _form_three_feel_tip("Damps only inward contact movement as depth grows; preserves the player's tangential travel.", "Nearly free entry.", "Strong body resistance.", "No automatic slide or orbit is added."))
-	_create_contact_slider(penetration, "hit_resistance_curve", "Resistance Ramp Curve", 0.5, 4.0, 0.1, " power", _form_three_feel_tip("Controls how late resistance grows during soft entry.", "Resistance arrives earlier.", "Soft entry before a firmer end.", "Avoid a sudden hard-wall stop."))
-	var kill: VBoxContainer = _create_section_header(box, "LETHAL BREAKTHROUGH")
-	_create_contact_slider(kill, "hit_kill_resistance", "Kill Resistance", 0.0, 1.0, 0.05, "×", _form_three_feel_tip("Remaining inward resistance after a lethal strike.", "Body gives way.", "Same resistance as a living target.", "The first contact still registers before the delay."))
-	_create_contact_slider(kill, "hit_kill_depth_scale", "Kill Follow-Through Depth", 1.0, 4.0, 0.1, "×", _form_three_feel_tip("Extra available blade entry after killing the target.", "No extra depth.", "Freer follow-through.", "Keep small enough that the sword does not teleport through the target."))
-	_create_contact_slider(kill, "hit_kill_delay", "Breakthrough Delay", 0.0, 0.16, 0.005, " s", _form_three_feel_tip("Time for the initial impact to register before the corpse gives way.", "Instant release.", "Impact lingers longer.", "Prefer a brief delay; existing hitstop stays in charge."))
-	var enemy: VBoxContainer = _create_section_header(box, "ENEMY RESPONSE / RELEASE")
-	_create_contact_slider(enemy, "hit_visual_recoil", "Enemy Visual Recoil", 0.0, 20.0, 0.5, " px", _form_three_feel_tip("Cosmetic body/sprite translation, separate from collision and gameplay knockback.", "No visual travel.", "Pronounced visible rock.", "Raises visual weight without launching enemies."))
-	_create_contact_slider(enemy, "hit_visual_rotation", "Enemy Visual Lean", 0.0, 20.0, 0.5, "°", _form_three_feel_tip("How far the target visually leans from the strike.", "Upright.", "Clear rotational recoil.", "Body only; shields and AI facing are unaffected."))
-	_create_contact_slider(enemy, "hit_recoil_in", "Recoil In", 0.01, 0.20, 0.005, " s", _form_three_feel_tip("Time to reach maximum body recoil.", "Snappy impact.", "Slow reaction.", "Short in, slower return usually reads best."))
-	_create_contact_slider(enemy, "hit_recoil_return", "Recoil Recovery", 0.02, 0.5, 0.01, " s", _form_three_feel_tip("Time for the cosmetic body recoil to settle.", "Quick recovery.", "Lingering visual weight.", "Does not extend gameplay stagger."))
-	_create_contact_slider(enemy, "hit_knockback_scale", "Gameplay Knockback", 0.0, 2.0, 0.05, "×", _form_three_feel_tip("Separate actual enemy physics impulse; impact still scales with contact-point speed.", "No new flesh-hit impulse.", "Larger enemy displacement.", "Keep this low if visual recoil already sells the hit."))
-	_create_contact_slider(enemy, "hit_release_speed", "Contact Release Speed", 80.0, 900.0, 20.0, " px/s", _form_three_feel_tip("How quickly remaining contact correction relaxes after sideways exit or contact timeout.", "Gentle release.", "Quick release.", "Pulling away always releases immediately."))
-	_create_contact_slider(enemy, "hit_hitstop_scale", "Impact Hitstop Scale", 0.0, 2.0, 0.05, "×", _form_three_feel_tip("Scales the existing weak/strong Flesh Hitstop settings, using actual contact-point impact.", "Little hitstop.", "More compressed impact.", "Tune the existing Flesh Hitstop Min/Max in Combat Presets; avoid long freezes."))
+	_create_contact_slider(box, "hit_reaction_enabled", "HIT REACTION — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Master switch for all effects in this tab. Existing blood and impact effects remain when off.", "OFF: sword follows its authored path through flesh with no effects from this tab.", "ON: enabled effects below may react only while the blade touches enemy flesh.", "This never changes damage, knockback, hitstop, or shield/blade contact rules."))
+	_create_contact_slider(box, "hit_visual_recoil", "Enemy Visual Recoil", 0.0, 20.0, 0.5, " px", _form_three_feel_tip("Body-only movement in the blade's travel direction, without moving the collider or AI.", "No cosmetic travel.", "Pronounced visual rock away from the strike.", "The existing gameplay knockback remains separate and unchanged."))
+	_create_contact_slider(box, "hit_visual_rotation", "Enemy Visual Lean", 0.0, 20.0, 0.5, "°", _form_three_feel_tip("Body-only tilt from the incoming hit angle and contact position.", "Body stays upright.", "Stronger lean away from the strike.", "No change to AI facing, weapons, shields, or damage."))
+	_create_contact_slider(box, "blade_physical_reaction_enabled", "Blade Physical Reaction — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Allow only glancing flesh cuts to slide tangentially along the target. Head-on cuts and stabs pass through.", "OFF: the blade stays on its authored arc.", "ON: enabled glancing cuts yield slightly around the body.", "Head-on passes, including forte and tip contacts, are excluded. Sword and hand stay connected to the authored motion."))
+	_create_contact_slider(box, "blade_physical_reaction_strength", "Blade Physical Reaction Strength", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("How far a glancing cut yields toward the target's tangent; this does not slow free swings.", "A glancing cut barely bends around flesh.", "A glancing cut more clearly travels along the body.", "Only active during a qualifying enemy-body overlap; head-on cuts and stabs always pass through. Use the separate Blade Sink control for contact slowdown."))
+	_create_contact_slider(box, "blade_sink_enabled", "Blade Sink — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Modestly slow the sword's authored travel only while its blade overlaps enemy flesh.", "OFF: no contact slowdown.", "ON: use the strength below during live flesh overlap only.", "This never pins or holds the blade. The normal authored speed resumes as soon as the overlap ends."))
+	_create_contact_slider(box, "blade_sink_strength", "Blade Sink Strength", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("Scale the brief travel slowdown while the blade intersects an enemy body.", "The swing stays close to its normal rate during overlap.", "The swing slows modestly more during overlap.", "No stored timer or residual drag: separation immediately restores full authored travel."))
 
 func _build_combat_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()
@@ -940,8 +922,6 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(flesh_section, "flesh_zoom_duration", "Zoom Duration", 0.0, 0.5, 0.01, " s")
 	_create_contact_slider(flesh_section, "flesh_recoil", "Player Body Recoil", 0.0, 120.0, 5.0, " px")
 	_create_contact_slider(flesh_section, "flesh_impact", "Impact / Speed-Line Intensity", 0.0, 2.5, 0.05, "×")
-	_create_contact_slider(flesh_section, "flesh_contact_drag", "Contact Drag Dip", 0.0, 0.6, 0.01, "×", "How much the swing's phase-advance rate briefly dips on a clean hit -- the \"shhk\" of cutting through resistance. Replaces the old Bite freeze.")
-	_create_contact_slider(flesh_section, "flesh_contact_drag_recovery", "Contact Drag Recovery Time", 0.01, 0.4, 0.01, " s", "Seconds for the dip to fully recover back to full swing speed.")
 
 	var contact_section: VBoxContainer = _create_section_header(box, "BLADE CONTACT FEEL (Per Preset)")
 	_create_contact_slider(contact_section, "contact_hitstop", "Glancing Contact Hitstop", 0.0, 0.2, 0.005, " s")
@@ -1063,13 +1043,9 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(hilt_section, "hilt_bash_knockback", "Hilt Bash Shove Impulse", 100.0, 600.0, 20.0, " px/s", "Outward knockback applied when an enemy touches your inner hilt deadzone.")
 	_create_contact_slider(hilt_section, "hilt_bash_stun", "Hilt Bash Stun Duration", 0.10, 0.80, 0.05, " s", "Duration of stun and dizzy stars/birdies above enemy head.")
 	_create_contact_slider(hilt_section, "hilt_bash_damage", "Hilt Bash Chip Damage", 0.0, 20.0, 1.0, "", "Low damage dealt by the pommel strike.")
-	_create_contact_slider(hilt_section, "hilt_contact_drag", "Hilt Contact Drag Dip", 0.0, 0.6, 0.01, "×", "Swing phase-advance dip on a hilt bash, same mechanism as Flesh Contact Drag.")
-	_create_contact_slider(hilt_section, "hilt_contact_drag_recovery", "Hilt Contact Drag Recovery Time", 0.01, 0.4, 0.01, " s")
 
 	var farmable_section: VBoxContainer = _create_section_header(box, "FARMABLE HARVEST FEEL (Per Preset)")
 	_create_contact_slider(farmable_section, "farmable_hitstop", "Harvest Hitstop", 0.0, 0.1, 0.005, " s", "Tiny freeze so cutting a 1-shot farmable (herb, mushroom, shrub, moon flower) registers as something landing. Deliberately much lighter than a real flesh hit -- no shake, sparks, or recoil at all.")
-	_create_contact_slider(farmable_section, "farmable_contact_drag", "Harvest Contact Drag Dip", 0.0, 0.3, 0.01, "×", "Swing phase-advance dip on a harvest hit, same mechanism as Flesh Contact Drag but much lighter.")
-	_create_contact_slider(farmable_section, "farmable_contact_drag_recovery", "Harvest Contact Drag Recovery Time", 0.01, 0.3, 0.01, " s")
 
 	var p3_section: VBoxContainer = _create_section_header(box, "PRESET 3: DYNAMIC METRONOME FLOW SCALING")
 	_create_contact_slider(p3_section, "p3_min_arc_scale", "0% Flow Arc Scale", 0.20, 1.0, 0.05, "×", "At 0% flow the arc shrinks to this fraction of tuned arc (e.g. 0.55 = 55%), opening to 100% at full flow.")
@@ -1535,7 +1511,7 @@ func _update_contact_control_label(key: String, value: float) -> void:
 	var value_label: Label = row.get("label") as Label
 	if value_label == null:
 		return
-	if key in ["hit_reaction_enabled", "hit_reaction_debug"]:
+	if key.ends_with("_enabled"):
 		value_label.text = "ON" if value >= 0.5 else "OFF"
 	elif suffix in ["°", " px", " px/s", "°/s"]:
 		value_label.text = "%.0f%s" % [value, suffix]
@@ -1629,7 +1605,7 @@ func _sync_combat_controls() -> void:
 		var value: float = player.get_base_combat_contact_setting(key)
 		var suffix: String = str(row.get("suffix", ""))
 		(row["slider"] as HSlider).set_value_no_signal(value)
-		if key in ["hit_reaction_enabled", "hit_reaction_debug"]:
+		if key.ends_with("_enabled"):
 			(row["label"] as Label).text = "ON" if value >= 0.5 else "OFF"
 		elif suffix == "°" or suffix == " px" or suffix == " px/s" or suffix == "°/s":
 			(row["label"] as Label).text = "%.0f%s" % [value, suffix]

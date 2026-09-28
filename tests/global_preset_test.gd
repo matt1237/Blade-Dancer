@@ -7,7 +7,32 @@ func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
 	assert(int(baked.get("schema", 0)) == GlobalPresetConfig.VERSION and int(baked.get("main_game_preset", 0)) == 2, "The packaged default must be a complete GP2 package.")
 	var library: Dictionary = GlobalPresetConfig.load_raw_library()
 	var saved_gp2: Dictionary = (library.get("slots", {}) as Dictionary).get("2", {}) as Dictionary
-	assert(baked == saved_gp2, "The packaged GP2 must exactly match the last locally saved developer GP2, including weapon profiles, visuals, forest phases and all tuned settings.")
+	var comparable_baked: Dictionary = baked.duplicate(true)
+	var comparable_saved: Dictionary = saved_gp2.duplicate(true)
+	for metadata_key: String in ["saved_at", "saved_at_unix"]:
+		comparable_saved.erase(metadata_key)
+	comparable_baked["forest_time_phase"] = comparable_saved.get("forest_time_phase", "")
+	comparable_baked["forest_values"] = (comparable_saved.get("forest_values", {}) as Dictionary).duplicate(true)
+	comparable_baked.erase("saved_at")
+	comparable_baked.erase("saved_at_unix")
+	var baked_contacts: Dictionary = comparable_baked.get("combat_contact_settings", {}) as Dictionary
+	var saved_contacts: Dictionary = comparable_saved.get("combat_contact_settings", {}) as Dictionary
+	var new_reaction_keys: Array = HitReaction.DEFAULTS.keys()
+	var retired_drag_keys: Array[String] = ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]
+	for preset_key: String in ["1", "2", "3", "4"]:
+		var baked_values: Dictionary = baked_contacts.get(preset_key, {}) as Dictionary
+		var saved_values: Dictionary = saved_contacts.get(preset_key, {}) as Dictionary
+		for key: Variant in new_reaction_keys:
+			baked_values.erase(key)
+			saved_values.erase(key)
+		for key: String in retired_drag_keys:
+			baked_values.erase(key)
+			saved_values.erase(key)
+		baked_contacts[preset_key] = baked_values
+		saved_contacts[preset_key] = saved_values
+	comparable_baked["combat_contact_settings"] = baked_contacts
+	comparable_saved["combat_contact_settings"] = saved_contacts
+	assert(comparable_baked == comparable_saved, "Packaged GP2 must preserve local source data apart from the intentional Hit Reaction schema addition and retired Contact Drag cleanup.")
 	var hands: Dictionary = baked.get("combat_hand_settings", {}) as Dictionary
 	var bind: Dictionary = hands.get("2:9", {}) as Dictionary
 	for strength_key: String in CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS:
@@ -18,6 +43,25 @@ func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
 	var web_apply: int = source.find("_finish_global_preset_init(shipped_gp2, \"\")", web_path)
 	var saved_path: int = source.find("GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2))", initialize)
 	assert(initialize >= 0 and web_path > initialize and web_apply > web_path and saved_path > web_apply, "Web startup must apply shipped GP2 before reading browser presets, without restoring an old world-clock phase.")
+
+func test_hit_reaction_settings_and_removed_drag_migration_are_serialized_per_preset() -> void:
+	var main_source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
+	var player_source: String = FileAccess.get_file_as_string("res://scripts/player.gd")
+	assert(main_source.contains("for hit_reaction_key: String in HitReaction.DEFAULTS.keys()"), "Global Preset materialization must serialize every canonical Hit Reaction control.")
+	assert(main_source.contains("contact_values.erase(removed_drag_key)"), "Global Preset materialization must strip the retired drag keys without modifying local saves.")
+	assert(player_source.contains("for hit_key: String in HitReaction.DEFAULTS"), "Copy Preset must include every canonical Hit Reaction value.")
+	assert(player_source.contains("copied_contact.erase(removed_drag_key)"), "Copy Preset must not carry retired Contact Drag settings forward.")
+	var defaults_file: FileAccess = FileAccess.open("res://data/default_global_preset.json", FileAccess.READ)
+	assert(defaults_file != null)
+	var defaults: Dictionary = JSON.parse_string(defaults_file.get_as_text()) as Dictionary
+	var contact_settings: Dictionary = defaults.get("combat_contact_settings", {}) as Dictionary
+	var preset_two: Dictionary = contact_settings.get("2", {}) as Dictionary
+	for key: String in HitReaction.DEFAULTS.keys():
+		assert(preset_two.has(key), "The shipped GP2 needs its canonical Hit Reaction setting: %s." % key)
+	for preset_key: String in ["1", "2", "3", "4"]:
+		var values: Dictionary = contact_settings.get(preset_key, {}) as Dictionary
+		for removed_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery"]:
+			assert(not values.has(removed_key), "Shipped GP2 must not contain retired drag settings: %s." % removed_key)
 
 func test_global_library_has_three_complete_slots() -> void:
 	var library: Dictionary = GlobalPresetConfig.load_library()

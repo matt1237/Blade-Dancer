@@ -259,14 +259,14 @@ func trigger_parry_focus_tuned(impact_position: Vector2, travel_direction: Vecto
 		parry_focus_left = active_parry_focus_duration
 	trigger_tuned(impact_position, travel_direction, impact_strength, zoom_amount, zoom_duration, parry_focus_uses_blur and active_parry_focus_strength > 0.0, contact_quality)
 
-func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Vector2, cut_direction: Vector2, contact_quality: float, killed: bool, sword_hit: bool = true) -> void:
+func present_enemy_hit(enemy: Enemy, contact_point: Vector2, impact_velocity: Vector2, cut_direction: Vector2, contact_quality: float, killed: bool, sword_hit: bool = true, directional_presentation: bool = false) -> void:
 	if not enabled: return
 	if enable_enemy_hit_deformation and contact_quality >= enemy_deformation_min_quality and enemy != null and is_instance_valid(enemy):
 		var quality_range: float = maxf(0.001, 1.0 - enemy_deformation_min_quality)
 		var deformation_strength: float = clampf((contact_quality - enemy_deformation_min_quality) / quality_range, 0.0, 1.0)
-		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, enemy_deformation_max_compression * deformation_strength, enemy_deformation_spring_overshoot)
+		enemy.play_impact_deformation(impact_velocity, enemy_deformation_duration, enemy_deformation_max_compression * deformation_strength, enemy_deformation_spring_overshoot, directional_presentation and sword_hit)
 	if enable_blood_splatter and contact_quality >= blood_min_quality:
-		_spawn_blood(contact_point, impact_velocity, contact_quality)
+		_spawn_blood(contact_point, impact_velocity, contact_quality, directional_presentation and sword_hit)
 	if killed and sword_hit and enable_split_kill and contact_quality >= split_kill_min_quality:
 		_spawn_split_remnant(enemy.global_position, cut_direction, enemy.remnant_color, enemy.remnant_radius)
 
@@ -341,13 +341,16 @@ func _should_trigger_time_slow(contact_quality: float) -> bool:
 	if contact_quality >= medium_hit_quality_threshold: return time_slow_on_medium_hits
 	return false
 
-func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float) -> void:
+func _spawn_blood(contact_point: Vector2, impact_velocity: Vector2, contact_quality: float, directional_presentation: bool = false) -> void:
 	var base_direction: Vector2 = impact_velocity.normalized() if impact_velocity.length_squared() > 0.001 else Vector2.RIGHT
 	var scaled_count: int = maxi(1, roundi(float(blood_drop_count) * lerpf(0.7, 1.25, contact_quality)))
+	# The same existing blood emitter keeps its original broad fan when OFF;
+	# when ON, its blade-travel direction becomes legible without a new FX system.
+	var spread: float = blood_spread_degrees * (0.4 if directional_presentation else 1.0)
 	for index: int in range(scaled_count):
 		var drop: BloodDrop = BloodDrop.new()
 		drop.world_position = contact_point + Vector2(randf_range(-3.0, 3.0), randf_range(-3.0, 3.0))
-		var spread_angle: float = deg_to_rad(randf_range(-blood_spread_degrees, blood_spread_degrees))
+		var spread_angle: float = deg_to_rad(randf_range(-spread, spread))
 		var speed: float = blood_drop_speed * randf_range(0.45, 1.15) * lerpf(0.8, 1.2, contact_quality)
 		drop.velocity = base_direction.rotated(spread_angle) * speed
 		drop.radius = randf_range(1.25, 3.2) * lerpf(0.8, 1.15, contact_quality)
