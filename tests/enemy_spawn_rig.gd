@@ -50,6 +50,9 @@ const MAX_READY_FRAMES: int = 120
 ## what the shell bodies did. A shell can only show what it does across real physics steps, so
 ## this one runs over time rather than in a single frame. Off by default.
 @export var probe_physics_shells: bool = false
+## Sweep and shove a synthetic blade at one spawned enemy's bone core through the live pose path,
+## and report whether the core ever ends a frame with blade inside it. Off by default.
+@export var probe_bone_constraint: bool = false
 
 @export_group("Auto Damage")
 ## Poke the enemies on a timer so health bars, blood, and death FX run unattended.
@@ -89,6 +92,8 @@ func _ready() -> void:
 	if probe_physics_shells:
 		_run_physics_shells_probe()
 		_run_wall_block_probe()
+	if probe_bone_constraint:
+		_run_bone_constraint_probe()
 
 func _process(delta: float) -> void:
 	if _main == null:
@@ -145,6 +150,56 @@ var _wall_probe_blocked_frames: int = 0
 var _wall_probe_peak_glance: float = 0.0
 var _wall_probe_surfaced_frames: int = 0
 var _wall_probe_peak_surface: float = 0.0
+
+## Sweep and then shove a synthetic blade at one spawned enemy's bone core through the LIVE pose
+## path, and report whether the core ever ends a frame with blade inside it. A geometric constraint
+## is only real if the committed pose obeys it, so this drives the committed pose rather than a
+## helper. Read the [BONE CONSTRAINT] lines with it.
+func _run_bone_constraint_probe() -> void:
+	var player: Player = _player()
+	var scene: PackedScene = _scene_for("sword_goblin")
+	if player == null or scene == null:
+		print("[BONE CONSTRAINT PROBE] missing player or enemy scene")
+		return
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_constraint_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_debug_enabled", 1.0)
+	for blocker: String in ["blade_wall_block_enabled", "blade_body_surface_enabled", "blade_hard_clash_enabled"]:
+		player.set_combat_contact_setting(blocker, 0.0)
+	_main.call("_spawn_training_enemy_at", player.global_position + Vector2(72.0, 0.0), scene)
+	await get_tree().process_frame
+	var alive: Array[Enemy] = _alive_enemies()
+	if alive.is_empty():
+		print("[BONE CONSTRAINT PROBE] no enemy spawned")
+		return
+	var enemy: Enemy = alive[alive.size() - 1]
+	# The training goblin is a circle, so its bone core is concentric with it.
+	var centre: Vector2 = enemy.global_position
+	print("[BONE CONSTRAINT PROBE] core=%.0f%% centre=%s" % [player.get_combat_contact_setting("blade_bone_core_size_percent"), str(centre)])
+	var hilt: Vector2 = centre + Vector2(-72.0, 0.0)
+	var nearest: float = 1e9
+	for step: int in range(13):
+		# Aim the blade progressively further across the bone. Aiming straight AT it is the pose that
+		# used to be allowed through, so this is the sweep that has to refuse it.
+		var aim: float = lerpf(-0.6, 0.6, float(step) / 12.0)
+		# The constraint only arms for a blade that is actually moving, so the probe supplies motion.
+		player.blade_velocity = Vector2(0.0, 300.0)
+		var pose: Dictionary = player._apply_flesh_contact_pose({"start": hilt, "angle": aim})
+		var settled: float = float(pose["angle"])
+		var gap: float = HitReaction.bone_segment_core_distance(hilt, settled, Player.BLADE_LENGTH, centre)
+		nearest = minf(nearest, gap)
+		print("[BONE CONSTRAINT PROBE] sweep step=%d aim=%.3f settled=%.3f gap=%.2f depth=%.2f frac=%.2f hand_in_bone=%s" % [step, aim, settled, gap, player.bone_constraint_depth, player.bone_constraint_fraction, str(player.bone_constraint_hilt_inside)])
+	print("[BONE CONSTRAINT PROBE] nearest approach of the settled blade across the whole sweep = %.2f" % nearest)
+	# Now drive the HAND inward instead of the aim. No rotation can help once the hand is in the
+	# bone, so the blade must still never enter it and the hand must be reported as pushed back out.
+	for step: int in range(10):
+		var in_hilt: Vector2 = centre + Vector2(-lerpf(60.0, 2.0, float(step) / 9.0), 0.0)
+		player.blade_velocity = Vector2(0.0, 300.0)
+		var pose: Dictionary = player._apply_flesh_contact_pose({"start": in_hilt, "angle": 0.0})
+		var settled: float = float(pose["angle"])
+		var gap: float = HitReaction.bone_segment_core_distance(in_hilt, settled, Player.BLADE_LENGTH, centre)
+		print("[BONE CONSTRAINT PROBE] thrust step=%d hand_from_core=%.1f settled=%.3f gap=%.2f push=%s hand_in_bone=%s" % [step, (in_hilt - centre).length(), settled, gap, str(player.bone_hilt_push_pending), str(player.bone_constraint_hilt_inside)])
+	enemy.queue_free()
 
 func _run_wall_block_probe() -> void:
 	var player: Player = _player()

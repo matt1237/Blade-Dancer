@@ -222,28 +222,57 @@ func test_a_bone_core_is_held_at_its_own_surface_with_no_allowance() -> void:
 	# the body, outside the bone. That is what leaves cutting intact while the core refuses.
 	assert(14.0 * HitReaction.BLADE_BODY_SURFACE_FRACTION > 4.9, "The flesh surface sits outside the core, so a bite can reach bone without entering it.")
 
-func test_bone_constraint_rejects_inward_motion_and_keeps_the_tangent() -> void:
-	# The yo-yo rule, one dimension over. Hilt at the origin, the contact out to the right, and the
-	# core ABOVE it, so the core's outward normal points down. Driving further up is illegal; the
-	# part of that motion running along the core surface is not.
-	var offset: Vector2 = Vector2(10.0, 0.0)
-	var normal: Vector2 = Vector2(0.0, 1.0)
-	var inward_only: Vector2 = Vector2(0.0, -4.0)
-	assert(HitReaction.bone_constraint_angle(offset, inward_only, normal) > 0.0, "Inward motion becomes a rotation about the authored hilt.")
-	# Motion that is purely away from the core is already legal and costs nothing at all.
-	assert(is_equal_approx(HitReaction.bone_constraint_angle(offset, Vector2(0.0, 4.0), normal), 0.0), "Nothing is constrained when nothing is driven inward.")
-	# Square on -- the contact lies along the normal, so no rotation about the hilt can move it off
-	# the core at all. That is the bone stop's job, and it must not return an exploding angle.
-	var square: Vector2 = Vector2(-4.0, 0.0)
-	assert(is_equal_approx(HitReaction.bone_constraint_angle(Vector2(10.0, 0.0), square, square.normalized()), 0.0), "A square press has no tangent to resolve into.")
+func test_bone_core_refuses_every_angle_that_would_enter_it() -> void:
+	# Hilt at the origin, bone core straight out to the right at 100 px with a 20 px reach (that is
+	# the core's radius plus the blade's own). Aiming the blade AT the core is the one pose that must
+	# be impossible, so it is projected out onto the tangency -- which is the bone's own surface.
+	var hilt: Vector2 = Vector2.ZERO
+	var core: Vector2 = Vector2(100.0, 0.0)
+	# A blade long enough to lie ACROSS the bone: the boundary is the bone grazing its side.
+	var across: Dictionary = HitReaction.bone_core_constraint(hilt, 0.0, 200.0, core, 20.0)
+	assert(not is_equal_approx(float(across["angle"]), 0.0), "A blade aimed at bone is projected out, never allowed through.")
+	assert(is_equal_approx(absf(float(across["angle"])), asin(20.0 / 100.0)), "It lands exactly on the tangency, the bone's own surface.")
+	assert(is_equal_approx(float(across["depth"]), 20.0), "Aimed dead-centre, the whole depth of the core is refused.")
+	assert(absf((across["point"] as Vector2 - core).length() - 20.0) < 0.01, "The settled contact sits exactly on the bone's surface.")
+	# A blade too short to lie across it meets the bone with its TIP instead -- a separate boundary,
+	# and one that answers only for the tip. Missing that case is what let a thrust pass through.
+	var tip_on_bone: Dictionary = HitReaction.bone_core_constraint(hilt, 0.0, 84.0, core, 20.0)
+	var expected: float = acos((100.0 * 100.0 + 84.0 * 84.0 - 20.0 * 20.0) / (2.0 * 100.0 * 84.0))
+	assert(is_equal_approx(absf(float(tip_on_bone["angle"])), expected), "A short blade stops where its tip comes to rest on the bone.")
+	assert(is_equal_approx(float(tip_on_bone["depth"]), 4.0), "Driven straight in, its tip has 4 px of core to be stopped short of.")
+	assert(absf((tip_on_bone["point"] as Vector2 - core).length() - 20.0) < 0.01, "And that tip rests exactly on the bone's surface.")
+	# A pose that already misses the core is left alone, and bone out of reach constrains nothing.
+	var clear: Dictionary = HitReaction.bone_core_constraint(hilt, 1.2, 200.0, core, 20.0)
+	assert(is_equal_approx(float(clear["angle"]), 1.2), "A pose that already misses the core is left completely alone.")
+	var out_of_reach: Dictionary = HitReaction.bone_core_constraint(hilt, 0.0, 10.0, core, 20.0)
+	assert(is_equal_approx(float(out_of_reach["angle"]), 0.0), "Bone beyond the tip of the blade is out of reach and constrains nothing.")
 
-func test_bone_constraint_outward_angle_removes_penetration_but_not_a_square_press() -> void:
-	var offset: Vector2 = Vector2(10.0, 0.0)
-	# Core above, 3 px too deep: rotation carries the contact down and clear, so this is a real angle.
-	assert(absf(HitReaction.bone_constraint_outward_angle(offset, Vector2(0.0, 1.0), 3.0)) > 0.0, "Residual penetration is rotated out.")
-	# Square on, rotation cannot travel along the normal at all: decline rather than explode.
-	assert(is_equal_approx(HitReaction.bone_constraint_outward_angle(offset, Vector2(-1.0, 0.0), 3.0), 0.0), "A square press is left to the bone stop, not to a solver.")
-	assert(is_equal_approx(HitReaction.bone_constraint_outward_angle(offset, Vector2(0.0, 1.0), 0.0), 0.0), "No penetration means no correction.")
+func test_bone_core_clip_robs_the_swing_of_exactly_the_movement_that_would_enter_bone() -> void:
+	# Hilt at the origin, core out to the right at 100 px with a 20 px reach, blade 200 px long: the
+	# bone's shadow then runs from -asin(0.2) to +asin(0.2) either side of the core's own direction.
+	var hilt: Vector2 = Vector2.ZERO
+	var core: Vector2 = Vector2(100.0, 0.0)
+	var half: float = asin(20.0 / 100.0)
+	assert(is_equal_approx(HitReaction.bone_core_clip(0.9, 1.1, hilt, 200.0, core, 20.0), 1.1), "A swing that is already clear of the bone loses nothing at all.")
+	assert(is_equal_approx(HitReaction.bone_core_clip(half + 0.05, 0.03, hilt, 200.0, core, 20.0), half), "A swing into bone stops exactly on the surface, on the side it came from.")
+	assert(is_equal_approx(HitReaction.bone_core_clip(-half - 0.05, -0.03, hilt, 200.0, core, 20.0), -half), "And the same from the other side.")
+	assert(is_equal_approx(HitReaction.bone_core_clip(half + 0.05, 0.0, hilt, 200.0, core, 20.0), half), "Aimed straight at the bone, the swing still ends on the surface.")
+	# The one thing it may never do is carry the blade ACROSS the bone to the far side.
+	assert(is_equal_approx(HitReaction.bone_core_clip(half + 0.05, -half - 0.05, hilt, 200.0, core, 20.0), half), "A step that would cross the bone is refused outright, never followed.")
+	# Beginning inside (the first frame of contact) it leaves by the nearer side, exactly once.
+	assert(is_equal_approx(HitReaction.bone_core_clip(0.0, 0.05, hilt, 200.0, core, 20.0), half), "A blade that begins inside the bone is put back out on the nearer side.")
+	assert(is_equal_approx(HitReaction.bone_core_clip(0.0, 0.2, hilt, 10.0, core, 20.0), 0.2), "Bone beyond the tip of the blade takes nothing.")
+	assert(is_equal_approx(HitReaction.bone_core_clip(0.0, 0.2, Vector2(90.0, 0.0), 200.0, core, 20.0), 0.2), "A hand inside the bone is left to the hand-push, not clipped here.")
+
+func test_bone_core_pushes_a_hand_standing_in_bone_back_out() -> void:
+	var core: Vector2 = Vector2(50.0, 0.0)
+	assert(HitReaction.bone_core_hilt_push(Vector2.ZERO, core, 20.0) == Vector2.ZERO, "A hand clear of the bone is never nudged.")
+	var pushed: Vector2 = HitReaction.bone_core_hilt_push(Vector2(40.0, 0.0), core, 20.0)
+	assert(pushed.x < 0.0, "A hand standing in bone is pushed straight back out, away from the core.")
+	assert(is_equal_approx(pushed.length(), 10.0), "Pushed exactly out to the core's surface, and no further.")
+	var hand_in_bone: Dictionary = HitReaction.bone_core_constraint(Vector2(40.0, 0.0), 0.0, 84.0, core, 20.0)
+	assert(bool(hand_in_bone["hilt_inside"]), "A hand inside the core is reported as being in bone.")
+	assert(is_equal_approx(float(hand_in_bone["angle"]), 0.0), "No rotation is pretended when the hand itself is inside the bone.")
 
 func test_body_shove_only_comes_from_a_body_closing_on_the_blade() -> void:
 	var blade_ahead: Vector2 = Vector2(40.0, 0.0)

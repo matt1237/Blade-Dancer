@@ -864,23 +864,31 @@ var blade_hard_point: Vector2 = Vector2.ZERO
 var blade_hard_bind_left: float = 0.0
 var blade_hard_clash_cooldown: float = 0.0
 var blade_hard_clash_armed: bool = true
-## Bone Slide Constraint. The angle the core asked for this frame, how fast it eases back to the
-## authored pose once the core is no longer being driven into, and how long a queued hit's
-## knockback may wait for the blade to clear before it fires anyway. The solver ceiling lives in
-## HitReaction with the rest of the constraint's rules.
-const BONE_CONSTRAINT_SMOOTHING: float = 26.0
+## Bone Slide Constraint. The angle the core's limit allows this frame, and how long a queued hit's
+## knockback may wait for the blade to clear before it fires anyway. The rule itself lives in
+## HitReaction, so the law can be read and tested without a player.
 const BONE_CONSTRAINT_KNOCKBACK_TIMEOUT: float = 0.13
 var bone_constraint_angle_pending: float = 0.0
 var bone_constraint_angle: float = 0.0
 var bone_constraint_active: bool = false
 var bone_constraint_enemy_id: int = 0
 var bone_constraint_fraction: float = 0.0
-var bone_constraint_inward: float = 0.0
-var bone_constraint_tangent: float = 0.0
 var bone_constraint_iterations: int = 0
 var bone_constraint_contact: Vector2 = Vector2.ZERO
 var bone_constraint_normal: Vector2 = Vector2.ZERO
 var bone_constraint_hold: float = 0.0
+## The angle the blade is ACTUALLY at, so the limit is always applied from where the blade really is
+## rather than from where the swing wishes it were. Without that, a held blade would jump back across
+## the bone the moment the swing was released.
+var bone_constraint_last_angle: float = 0.0
+var bone_constraint_has_last: bool = false
+## How deep the penetration the core refused was -- whether the core is genuinely holding it out.
+var bone_constraint_depth: float = 0.0
+var bone_constraint_hilt_inside: bool = false
+## The push that keeps the HAND out of the bone. Rotation about the hilt cannot rescue a hand that is
+## already inside the core -- there is no legal angle left -- so without this the blade is carried
+## straight through the bone. Zero unless the hand is actually standing in bone.
+var bone_hilt_push_pending: Vector2 = Vector2.ZERO
 ## Hit feedback held back until the blade clears the bone, so immediate gameplay knockback can
 ## never pull the enemy out of the contact before the constraint has had time to work. Damage,
 ## blood, hitstop, audio and the cosmetic enemy recoil all stay immediate -- only the separation
@@ -1847,6 +1855,15 @@ func _handle_movement(delta: float, grapple_acceleration: Vector2 = Vector2.ZERO
 	# produced. It never removes the component tangent to the rope.
 	velocity += grapple_acceleration * delta
 	move_and_slide()
+	# Bone Slide Constraint: a hand standing in bone is pushed back out, so a legal tangency always
+	# exists and the blade can never be carried through the core. Zero in every other case, and the
+	# inward component of the body's own motion is dropped with it, so it cannot simply re-enter.
+	if bone_hilt_push_pending != Vector2.ZERO:
+		var push_direction: Vector2 = bone_hilt_push_pending.normalized()
+		global_position += bone_hilt_push_pending
+		var inward_speed: float = velocity.dot(push_direction)
+		if inward_speed < 0.0:
+			velocity -= push_direction * inward_speed
 	if was_dashing: _check_bash_dash_contacts(dash_path_start, global_position)
 	var arena_rect: Rect2 = GameplayBounds.arena_rect(get_tree().current_scene)
 	global_position.x = clampf(global_position.x, arena_rect.position.x + 24.0, arena_rect.end.x - 24.0)
@@ -2935,31 +2952,121 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 	var resolved_pose: Dictionary = _apply_charged_guard_pose(transform_data)
 	return _apply_flesh_contact_pose(resolved_pose)
 
+## Bone Slide Constraint. The bone core is HARD: the blade may never come nearer it than the core's
+## radius plus the blade's own. Because the blade is anchored at the hilt, the illegal angles form one
+## contiguous interval, so the law is expressed as a projection onto the boundary of the legal set --
+## and that boundary IS the tangency, where the blade slides along the bone. Inward motion is refused
+## outright; the motion the contact permits is kept, and it is what turns the blade about the hilt,
+## exactly as the yo-yo keeps its tangent. Solved from the live pose against live geometry every
+## frame: nothing attaches, and no contact fraction is ever forced.
+##
+## Returns the angle to add to the authored pose. The hilt is deliberately NOT moved here -- instead
+## the hand is pushed back out of any core it is standing inside, on its own channel, because no
+## rotation can rescue a hand that is already in the bone.
+func _resolve_bone_constraint(hilt: Vector2, blade_angle: float) -> float:
+	bone_constraint_active = false
+	bone_constraint_hilt_inside = false
+	bone_constraint_depth = 0.0
+	bone_hilt_push_pending = Vector2.ZERO
+	if not bone_constraint_setting_on():
+		bone_constraint_has_last = false
+		return 0.0
+	# A blade that is not moving is not being constrained: a resting sword beside an enemy is left
+	# completely alone, so this can never rotate a hanging blade or shove a hand that is merely near.
+	if blade_velocity.length() < HitReaction.BONE_CONSTRAINT_MIN_BLADE_SPEED:
+		bone_constraint_has_last = false
+		return 0.0
+	# No tree (a bare Player in a test) or no enemies at all means there is no bone to obey.
+	var tree: SceneTree = get_tree()
+	if tree == null:
+		bone_constraint_has_last = false
+		return 0.0
+	var enemies: Array[Node] = tree.get_nodes_in_group("enemies")
+	if enemies.is_empty():
+		bone_constraint_has_last = false
+		return 0.0
+	# The angle the blade is ACTUALLY at is what the limit is applied from; on the first frame of a
+	# contact there is no history yet, so the blade is taken to be where the swing already wants it.
+	var previous_angle: float = bone_constraint_last_angle if bone_constraint_has_last else blade_angle
+	var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
+	var best_rank: float = -1.0
+	var best_contact: Dictionary = {}
+	var clipped_angle: float = blade_angle
+	var best_bite: float = INF
+	var clipped: bool = false
+	for node: Node in enemies:
+		var enemy: Node2D = node as Node2D
+		if enemy == null or not is_instance_valid(enemy):
+			continue
+		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
+			var core_center: Vector2 = _enemy_body_shape_transform(shape_node).origin
+			var reach_radius: float = _shape_outer_radius(shape_node) * core_fraction + BLADE_RADIUS
+			var hilt_push: Vector2 = HitReaction.bone_core_hilt_push(hilt, core_center, reach_radius)
+			if hilt_push.length_squared() > bone_hilt_push_pending.length_squared():
+				bone_hilt_push_pending = hilt_push
+			var contact: Dictionary = HitReaction.bone_core_constraint(hilt, blade_angle, BLADE_LENGTH, core_center, reach_radius)
+			if not bool(contact["contact"]):
+				continue
+			# The bone genuinely in the way wins: a hand already inside a core outranks any
+			# penetration, and a deeper penetration outranks a shallower one.
+			var rank: float = float(contact["depth"]) + (1000.0 if bool(contact["hilt_inside"]) else 0.0)
+			if rank > best_rank:
+				best_rank = rank
+				best_contact = contact
+			# Among several bones the one that BITES FIRST decides, because the blade may only travel
+			# as far as the strictest core allows -- so the least movement wins, not the deepest cut.
+			var allowed: float = HitReaction.bone_core_clip(previous_angle, blade_angle, hilt, BLADE_LENGTH, core_center, reach_radius)
+			var bite: float = absf(angle_difference(allowed, previous_angle))
+			if bite < best_bite:
+				best_bite = bite
+				clipped_angle = allowed
+				clipped = true
+	if best_contact.is_empty():
+		bone_constraint_has_last = false
+		return 0.0
+	bone_constraint_active = true
+	bone_constraint_has_last = true
+	bone_constraint_hilt_inside = bool(best_contact["hilt_inside"])
+	bone_constraint_depth = float(best_contact["depth"])
+	bone_constraint_fraction = float(best_contact["fraction"])
+	bone_constraint_contact = best_contact["point"] as Vector2
+	bone_constraint_normal = best_contact["normal"] as Vector2
+	# How much of this frame's swing was taken away. This is a pure LIMIT: the blade may end up short
+	# of where the swing wanted it, and can never end up past it -- which is why it can neither spin
+	# the blade nor carry it across the bone.
+	return angle_difference(blade_angle, clipped_angle if clipped else blade_angle)
+
 ## The inner core resists by slowing the live swing rate rather than rotating the
 ## blade, so it can never look magnetically pinned. Sink likewise only changes the
 ## live cadence; neither ever translates the visible hilt.
 func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
-	# Bone Slide Constraint: the solver's angle for this frame. It takes instantly, so the core is
-	# genuinely obeyed, and eases out so releasing bone never snaps. While it is on it OWNS the
-	# blade angle -- the glance, the wall glance and the shell angle stand down rather than fight
-	# it, which is precisely the tug of war that sank every earlier attempt.
+	# Bone Slide Constraint: the core refuses inward motion outright and slides the blade along bone.
+	# It is solved from the live pose every frame, so it takes instantly and eases out rather than
+	# snapping when the bone is released. While it is on it OWNS the blade angle -- the glance, the
+	# wall glance and the shell angle stand down rather than fight it, which is precisely the tug of
+	# war that sank every earlier attempt.
 	var frame_delta: float = get_physics_process_delta_time()
 	var constraint_on: bool = bone_constraint_setting_on()
 	if not constraint_on:
 		bone_constraint_angle_pending = 0.0
 		bone_constraint_active = false
-	if absf(bone_constraint_angle_pending) >= absf(bone_constraint_angle):
-		bone_constraint_angle = bone_constraint_angle_pending
-	else:
-		bone_constraint_angle = move_toward(bone_constraint_angle, 0.0, frame_delta * BONE_CONSTRAINT_SMOOTHING)
-	# How long the shove was actually held is counted where the contact is solved, against the one
-	# enemy that owns the queued impulse -- counting it here would count it once per enemy per frame
-	# and report a number that means nothing.
+		bone_constraint_has_last = false
+		bone_hilt_push_pending = Vector2.ZERO
+	elif transform_data.has("start"):
+		bone_constraint_angle_pending = _resolve_bone_constraint(
+			transform_data["start"] as Vector2, float(transform_data["angle"]))
+	# Taken EXACTLY, never eased. The clip's answer is legal by construction, so any easing here is a
+	# licence for the blade to sit somewhere the clip never agreed to -- which is precisely how a
+	# frame with the blade inside the bone appeared even while the clip itself was behaving.
+	bone_constraint_angle = bone_constraint_angle_pending
+	# The angle the blade will actually be drawn at, recorded so that next frame's limit starts from
+	# where the blade REALLY is. A held blade therefore stays exactly where it was put.
+	bone_constraint_last_angle = float(transform_data["angle"]) + bone_constraint_angle
 	_update_pending_bone_knockback(frame_delta)
 	if bone_constraint_active and get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5:
-		print("[BONE CONSTRAINT] fraction=%.2f inward=%.1f tangent=%.1f omega=%.2f iterations=%d knockback=%s" % [
-			bone_constraint_fraction, bone_constraint_inward, bone_constraint_tangent,
-			bone_constraint_angle / maxf(frame_delta, 0.0001), bone_constraint_iterations,
+		print("[BONE CONSTRAINT] fraction=%.2f depth=%.1f held=%.3f hilt_inside=%s knockback=%s" % [
+			bone_constraint_fraction, bone_constraint_depth, bone_constraint_angle,
+			"yes" if bone_constraint_hilt_inside else "no",
 			"QUEUED" if pending_sword_impulse_left > 0.0 else "NONE"])
 	# Bone glance: a bounded, fast-decaying deflection of the rendered pose.
 	if not constraint_on and blade_glance_angle != 0.0:
@@ -4695,6 +4802,11 @@ func _update_sword(delta: float) -> void:
 		bone_constraint_angle = 0.0
 		bone_constraint_active = false
 		bone_constraint_hold = 0.0
+		bone_constraint_has_last = false
+		bone_constraint_last_angle = 0.0
+		bone_constraint_depth = 0.0
+		bone_constraint_hilt_inside = false
+		bone_hilt_push_pending = Vector2.ZERO
 		pending_sword_impulse = Vector2.ZERO
 		pending_sword_impulse_id = 0
 		pending_sword_impulse_left = 0.0
@@ -5484,83 +5596,10 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				if surface_total.length_squared() > 0.01 and get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5:
 					print("[BODY SURFACE] blade at %.1f px, %.1f px allowed: pushed out %.1f px, body shove %.1f px" % [
 						surface_distance, surface_limit, surface_push.length(), surface_shove.length()])
-		# Bone Slide Constraint. The core is a unilateral constraint: motion INTO it is rejected,
-		# motion along it is kept -- the same rule the yo-yo uses, one dimension over. The hilt is
-		# never moved to satisfy contact, so the surviving tangent is turned into a rotation about
-		# the authored hand. Solved against live geometry, a fixed few passes, every frame, with a
-		# bounded angle: nothing attaches, nothing is a canned animation, and no contact fraction is
-		# ever forced -- migration along the blade is whatever the geometry does. Hit geometry above
-		# is untouched; this is pose and cadence only.
-		if reached_inner_core and bone_constraint_setting_on() and not current_blade_samples.is_empty():
-			var constraint_shape: CollisionShape2D = core_shapes[0].get("node") as CollisionShape2D
-			if constraint_shape != null:
-				var core_centre: Vector2 = constraint_shape.global_transform.origin
-				var core_radius: float = _shape_outer_radius(constraint_shape) * core_fraction
-				var hilt: Vector2 = current_blade_samples[0]
-				# Walk the WHOLE drawn blade rather than its few control points, so the contact
-				# fraction can genuinely land anywhere between hilt and tip. It is a short curve,
-				# and the migration this reports has to be real geometry, not a coarse guess.
-				var blade_points: Array[Vector2] = []
-				for path_index: int in range(current_blade_samples.size() - 1):
-					var path_from: Vector2 = current_blade_samples[path_index]
-					var path_to: Vector2 = current_blade_samples[path_index + 1]
-					for step_index: int in range(4):
-						blade_points.append(path_from.lerp(path_to, float(step_index) / 4.0))
-				blade_points.append(current_blade_samples[current_blade_samples.size() - 1])
-				# The blade is a solid, not a line: its spine overlaps a core from a whole
-				# blade-radius away, so the contact distance has to include the blade's own radius.
-				# Without this the core never actually constrains anything.
-				var contact_reach: float = core_radius + BLADE_RADIUS
-				var nearest_point: Vector2 = hilt
-				var nearest_fraction: float = 0.0
-				var nearest_distance: float = INF
-				for point_index: int in range(blade_points.size()):
-					var sample_point: Vector2 = blade_points[point_index]
-					var sample_distance: float = (sample_point - core_centre).length()
-					if sample_distance < nearest_distance:
-						nearest_distance = sample_distance
-						nearest_point = sample_point
-						nearest_fraction = float(point_index) / float(maxi(1, blade_points.size() - 1))
-				var contact_offset: Vector2 = nearest_point - hilt
-				var relative_displacement: Vector2 = relative_blade_velocity * delta
-				var total_angle: float = 0.0
-				var passes: int = 0
-				for pass_index: int in range(HitReaction.BONE_CONSTRAINT_MAX_ITERATIONS):
-					var rotating_offset: Vector2 = contact_offset.rotated(total_angle)
-					var centre_to_probe: Vector2 = (hilt + rotating_offset) - core_centre
-					var penetration: float = contact_reach - centre_to_probe.length()
-					if penetration <= 0.5:
-						break
-					var surface_normal: Vector2 = centre_to_probe.normalized() if centre_to_probe.length_squared() > HitReaction.BONE_CONSTRAINT_EPSILON else physical_normal.normalized()
-					if surface_normal.length_squared() <= HitReaction.BONE_CONSTRAINT_EPSILON:
-						break
-					passes = pass_index + 1
-					total_angle += HitReaction.bone_constraint_angle(rotating_offset, relative_displacement, surface_normal)
-					total_angle += HitReaction.bone_constraint_outward_angle(rotating_offset, surface_normal, penetration)
-					if absf(total_angle) > HitReaction.BONE_CONSTRAINT_MAX_ANGLE:
-						break
-				if nearest_distance > contact_reach:
-					# Live geometry, every frame: if the drawn blade no longer touches this core, the
-					# constraint simply is not there. Nothing latches, so an enemy knocked clear can
-					# never keep holding a blade that is nowhere near it.
-					if bone_constraint_enemy_id == id:
-						bone_constraint_active = false
-						bone_constraint_angle_pending = 0.0
-					continue
-				bone_constraint_angle_pending = clampf(total_angle, -HitReaction.BONE_CONSTRAINT_MAX_ANGLE, HitReaction.BONE_CONSTRAINT_MAX_ANGLE)
-				bone_constraint_active = true
-				bone_constraint_enemy_id = id
-				bone_constraint_iterations = passes
-				bone_constraint_contact = nearest_point
-				bone_constraint_normal = physical_normal.normalized()
-				bone_constraint_inward = minf(0.0, relative_displacement.dot(bone_constraint_normal))
-				bone_constraint_tangent = (relative_displacement - bone_constraint_normal * bone_constraint_inward).length()
-				bone_constraint_fraction = nearest_fraction
-				# The shove is held for as long as this enemy is still in contact with the blade, so
-				# this is a true per-contact duration -- counted once per frame, for the one enemy
-				# that owns the queued impulse.
-				if pending_sword_impulse_id == id and pending_sword_impulse != Vector2.ZERO:
-					bone_constraint_hold += delta
+		# Bone Slide Constraint is NOT solved here. It is a geometric constraint on the blade itself,
+		# so it lives in _resolve_bone_constraint and is solved from the live pose every frame -- not
+		# from the result of a hit -- which is what keeps it independent of the hit path and of any
+		# contact that only exists for a frame or two.
 		# Visible bite. The drawn blade is pushed toward the enemy until it has visibly cut
 		# in -- into flesh, but only as far as the core surface once the bone is what it has
 		# hit, because from there the core is what the blade rests on and slides along. This

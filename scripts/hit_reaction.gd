@@ -190,39 +190,150 @@ static func hard_push_offset(sample: Vector2, surface_point: Vector2, normal: Ve
 	var unit: Vector2 = normal.normalized()
 	return unit * maxf(0.0, (surface_point - sample).dot(unit))
 
-## Surfaced as "Bone Slide Constraint". The core is a unilateral movement constraint, the same
-## family as the yo-yo: it rejects the motion that drives INTO it and keeps the motion that runs
-## along it. The hilt never moves to satisfy contact, so the surviving tangent is turned into a
-## rotation about the authored hand. Bounded, iterated a fixed small number of times, and
-## recomputed from live geometry every frame -- there is no attachment state to become magnetic.
-const BONE_CONSTRAINT_MAX_ITERATIONS: int = 3
-const BONE_CONSTRAINT_MAX_ANGLE: float = 0.6108652
+## Surfaced as "Bone Slide Constraint". The bone core is a HARD circle and the blade is a capsule, so
+## the blade may never come nearer the core than "core radius + blade radius". Because the blade is
+## anchored at the hilt, the illegal angles form ONE contiguous interval -- the shadow the core casts
+## from the hand -- and its boundary IS the tangency, so stopping on it is what makes the blade slide
+## along the bone instead of into it.
+##
+## The constraint is therefore a LIMIT ON MOVEMENT, not a correction of pose. The swing may rotate the
+## blade only as far as the bone's surface this frame and no further: the blade is never jumped to a
+## "nearest legal angle", it is only ever robbed of the movement that would have taken it inside. That
+## difference is the whole design -- starting from where the blade actually IS means it can never be
+## thrown across the bone, and holding the swing at a real tangency means the swing itself carries the
+## blade around the core as the hand and the bone move.
+##
+## There is deliberately NO velocity term here. A velocity is a rotation RATE, and the only place to
+## put it is the blade ANGLE, so adding it is how a solver ends up throwing the blade to the far side
+## of the bone. Measured on the rig, the tangent runs along the blade's own axis at a tangency, which
+## no rotation about the hilt can produce: the term was near zero where it should have mattered and
+## large where it did damage.
 const BONE_CONSTRAINT_EPSILON: float = 0.0001
+## A blade that is not moving is not being constrained: a resting sword near an enemy is left
+## entirely alone, so this never rotates a hanging blade and never shoves a hand that is merely close.
+const BONE_CONSTRAINT_MIN_BLADE_SPEED: float = 24.0
 
-## The rotation about the hilt that cancels exactly the illegal inward part of a contact's motion,
-## keeping the tangent, exactly as the yo-yo keeps the tangent. "offset" is the contact point
-## measured from the authored hilt and "normal" is the core's outward surface normal there. Zero
-## whenever nothing is being driven inward, so contact that is merely present costs nothing.
-static func bone_constraint_angle(offset: Vector2, relative_displacement: Vector2, normal: Vector2) -> float:
-	var inward: float = minf(0.0, relative_displacement.dot(normal))
-	if inward >= 0.0:
-		return 0.0
-	var length_squared: float = offset.length_squared()
-	if length_squared <= BONE_CONSTRAINT_EPSILON:
-		return 0.0
-	return -offset.cross(normal * inward) / length_squared
+## How far to either side of the core the bone casts its shadow as seen from the hilt: a blade long
+## enough to lie ACROSS the bone is stopped where the bone grazes its side, while one that can only
+## reach with its TIP is stopped where the tip comes to rest on the bone. Handling only the first of
+## those is what once let a blade aimed straight at bone be treated as legal.
+static func bone_core_half_angle(distance: float, blade_length: float, reach_radius: float) -> float:
+	if distance <= BONE_CONSTRAINT_EPSILON:
+		return PI
+	if distance * distance - reach_radius * reach_radius <= blade_length * blade_length:
+		return asin(clampf(reach_radius / distance, -1.0, 1.0))
+	return acos(clampf((distance * distance + blade_length * blade_length - reach_radius * reach_radius) / (2.0 * distance * blade_length), -1.0, 1.0))
 
-## The rotation about the hilt that carries a contact point "offset" outward along "normal" by
-## "distance". This removes whatever penetration the tangent correction left behind. It returns
-## zero when rotation cannot help at all -- a blade pressed squarely into bone has no tangent to
-## resolve into, so that case is left to the bone stop and reads as a clean clang, not a slide.
-static func bone_constraint_outward_angle(offset: Vector2, normal: Vector2, distance: float) -> float:
-	if distance <= 0.0:
+## The law, as one pure function. Given the angle the blade is ACTUALLY at ("previous_angle") and the
+## angle the swing now wants ("wanted_angle"), return the furthest the blade may be allowed to travel
+## toward that want. It never returns anything outside the two, so the blade can only ever lose
+## movement, never gain it -- which is precisely "the bone may not be entered".
+static func bone_core_clip(previous_angle: float, wanted_angle: float, hilt: Vector2, blade_length: float, core_center: Vector2, reach_radius: float) -> float:
+	var to_core: Vector2 = core_center - hilt
+	var distance: float = to_core.length()
+	if distance <= reach_radius:
+		# The hand itself is in the bone, so no angle at all is legal. Rotation cannot rescue that --
+		# the hand is pushed out on its own channel -- so the swing is left alone here.
+		return wanted_angle
+	if distance - reach_radius > blade_length:
+		return wanted_angle   # the bone is out of the blade's reach entirely
+	var core_angle: float = to_core.angle()
+	var half: float = bone_core_half_angle(distance, blade_length, reach_radius)
+	var previous_offset: float = angle_difference(core_angle, previous_angle)
+	var wanted_offset: float = angle_difference(core_angle, wanted_angle)
+	if absf(previous_offset) < half:
+		# The blade BEGINS this frame inside the bone, which is the first frame of contact. Rotation
+		# can then only leave by the nearer side, so the pose is projected out -- exactly once, and
+		# never across the bone.
+		return core_angle + (half if wanted_offset >= 0.0 else -half)
+	if absf(wanted_offset) < half:
+		# The swing wants the blade inside the bone: stop it dead on the surface, on the side it came
+		# from. That stopping point is the tangency the blade then slides along.
+		return core_angle + signf(previous_offset) * half
+	if previous_offset * wanted_offset < 0.0:
+		# Both ends legal but on opposite sides means this step went straight through the bone. A
+		# single frame cannot legitimately cross a core, so a crossing is refused rather than allowed.
+		return core_angle + signf(previous_offset) * half
+	return wanted_angle
+
+## The whole core constraint, as one pure function: where the blade is anchored ("hilt"), where it
+## points ("blade_angle"), how long it is, and a hard core circle whose "reach_radius" already allows
+## for the blade's own radius. Returns the contact the blade rests on and the nearest LEGAL angle:
+##   angle       the blade angle projected out of the core (identical when already legal)
+##   point       the point on the blade that touches the bone
+##   normal      the core's outward surface normal there
+##   fraction    where along the blade that contact sits (0 = hilt, 1 = tip)
+##   depth       how far inside the core the wanted pose was being pushed
+##   contact     whether the blade genuinely touches the bone
+##   hilt_inside true when the HAND is already in the bone, where no rotation can possibly help
+static func bone_core_constraint(hilt: Vector2, blade_angle: float, blade_length: float, core_center: Vector2, reach_radius: float) -> Dictionary:
+	var to_core: Vector2 = core_center - hilt
+	var distance: float = to_core.length()
+	var result: Dictionary = {
+		"angle": blade_angle, "point": hilt, "normal": Vector2.ZERO, "fraction": 0.0,
+		"depth": 0.0, "contact": false, "hilt_inside": false}
+	if distance <= BONE_CONSTRAINT_EPSILON:
+		result["point"] = core_center
+		result["normal"] = Vector2.RIGHT
+		result["depth"] = reach_radius
+		result["contact"] = true
+		result["hilt_inside"] = true
+		return result
+	if distance <= reach_radius:
+		# The hand is already inside the bone. Rotating the blade cannot fix that -- only moving the
+		# hand can -- so the pose is left alone and the caller is told to push the hand back out.
+		result["normal"] = -to_core / distance
+		result["depth"] = reach_radius - distance
+		result["contact"] = true
+		result["hilt_inside"] = true
+		return result
+	if distance - reach_radius > blade_length:
+		return result   # the core is entirely out of the blade's reach
+	var core_angle: float = to_core.angle()
+	var offset: float = angle_difference(core_angle, blade_angle)
+	var half: float = bone_core_half_angle(distance, blade_length, reach_radius)
+	if absf(offset) < half:
+		# Inside the core's shadow, so the wanted angle is illegal: project it onto the nearer
+		# boundary. That boundary is the bone's surface, which is where the blade slides along.
+		result["angle"] = core_angle + (half if offset >= 0.0 else -half)
+	var settled_angle: float = float(result["angle"])
+	var settled_along: float = clampf(distance * cos(angle_difference(core_angle, settled_angle)), 0.0, blade_length)
+	var point: Vector2 = hilt + Vector2.RIGHT.rotated(settled_angle) * settled_along
+	result["point"] = point
+	var to_point: Vector2 = point - core_center
+	result["normal"] = to_point.normalized() if to_point.length_squared() > BONE_CONSTRAINT_EPSILON else Vector2.RIGHT
+	result["fraction"] = clampf(settled_along / maxf(blade_length, BONE_CONSTRAINT_EPSILON), 0.0, 1.0)
+	var wanted_distance: float = bone_segment_core_distance(hilt, blade_angle, blade_length, core_center)
+	var settled_distance: float = bone_segment_core_distance(hilt, settled_angle, blade_length, core_center)
+	result["depth"] = maxf(0.0, reach_radius - wanted_distance)
+	result["contact"] = settled_distance <= reach_radius + 1.0
+	return result
+
+## How near a blade pointing along "angle" from "hilt" comes to a core's centre. The nearest point of
+## a segment is either the perpendicular foot, the tip, or (degenerately) the hilt itself, so this is
+## the whole distance test the constraint needs -- it must answer for tip-on-bone as well as for a
+## blade lying across the bone.
+static func bone_segment_core_distance(hilt: Vector2, angle: float, blade_length: float, core_center: Vector2) -> float:
+	var to_core: Vector2 = core_center - hilt
+	var distance: float = to_core.length()
+	if distance <= BONE_CONSTRAINT_EPSILON:
 		return 0.0
-	var outward_travel: float = Vector2(-offset.y, offset.x).dot(normal)
-	if absf(outward_travel) <= BONE_CONSTRAINT_EPSILON:
-		return 0.0
-	return distance / outward_travel
+	var offset_angle: float = angle_difference(to_core.angle(), angle)
+	var along: float = distance * cos(offset_angle)
+	if along <= 0.0:
+		return distance
+	if along >= blade_length:
+		return (core_center - (hilt + Vector2.RIGHT.rotated(angle) * blade_length)).length()
+	return distance * sin(absf(offset_angle))
+
+## How far the hand must be pushed straight back out of a core it is standing inside. Zero whenever
+## the hilt is already clear, which is the ordinary case, so a legal pose is never nudged.
+static func bone_core_hilt_push(hilt: Vector2, core_center: Vector2, reach_radius: float) -> Vector2:
+	var to_core: Vector2 = core_center - hilt
+	var distance: float = to_core.length()
+	if distance >= reach_radius or distance <= BONE_CONSTRAINT_EPSILON:
+		return Vector2.ZERO
+	return -to_core * ((reach_radius - distance) / distance)
 
 static func body_block_target(current_pending: float) -> float:
 	return minf(current_pending, BLADE_BODY_BLOCK_RATE)

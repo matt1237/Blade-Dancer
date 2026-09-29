@@ -184,20 +184,22 @@ func test_bone_constraint_turns_the_blade_about_the_hilt_and_owns_the_angle() ->
 	# against -- helpers that pass their own tests while gameplay never calls them.
 	var player: Player = Player.new()
 	var authored_start: Vector2 = Vector2(30.0, 20.0)
-	player.bone_constraint_angle = 0.25
-	player.bone_constraint_angle_pending = 0.25
+	player.bone_constraint_angle = 0.0
 	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
 	player.set_combat_contact_setting("blade_bone_constraint_enabled", 0.0)
-	var off_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
-	assert(is_equal_approx(float(off_pose["angle"]), 0.0), "With the switch OFF nothing touches the authored angle.")
-	player.set_combat_contact_setting("blade_bone_constraint_enabled", 1.0)
-	var on_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
-	assert(is_equal_approx(float(on_pose["angle"]), 0.25), "The solver's angle reaches the live pose.")
-	assert((on_pose["start"] as Vector2).is_equal_approx(authored_start), "The hilt never moves to satisfy bone contact -- rotation is the only degree of freedom the core can touch.")
-	# While ON it owns the angle, so the bone glance stands down instead of fighting the solver.
 	player.blade_glance_angle = 0.4
-	var owned_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
-	assert(is_equal_approx(float(owned_pose["angle"]), 0.25), "The glance stands down while the constraint owns the angle.")
+	var off_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
+	assert(is_equal_approx(float(off_pose["angle"]), 0.4), "With the switch OFF the authored pose keeps its ordinary glance.")
+	# With the switch ON the constraint is the only opinion about the blade angle. There is no bone in
+	# range here, so the solve correctly yields nothing -- and the glance STILL stands down, which is
+	# what proves the constraint has taken over the live blade angle.
+	player.set_combat_contact_setting("blade_bone_constraint_enabled", 1.0)
+	player.blade_glance_angle = 0.4
+	var on_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
+	assert(is_equal_approx(float(on_pose["angle"]), 0.0), "The glance stands down while the constraint owns the angle.")
+	assert(is_equal_approx(player.bone_constraint_angle_pending, 0.0), "The solver sets the constraint angle every frame, so no stale correction can survive.")
+	assert((on_pose["start"] as Vector2).is_equal_approx(authored_start), "The hilt is never moved to satisfy bone contact -- rotation is the only degree of freedom the core can touch.")
+	assert(player.bone_hilt_push_pending == Vector2.ZERO, "Nothing pushes the hand when there is no bone to stand in.")
 	player.free()
 
 func test_core_yield_slows_the_swing_without_rotating_or_translating_the_blade() -> void:
