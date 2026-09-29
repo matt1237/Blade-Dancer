@@ -47,6 +47,46 @@ const DEFAULTS: Dictionary = {
 	## blade switches -- with this OFF the blade shell simply has nothing to push. With all
 	## four switches OFF no shell node is created at all, so the feature leaves no footprint.
 	"bone_core_shell_enabled": 0.0,
+	## Surfaced as "Full Physical". The blunt switch, and the only one that changes the blade's
+	## authority instead of adding a bounded deviation underneath it: the sword becomes a real
+	## rigid body whose contacts are not clamped, and every enemy mirrors its whole collision
+	## silhouette as a solid rather than just the core, so the blade meets a body wherever the
+	## outline the player can see actually is. One switch for the lot -- with it OFF, and the
+	## four above OFF, not one body of this kind exists anywhere to be removed.
+	"full_physical_enabled": 0.0,
+	## Surfaced as "Body Block". The whole silhouette refuses the blade instead of only the
+	## core: while the blade is genuinely inside a body the swing is held to a near-stall, so
+	## an enemy reads as a wall the sword has to get through. Shares the core yield's single
+	## swing-rate channel, so the two take the harder of the pair and never stack.
+	"blade_body_block_enabled": 0.0,
+	## Surfaced as "Blade Meets the World". Adds the terrain's collision layer to the blade
+	## shell's mask, so a wall can stop the sword instead of it passing through the level.
+	## Off, the shell masks cores only and can never catch on scenery.
+	"blade_shell_world_enabled": 0.0,
+	## Surfaced as "Blade Meets Walls". The authored version of the same idea, and the one that
+	## actually holds: while the blade drives into the level the swing is held to a creep and the
+	## blade turns aside along the surface, so a wall can never simply be cut through. Needs no
+	## shell of any kind -- it is the pose authority refusing, not a body competing with it.
+	"blade_wall_block_enabled": 0.0,
+	## Surfaced as "Blade Meets Bodies". A body takes its bite, then refuses to let the blade
+	## burrow: the drawn blade is pushed back out to the body's surface and shoved aside by the
+	## body's own movement, so an enemy walking into a held sword moves it instead of passing
+	## through it. Needs only the Hit Reaction master -- no shell, no Bone Slide.
+	"blade_body_surface_enabled": 0.0,
+	## Surfaced as "Hard Contact Clash". A hard shape -- the level, or an enemy's bone core -- is
+	## never entered by the drawn blade at all: the blade is held exactly on its surface with no
+	## allowance and is stopped with clash weight, so entering a hard shape is impossible rather
+	## than merely discouraged. Visual and cadence only -- the hit model is untouched, so the bone
+	## stop, core yield and bone slide still fire, which is what lets the blade be refused without
+	## the bone rules dying. Needs only the Hit Reaction master.
+	"blade_hard_clash_enabled": 0.0,
+	## Surfaced as "Bone Slide Constraint". The architecture test: the bone core becomes a real
+	## unilateral movement constraint, solved against the live blade every frame, instead of asking
+	## a rigid body to do it and fighting the servo. Inward motion is rejected and the surviving
+	## tangent becomes rotation about the authored hilt. Needs Hit Reaction on. While ON it owns the
+	## blade-angle authority, so the bone glance, the wall glance and the shell angle stand down
+	## rather than competing with it.
+	"blade_bone_constraint_enabled": 0.0,
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
 	"blade_sink_depth_percent": 70.0,
@@ -87,6 +127,105 @@ const BLADE_SINK_RELEASE_SMOOTHING: float = 12.0
 ## strength the live swing advances at this fraction while driving into the core.
 ## Much milder than a Bind's bound-sword speed, so the blade resists without stalling.
 const BLADE_CORE_YIELD_FLOOR: float = 0.75
+## Body Block's hold. Where the core yield is a gentle rate cut that deliberately never stalls,
+## a body block is meant to read as a wall: the swing creeps at this fraction of its rate for as
+## long as the blade is inside a body. A stall, but not a lock -- the blade always keeps
+## advancing, so it can never pin the player or outlive the contact that caused it.
+const BLADE_BODY_BLOCK_RATE: float = 0.10
+
+## Body Block's whole contribution: take the harder of whatever is already asking to slow the
+## swing and the block's own hold. One channel, so a body block and a core yield add up to the
+## harsher of the two rather than compounding into a longer stall than either meant.
+## Wall Block's own hold. A wall stops a swing harder than a body does, because a wall is
+## something the player cannot make way for: the blade creeps at this fraction while it drives
+## into the level. Still a creep and never a lock, so the swing always finishes and releases.
+const BLADE_WALL_BLOCK_RATE: float = 0.05
+
+## Wall Block's contribution on the same single swing-rate channel as Body Block and the core
+## yield. The hardest ask of the frame wins, so a wall and a body and a bone can never compound
+## into a lock -- they take the minimum, exactly as the other two do.
+static func wall_block_target(current_pending: float) -> float:
+	return minf(current_pending, BLADE_WALL_BLOCK_RATE)
+
+## Surfaced as "Blade Meets Bodies". The bite in this game is deliberate: the blade is meant to
+## sink in, because cutting flesh, the bone stop and the whole core model depend on it. So this
+## is not a wall that never yields -- it is a body refusing to let the blade BURROW. The drawn
+## blade is pushed back out to sit at this fraction of the enemy's radius from its centre, which
+## is shallower than the normal bite's own resting place, and the body's motion is added as a
+## shove on top. Bite first, then the body stops it.
+const BLADE_BODY_SURFACE_FRACTION: float = 0.75
+
+## Where the drawn blade should sit relative to a body, as a push straight back out along its own
+## surface normal. Zero when the blade is already at or outside the surface, so a blade merely
+## resting on a body is never moved at all; it grows one-to-one with how far past the surface the
+## blade has been driven, which is what stops the burrow without ever snapping the pose.
+static func body_surface_offset(blade_distance: float, surface_radius: float, outward: Vector2) -> Vector2:
+	return outward * maxf(0.0, surface_radius - blade_distance)
+
+## How much a moving body shoves the blade. Only an enemy genuinely closing on the blade pushes
+## it, which is what makes a body walking into a held sword move it instead of passing through.
+## Bounded, so a charging enemy can punctuate the pose but can never fire the sword away.
+static func body_shove(enemy_velocity: Vector2, enemy_to_blade: Vector2, gain: float, maximum: float) -> Vector2:
+	if enemy_velocity.length_squared() <= 1.0 or enemy_to_blade.length_squared() <= 0.0001:
+		return Vector2.ZERO
+	if enemy_velocity.normalized().dot(enemy_to_blade.normalized()) <= 0.0:
+		return Vector2.ZERO
+	return (enemy_velocity * gain).limit_length(maximum)
+
+## Surfaced as "Hard Contact Clash". A hard shape -- the level, or an enemy's bone core -- is
+## never entered by the drawn blade at all. The blade is held exactly on its surface and stopped
+## with clash weight instead of easing through it. The bind time is how long the swing is held on
+## that first contact, and the cooldown stops a blade pressed against a surface from re-triggering
+## the clash on every single frame.
+const BLADE_HARD_BIND_TIME: float = 0.08
+const BLADE_HARD_CLASH_COOLDOWN: float = 0.22
+
+## Pushes a blade sample out of a hard shape. The surface point is the closest point on that shape
+## to the sample, so the return is exactly how far the sample sits INSIDE it, along the surface
+## normal -- no allowance, no bite, nothing. Applied to the whole drawn pose this is what makes
+## entering a hard shape impossible rather than merely discouraged.
+static func hard_push_offset(sample: Vector2, surface_point: Vector2, normal: Vector2) -> Vector2:
+	if normal.length_squared() <= 0.0001:
+		return Vector2.ZERO
+	var unit: Vector2 = normal.normalized()
+	return unit * maxf(0.0, (surface_point - sample).dot(unit))
+
+## Surfaced as "Bone Slide Constraint". The core is a unilateral movement constraint, the same
+## family as the yo-yo: it rejects the motion that drives INTO it and keeps the motion that runs
+## along it. The hilt never moves to satisfy contact, so the surviving tangent is turned into a
+## rotation about the authored hand. Bounded, iterated a fixed small number of times, and
+## recomputed from live geometry every frame -- there is no attachment state to become magnetic.
+const BONE_CONSTRAINT_MAX_ITERATIONS: int = 3
+const BONE_CONSTRAINT_MAX_ANGLE: float = 0.6108652
+const BONE_CONSTRAINT_EPSILON: float = 0.0001
+
+## The rotation about the hilt that cancels exactly the illegal inward part of a contact's motion,
+## keeping the tangent, exactly as the yo-yo keeps the tangent. "offset" is the contact point
+## measured from the authored hilt and "normal" is the core's outward surface normal there. Zero
+## whenever nothing is being driven inward, so contact that is merely present costs nothing.
+static func bone_constraint_angle(offset: Vector2, relative_displacement: Vector2, normal: Vector2) -> float:
+	var inward: float = minf(0.0, relative_displacement.dot(normal))
+	if inward >= 0.0:
+		return 0.0
+	var length_squared: float = offset.length_squared()
+	if length_squared <= BONE_CONSTRAINT_EPSILON:
+		return 0.0
+	return -offset.cross(normal * inward) / length_squared
+
+## The rotation about the hilt that carries a contact point "offset" outward along "normal" by
+## "distance". This removes whatever penetration the tangent correction left behind. It returns
+## zero when rotation cannot help at all -- a blade pressed squarely into bone has no tangent to
+## resolve into, so that case is left to the bone stop and reads as a clean clang, not a slide.
+static func bone_constraint_outward_angle(offset: Vector2, normal: Vector2, distance: float) -> float:
+	if distance <= 0.0:
+		return 0.0
+	var outward_travel: float = Vector2(-offset.y, offset.x).dot(normal)
+	if absf(outward_travel) <= BONE_CONSTRAINT_EPSILON:
+		return 0.0
+	return distance / outward_travel
+
+static func body_block_target(current_pending: float) -> float:
+	return minf(current_pending, BLADE_BODY_BLOCK_RATE)
 
 static func value(settings: Dictionary, key: String) -> float:
 	return float(settings.get(key, DEFAULTS.get(key, 0.0)))

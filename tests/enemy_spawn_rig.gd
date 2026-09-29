@@ -88,6 +88,7 @@ func _ready() -> void:
 		_run_bone_slide_probe()
 	if probe_physics_shells:
 		_run_physics_shells_probe()
+		_run_wall_block_probe()
 
 func _process(delta: float) -> void:
 	if _main == null:
@@ -98,6 +99,8 @@ func _process(delta: float) -> void:
 		_log_status()
 	if _shell_probe_enemy != null:
 		_step_physics_shells_probe(delta)
+	if not _wall_probe_slabs.is_empty():
+		_step_wall_block_probe(delta)
 
 ## Physics Shells probe, set-up half. A shell can only show what it does across real physics
 ## steps, so unlike the bone-slide probe this one holds a synthetic blade on one enemy's core
@@ -124,6 +127,7 @@ func _run_physics_shells_probe() -> void:
 	player.set_combat_contact_setting("blade_shell_shove_enabled", 1.0)
 	player.set_combat_contact_setting("blade_shell_deflect_enabled", 0.0)
 	player.set_combat_contact_setting("blade_shell_query_enabled", 1.0)
+	player.set_combat_contact_setting("blade_body_block_enabled", 1.0)
 	print("[SHELLS PROBE] start enemy=%s at %s" % [str(_shell_probe_enemy.spawn_identity), str(_shell_probe_start)])
 
 ## Physics Shells probe, per-frame half. The blade is driven two pixels INSIDE the enemy's core
@@ -131,6 +135,109 @@ func _run_physics_shells_probe() -> void:
 ## is the shove shell pushing the core off its authored pose while the core springs back; phase
 ## 2 hands the contact to deflection, where the blade's own solid yields instead; phase 3 turns
 ## everything off and checks that nothing at all is left behind in the world.
+## Wall Block probe. This one needs no enemy at all, which is the point: it builds two slabs of
+## level on the terrain collision layer just outside the player's body but well inside the
+## blade's reach, turns Wall Block on, and then lets the player's own swings do the rest. Watch
+## for [WALL BLOCK] lines in the output and the [WALL PROBE] report underneath.
+var _wall_probe_slabs: Array[StaticBody2D] = []
+var _wall_probe_frames: int = 0
+var _wall_probe_blocked_frames: int = 0
+var _wall_probe_peak_glance: float = 0.0
+var _wall_probe_surfaced_frames: int = 0
+var _wall_probe_peak_surface: float = 0.0
+
+func _run_wall_block_probe() -> void:
+	var player: Player = _player()
+	if player == null:
+		print("[WALL PROBE] no player")
+		return
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_debug_enabled", 1.0)
+	# Clean constraint measurement: every competitor for the blade angle stands down, so what the
+	# log shows is the solver, the true contact duration and why the shove was released.
+	player.set_combat_contact_setting("blade_wall_block_enabled", 0.0)
+	player.set_combat_contact_setting("blade_body_surface_enabled", 0.0)
+	player.set_combat_contact_setting("blade_hard_clash_enabled", 0.0)
+	player.set_combat_contact_setting("blade_bone_constraint_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_debug_enabled", 1.0)
+	var placements: Array = [
+		[Vector2(55.0, 35.0), Vector2(56.0, 56.0)],
+		[Vector2(95.0, 62.0), Vector2(56.0, 56.0)]
+	]
+	for placement: Array in placements:
+		var slab: StaticBody2D = StaticBody2D.new()
+		slab.name = "WallProbeSlab"
+		slab.collision_layer = PhysicsShell.WORLD_LAYER
+		slab.collision_mask = 0
+		var shape_node: CollisionShape2D = CollisionShape2D.new()
+		var box: RectangleShape2D = RectangleShape2D.new()
+		box.size = placement[1] as Vector2
+		shape_node.shape = box
+		slab.add_child(shape_node)
+		player.get_parent().add_child(slab)
+		slab.global_position = player.global_position + (placement[0] as Vector2)
+		_wall_probe_slabs.append(slab)
+	_wall_probe_frames = 0
+	_wall_probe_blocked_frames = 0
+	_wall_probe_peak_glance = 0.0
+	# An enemy right on top of the player, so the real swings are guaranteed to overlap a body and
+	# Blade Meets Bodies actually has something to refuse. Without this the probe depends on where
+	# the spawned enemy happens to wander, which is how an earlier run proved nothing at all.
+	var enemy_scene: PackedScene = _scene_for("turkey")
+	if enemy_scene != null:
+		_main.call("_spawn_training_enemy_at", player.global_position + Vector2(46.0, 0.0), enemy_scene)
+		_track_new_enemies()
+		print("[WALL PROBE] spawned a turkey 46 px from the player so the body surface has a body to refuse")
+	print("[WALL PROBE] %d slabs on layer %d around the player, wall block on" % [_wall_probe_slabs.size(), PhysicsShell.WORLD_LAYER])
+
+func _step_wall_block_probe(_delta: float) -> void:
+	var player: Player = _player()
+	if player == null:
+		return
+	_wall_probe_frames += 1
+	if player.blade_wall_glance_angle != 0.0:
+		_wall_probe_blocked_frames += 1
+		_wall_probe_peak_glance = maxf(_wall_probe_peak_glance, absf(rad_to_deg(player.blade_wall_glance_angle)))
+	if player.blade_body_surface_offset.length() > 0.01:
+		_wall_probe_surfaced_frames += 1
+		_wall_probe_peak_surface = maxf(_wall_probe_peak_surface, player.blade_body_surface_offset.length())
+	if _wall_probe_frames % 10 == 0:
+		var samples: PackedVector2Array = player.current_blade_samples
+		var contact: Dictionary = {}
+		if samples.size() >= 2:
+			contact = player._blade_wall_contact(samples[0], samples[samples.size() - 1])
+		var broad_hits: int = -1
+		var world: World2D = player.get_world_2d()
+		if world != null and world.direct_space_state != null:
+			var broad_shape: CircleShape2D = CircleShape2D.new()
+			broad_shape.radius = 200.0
+			var broad_query: PhysicsShapeQueryParameters2D = PhysicsShapeQueryParameters2D.new()
+			broad_query.shape = broad_shape
+			broad_query.transform = Transform2D(0.0, player.global_position)
+			broad_query.collision_mask = PhysicsShell.WORLD_LAYER
+			broad_hits = world.direct_space_state.intersect_shape(broad_query, 8).size()
+		var slab_pos: String = "none"
+		if not _wall_probe_slabs.is_empty() and is_instance_valid(_wall_probe_slabs[0]):
+			slab_pos = str(_wall_probe_slabs[0].global_position)
+		var blade_tip: String = "none" if samples.is_empty() else str(samples[samples.size() - 1])
+		print("[WALL PROBE] frame %d: samples=%d tip=%s touching_level=%s wall_glance=%.1f swing_hold=%.2f body_surface=%.1f px terrain_within_200px=%d slab0=%s player=%s" % [
+			_wall_probe_frames,
+			samples.size(),
+			blade_tip,
+			str(not contact.is_empty()),
+			rad_to_deg(player.blade_wall_glance_angle),
+			player.blade_core_yield_pending,
+			player.blade_body_surface_offset.length(),
+			broad_hits,
+			slab_pos,
+			str(player.global_position)])
+	if _wall_probe_frames == 300:
+		for slab: StaticBody2D in _wall_probe_slabs:
+			if is_instance_valid(slab):
+				slab.queue_free()
+		_wall_probe_slabs.clear()
+		print("[WALL PROBE] done: frames_blocked=%d peak_glance=%.1f deg frames_surfaced=%d peak_surface=%.1f px" % [_wall_probe_blocked_frames, _wall_probe_peak_glance, _wall_probe_surfaced_frames, _wall_probe_peak_surface])
+
 func _step_physics_shells_probe(delta: float) -> void:
 	var player: Player = _player()
 	if player == null or not is_instance_valid(_shell_probe_enemy):
@@ -152,20 +259,30 @@ func _step_physics_shells_probe(delta: float) -> void:
 		player.set_combat_contact_setting("blade_shell_shove_enabled", 0.0)
 		player.set_combat_contact_setting("blade_shell_deflect_enabled", 1.0)
 		print("[SHELLS PROBE] phase 2: deflection on")
-	if _shell_probe_frames == 130:
+	if _shell_probe_frames == 120:
+		player.set_combat_contact_setting("blade_shell_deflect_enabled", 0.0)
+		player.set_combat_contact_setting("full_physical_enabled", 1.0)
+		print("[SHELLS PROBE] phase 3: FULL PHYSICAL on (solid sword, whole-outline enemies)")
+	if _shell_probe_frames == 180:
 		player.set_combat_contact_setting("bone_core_shell_enabled", 0.0)
 		player.set_combat_contact_setting("blade_shell_shove_enabled", 0.0)
 		player.set_combat_contact_setting("blade_shell_deflect_enabled", 0.0)
-		print("[SHELLS PROBE] phase 3: all shells off")
+		player.set_combat_contact_setting("full_physical_enabled", 0.0)
+		print("[SHELLS PROBE] phase 4: all shells off")
 	var centre: Vector2 = _shell_probe_enemy.global_position
 	var push: Vector2 = (centre - player.global_position).normalized() * 2.0
 	var half: float = 46.0
 	player._update_blade_shell(centre - Vector2(half, 0.0) + push, centre + Vector2(half, 0.0) + push, delta)
-	if _shell_probe_frames % 10 == 0 or _shell_probe_frames >= 130:
+	if _shell_probe_frames % 10 == 0 or _shell_probe_frames >= 180:
 		var core_shell: PhysicsShell = _shell_probe_enemy.bone_core_shell
 		var core_deviation: float = 0.0
+		var mirror_radius: float = 0.0
 		if core_shell != null and is_instance_valid(core_shell):
-			core_deviation = core_shell.deviation_from_target().origin.length()
+			core_deviation = core_shell.deviation_offset().length()
+			if core_shell.get_child_count() > 0:
+				var probe_shape: Shape2D = (core_shell.get_child(0) as CollisionShape2D).shape
+				if probe_shape is CircleShape2D:
+					mirror_radius = (probe_shape as CircleShape2D).radius
 		var leftovers: int = 0
 		for parent: Node in [player.get_parent(), _shell_probe_enemy.get_parent()]:
 			if parent == null:
@@ -173,13 +290,31 @@ func _step_physics_shells_probe(delta: float) -> void:
 			for child: Node in parent.get_children():
 				if child.name == "BladeShell" or child.name == "BoneCoreShell":
 					leftovers += 1
-		print("[SHELLS PROBE] f=%d core_dev=%.1fpx blade_off=%.1fpx blade_ang=%.1fdeg shell_nodes=%d" % [
+		var leash_now: float = -1.0
+		var frozen_now: bool = false
+		var springs_now: bool = true
+		var custom_now: bool = false
+		var shell_pos: Vector2 = Vector2.ZERO
+		if core_shell != null and is_instance_valid(core_shell):
+			leash_now = core_shell.max_deviation
+			frozen_now = core_shell.freeze
+			springs_now = core_shell.springs_enabled
+			custom_now = core_shell.custom_integrator
+			shell_pos = core_shell.global_position
+		print("[SHELLS PROBE] f=%d core_dev=%.1fpx blade_off=%.1fpx blade_ang=%.1fdeg mirror_r=%.1f shell_nodes=%d leash=%.1f frozen=%s springs=%s custom=%s enemy=%s shell=%s" % [
 			_shell_probe_frames,
 			core_deviation,
 			player.blade_shell_offset.length(),
 			rad_to_deg(player.blade_shell_angle),
-			leftovers])
-	if _shell_probe_frames >= 140:
+			mirror_radius,
+			leftovers,
+			leash_now,
+			str(frozen_now),
+			str(springs_now),
+			str(custom_now),
+			str(_shell_probe_enemy.global_position),
+			str(shell_pos)])
+	if _shell_probe_frames >= 200:
 		_shell_probe_enemy = null
 
 ## Wait until Main has finished its own _ready wiring. The rig is a child node, so its

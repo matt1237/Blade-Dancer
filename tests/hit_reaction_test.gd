@@ -89,7 +89,7 @@ func test_hit_reaction_tab_has_every_canonical_control_and_existing_per_preset_p
 	assert(player.get_combat_contact_setting("split_kill_chance_percent") == 70.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 30, "Bone Slide and Bone Bind each add a canonical Hit Reaction setting plus one Effect Strength tuner apiece, and the Physics Shells layer adds its four switches.")
+	assert(HitReaction.DEFAULTS.size() == 37, "Bone Slide and Bone Bind each add a canonical Hit Reaction setting plus one Effect Strength tuner apiece, and the Physics Shells layer adds its four switches, Full Physical, Body Block, Blade Meets the World, Blade Meets Walls, Blade Meets Bodies, Hard Contact Clash and Bone Slide Constraint.")
 	player.free()
 	menu.free()
 	tabs.free()
@@ -152,12 +152,12 @@ func test_effect_strength_scales_a_bone_effect_from_inert_to_full() -> void:
 	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, -40.0), 1.0), "Under-range strength clamps to inert.")
 
 func test_physics_shells_ship_all_off_and_leave_no_footprint() -> void:
-	for key: String in ["blade_shell_query_enabled", "blade_shell_shove_enabled", "blade_shell_deflect_enabled", "bone_core_shell_enabled"]:
+	for key: String in ["blade_shell_query_enabled", "blade_shell_shove_enabled", "blade_shell_deflect_enabled", "bone_core_shell_enabled", "full_physical_enabled", "blade_body_block_enabled", "blade_shell_world_enabled", "blade_wall_block_enabled", "blade_body_surface_enabled", "blade_hard_clash_enabled", "blade_bone_constraint_enabled"]:
 		assert(HitReaction.DEFAULTS.has(key), "Every Physics Shells switch must be a canonical Hit Reaction setting: %s" % key)
 		assert(is_equal_approx(HitReaction.DEFAULTS[key], 0.0), "Physics Shells must ship OFF so the authored pose stays untouched: %s" % key)
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	assert(menu_source.contains("\"Physics Shells\""), "The shell switches need their own sub-tab in the Hit Reaction tab.")
-	for label: String in ["Real Contact Normals — OFF / ON", "Blade Shell — OFF / ON", "Blade Deflection — OFF / ON", "Enemy Core Shells — OFF / ON"]:
+	for label: String in ["Real Contact Normals — OFF / ON", "Blade Shell — OFF / ON", "Blade Deflection — OFF / ON", "Enemy Core Shells — OFF / ON", "Blade Meets Walls — OFF / ON", "Blade Meets Bodies — OFF / ON", "Hard Contact Clash — OFF / ON", "Bone Slide Constraint — OFF / ON"]:
 		assert(menu_source.contains(label), "Every Physics Shells switch needs a visible OFF/ON control: %s" % label)
 	assert(menu_source.contains("shells_box, \"blade_shell_query_enabled\""), "The shell switches must live in the Physics Shells section, not the physical box.")
 
@@ -177,6 +177,28 @@ func test_sword_knockback_direction_toggle_is_independent_and_only_reverses_when
 	var target_position: Vector2 = Vector2.RIGHT * 100.0
 	assert(HitReaction.sword_knockback_direction(normal_direction, player_position, target_position, false) == normal_direction)
 	assert(HitReaction.sword_knockback_direction(normal_direction, player_position, target_position, true) == Vector2.RIGHT)
+
+func test_bone_constraint_turns_the_blade_about_the_hilt_and_owns_the_angle() -> void:
+	# Integration, not helper maths: this goes through the very pose function the game commits, so
+	# it proves the live path actually APPLIES the solver. That is the mistake worth guarding
+	# against -- helpers that pass their own tests while gameplay never calls them.
+	var player: Player = Player.new()
+	var authored_start: Vector2 = Vector2(30.0, 20.0)
+	player.bone_constraint_angle = 0.25
+	player.bone_constraint_angle_pending = 0.25
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	player.set_combat_contact_setting("blade_bone_constraint_enabled", 0.0)
+	var off_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
+	assert(is_equal_approx(float(off_pose["angle"]), 0.0), "With the switch OFF nothing touches the authored angle.")
+	player.set_combat_contact_setting("blade_bone_constraint_enabled", 1.0)
+	var on_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
+	assert(is_equal_approx(float(on_pose["angle"]), 0.25), "The solver's angle reaches the live pose.")
+	assert((on_pose["start"] as Vector2).is_equal_approx(authored_start), "The hilt never moves to satisfy bone contact -- rotation is the only degree of freedom the core can touch.")
+	# While ON it owns the angle, so the bone glance stands down instead of fighting the solver.
+	player.blade_glance_angle = 0.4
+	var owned_pose: Dictionary = player._apply_flesh_contact_pose({"start": authored_start, "angle": 0.0})
+	assert(is_equal_approx(float(owned_pose["angle"]), 0.25), "The glance stands down while the constraint owns the angle.")
+	player.free()
 
 func test_core_yield_slows_the_swing_without_rotating_or_translating_the_blade() -> void:
 	var player: Player = Player.new()

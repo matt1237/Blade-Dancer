@@ -309,13 +309,16 @@ func _ready() -> void:
 func _configure_concrete_enemy() -> void:
 	pass
 
-## Physics Shells, enemy side. A core shell exists only while its switch is on and is removed
-## outright when it is off, so all shells off leaves no body behind. The shell is a sibling in
-## world space rather than a child -- a rigid body under a moving node has its global transform
-## rewritten every time the ancestor moves, which fights the solver -- and it springs back to
-## this enemy's authored core pose, so the enemy itself is never moved by physics.
+## Physics Shells, enemy side. A core shell exists only while one of its two switches is on and
+## is removed outright when both are off, so all shells off leaves no body behind. The shell is
+## a sibling in world space rather than a child -- a rigid body under a moving node has its
+## global transform rewritten every time the ancestor moves, which fights the solver -- and it
+## springs back to this enemy's authored pose, so the enemy itself is never moved by physics.
+## The shell's excursion is leashed as well: a core thrown hundreds of pixels away is a bone the
+## blade cannot meet for as long as it takes to come back, which is not the same as recovering.
 func _update_bone_core_shell() -> void:
-	if _combat_setting("bone_core_shell_enabled", 0.0) < 0.5:
+	var full_physical: bool = _combat_setting("full_physical_enabled", 0.0) >= 0.5
+	if _combat_setting("bone_core_shell_enabled", 0.0) < 0.5 and not full_physical:
 		if bone_core_shell != null:
 			bone_core_shell.queue_free()
 			bone_core_shell = null
@@ -332,7 +335,9 @@ func _update_bone_core_shell() -> void:
 			var collision_shape: CollisionShape2D = child as CollisionShape2D
 			if not collision_shape.disabled and collision_shape.shape != null:
 				source_shapes.append(collision_shape)
-	var fraction: float = HitReaction.inner_bone_fraction(_combat_setting("blade_bone_core_size_percent", 50.0))
+	# Full Physical mirrors the enemy's whole collision silhouette instead of the bone core, so
+	# the sword meets a real body wherever the outline the player can see actually is.
+	var fraction: float = 1.0 if full_physical else HitReaction.inner_bone_fraction(_combat_setting("blade_bone_core_size_percent", 50.0))
 	# Rebuilt only when the source shapes or the core size actually changed, so the mirrored
 	# shape is not reallocated every single frame.
 	if source_shapes.size() != bone_core_shell_shape_count or not is_equal_approx(fraction, bone_core_shell_fraction):
@@ -347,6 +352,7 @@ func _create_bone_core_shell() -> PhysicsShell:
 	var shell: PhysicsShell = PhysicsShell.new()
 	shell.name = "BoneCoreShell"
 	shell.configure_shell(PhysicsShell.BONE_CORE_SHELL_LAYER, PhysicsShell.BLADE_SHELL_LAYER)
+	shell.max_deviation = PhysicsShell.CORE_SHELL_LEASH
 	parent.add_child(shell)
 	shell.global_transform = global_transform
 	return shell
