@@ -1,0 +1,10 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://tests/enemy_spawn_rig.gd" id="2_rig"]
+
+[node name="Main" instance=ExtResource("1_main")]
+
+[node name="EnemySpawnRig" type="Node" parent="."]
+script = ExtResource("2_rig")
+enemy_type = "turkey"

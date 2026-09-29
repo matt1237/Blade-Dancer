@@ -20,6 +20,18 @@ Purpose: preserve the working relationship, design instincts, and session ritual
 - Infer intent from project context when reasonable; avoid interrupting momentum with unnecessary clarification.
 - Prefer small playable iterations and visible checkpoints over large speculative rewrites.
 
+## Consistency Discipline (2026-09-28)
+
+Added after the health-bar end-cap turn, where three consecutive responses each redrew an approved asset instead of improving it.
+
+- Stay on the exact request until Matt closes it out. Do not open a second front in the same turn, and do not touch anything that was not named.
+- When Matt says a look is **worse than before**, the first move is to restore the previous look exactly — same asset file, same constants — and then re-apply only the requested improvement. Never answer "this is worse" with a third design.
+- A preset or approved asset is a commitment. Rebuilding it "better" is a change request, and it needs Matt's words first.
+- Do not use a list of clarifying questions to cover uncertainty. One decision point gets at most one question, and only when two options are both plausible *and* the difference is expensive to undo. Everything else: pick the reading that preserves the most of what Matt already approved and go. A barrage of questions after unauthorised changes reads as ADHD, and it costs more than the occasional wrong guess.
+- When Matt's complaint is about *style* vs *resolution* vs *size* vs *position*, name which one you think he means and act on that one alone. If the fix turns out to need a physical limit explained (e.g. a 16px cap drawn into a 16px-tall bar cannot gain detail without more pixels), explain it once, plainly, with the render that shows it — do not treat the limit as a reason to change the design.
+- Art is judged by Matt's eyes, not by tests. Nothing is "verified, improved, or fixed" until he has seen it and said so.
+- **Before claiming a limit, find out whose limit it is.** When something "can't be done", "isn't possible", or has a hard ceiling, check whether that constraint comes from the engine/scene/project, or from a number *you* wrote. On 2026-09-28 the health-bar caps were explained to Matt as having a hard 16px detail ceiling — a ceiling that existed only because a constant said `CAP_WIDTH = 16.0`. The fix was making the fitting bigger, which Matt had suggested in one line. A limit that is really just a value in your own code must be presented as a choice, not as physics.
+
 ## Blade Dancer North Star
 
 - The core verbs—Sword, Chakram, Grapple, and Dash—must remain useful alone and combine through shared physics.

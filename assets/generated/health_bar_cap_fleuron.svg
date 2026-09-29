@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="metal" gradientUnits="userSpaceOnUse" x1="2" y1="10" x2="14" y2="14">
+      <stop offset="0" stop-color="#e8c46d"/>
+      <stop offset="0.4" stop-color="#b8892f"/>
+      <stop offset="1" stop-color="#6d4a14"/>
+    </linearGradient>
+    <linearGradient id="wingUp" gradientUnits="userSpaceOnUse" x1="8" y1="9" x2="20" y2="3">
+      <stop offset="0" stop-color="#f6dc98"/>
+      <stop offset="0.45" stop-color="#c1912f"/>
+      <stop offset="1" stop-color="#5d3f12"/>
+    </linearGradient>
+    <linearGradient id="wingDn" gradientUnits="userSpaceOnUse" x1="8" y1="15" x2="20" y2="21">
+      <stop offset="0" stop-color="#e3c173"/>
+      <stop offset="0.45" stop-color="#a87c26"/>
+      <stop offset="1" stop-color="#4e340d"/>
+    </linearGradient>
+    <linearGradient id="rim" gradientUnits="userSpaceOnUse" x1="4" y1="12" x2="18" y2="6">
+      <stop offset="0" stop-color="#fff8d8"/>
+      <stop offset="0.6" stop-color="#ffe9a8"/>
+      <stop offset="1" stop-color="#d8b45c"/>
+    </linearGradient>
+    <linearGradient id="gemG" gradientUnits="userSpaceOnUse" x1="8.6" y1="10.2" x2="11.6" y2="13.6">
+      <stop offset="0" stop-color="#d8fffb"/>
+      <stop offset="0.4" stop-color="#57b8c4"/>
+      <stop offset="1" stop-color="#12454f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- swept blades: outer curve to the tip, inner curve back to the body -->
+  <path d="M7.6 9.0 C 11.4 4.8 16.6 2.6 21.8 2.2 C 19.0 4.2 16.6 6.0 14.2 7.8 C 12.0 9.4 9.6 10.4 7.6 9.0 Z"
+        fill="url(#wingUp)" stroke="#211608" stroke-width="0.7" stroke-linejoin="round"/>
+  <path d="M7.6 15.0 C 11.4 19.2 16.6 21.4 21.8 21.8 C 19.0 19.8 16.6 18.0 14.2 16.2 C 12.0 14.6 9.6 13.6 7.6 15.0 Z"
+        fill="url(#wingDn)" stroke="#211608" stroke-width="0.7" stroke-linejoin="round"/>
+
+  <!-- thorn above and below, fanning from the body like the concept's leaf cluster -->
+  <path d="M9.4 8.6 C 10.6 6.2 12.4 4.6 14.6 3.6 C 13.4 5.6 12.2 7.4 11.0 8.8 Z"
+        fill="url(#metal)" stroke="#211608" stroke-width="0.5" stroke-linejoin="round"/>
+  <path d="M9.4 15.4 C 10.6 17.8 12.4 19.4 14.6 20.4 C 13.4 18.4 12.2 16.6 11.0 15.2 Z"
+        fill="url(#metal)" stroke="#211608" stroke-width="0.5" stroke-linejoin="round"/>
+
+  <!-- needle point -->
+  <path d="M0.7 12 L 6.6 10.4 L 6.6 13.6 Z" fill="url(#metal)" stroke="#211608"
+        stroke-width="0.65" stroke-linejoin="round"/>
+
+  <!-- lozenge body, dark recessed face -->
+  <path d="M5.8 12 L 10.6 8.4 L 15.4 12 L 10.6 15.6 Z" fill="#2b1d0b"
+        stroke="#6b4c18" stroke-width="0.55" stroke-linejoin="round"/>
+  <path d="M5.8 12 L 10.6 8.4 L 10.6 12 Z" fill="#3a270f" opacity="0.85"/>
+
+  <!-- gem set in the lozenge -->
+  <ellipse cx="10.2" cy="11.9" rx="1.7" ry="1.4" fill="url(#gemG)" stroke="#0a2a30" stroke-width="0.5"/>
+  <ellipse cx="9.5" cy="11.2" rx="0.5" ry="0.38" fill="#e8ffff" opacity="0.75"/>
+
+  <!-- lit edges -->
+  <path d="M1.3 11.8 L 6.2 10.5" fill="none" stroke="#ffeeb4" stroke-width="0.55" stroke-linecap="round" opacity="0.9"/>
+  <path d="M7.8 9.2 C 10.0 10.5 12.2 9.4 14.3 7.9" fill="none" stroke="url(#rim)" stroke-width="0.8" stroke-linecap="round"/>
+  <path d="M7.8 14.8 C 10.0 13.5 12.2 14.6 14.3 16.1" fill="none" stroke="url(#rim)" stroke-width="0.8" stroke-linecap="round"/>
+  <path d="M6.0 11.2 C 8.6 9.6 12.4 7.6 15.2 6.0" fill="none" stroke="#fff2c6" stroke-width="0.5" stroke-linecap="round" opacity="0.55"/>
+</svg>

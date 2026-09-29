@@ -137,7 +137,7 @@ func test_enemy_material_drop_tables_are_concrete_enemy_specific() -> void:
 func test_food_and_vitality_health_bonuses_compose() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
-	player.health_bar = player.get_node("HealthBar") as ProgressBar
+	player.health_bar = player.get_node("HealthBar") as HealthBar
 	player.dash_timer = player.get_node("DashCooldownTimer") as Timer
 	player.set_expedition_food_bonuses(10.0, 0.25)
 	assert(is_equal_approx(player.max_health, 110.0))

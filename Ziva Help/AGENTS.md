@@ -262,7 +262,7 @@ reason to suspect the change has wider impact. Do not re-run every
 adjacent-seeming suite "just to be safe" by default — it was a real, avoidable
 cost on past turns.
 
-### 4. Never shell-patch engine files
+### 5. Never shell-patch engine files
 Never use `sed`/`perl`/`awk`/raw bash text manipulation to edit `.gd`,
 `.tscn`, or `.tres` files, even under time pressure or when the normal edit
 tool is blocked. If an edit tool is blocked (e.g. a scene "changed on disk"
@@ -270,6 +270,72 @@ error), stop, re-sync by re-reading the file/scene tree, and either retry the
 proper edit tool or ask the dev — do not reach for shell text-patching as a
 workaround. This caused real damage once already: hand-tuned boss config
 files got clobbered and had to be reconstructed from git history.
+
+### 6. Visual & feel checks need an auto-spawning rig, not a manual playthrough
+(Recurring agent miss.) When a visual, animation, or combat check needs "an enemy in
+front of me", do not hand the task back to the dev to open the menu, pick a zone, and
+hope the right enemy spawns — and do not call an art/FX change verified because unit
+tests pass while nobody has seen it on screen. This project already ships harness
+scenes under `res://tests/` that instance `res://scenes/main.tscn` and drive it from a
+child node (`dev_wave_picker_harness.tscn`, `forest_visuals_live_harness.tscn`). Use
+that pattern instead of inventing a parallel mini-scene:
+
+- `res://tests/enemy_spawn_rig.tscn` (script `enemy_spawn_rig.gd`) is the combat bench.
+  It calls Main's own `_start_backyard_run`, spawns `enemy_type` through Main's own
+  `_spawn_training_enemy_at`, hides the tuner panel, and prints spawn / health / kill
+  lines. Change `enemy_type` on its `EnemySpawnRig` node ("turkey", "bug", "ogre",
+  "random", …) and run that scene.
+- Drive the run with a single `run_scene` call and inject inputs; the live keys (] and [
+  cycle the enemy type, K kills every spawn, Space lands a test hit) exist so a check
+  never depends on the dev taking over.
+- The rig must reproduce the REAL path — real enemy scenes, real spawn routine, real
+  FX/audio calls (`present_enemy_hit`, `play_enemy_death`). A rig that fakes the subject
+  proves nothing about the game.
+- If `run_scene` refuses because the dev's own game is already in the Game tab, say what
+  you wanted to run and why, then stop. Do not retry, and do not close their game.
+
+The failure this prevents: a whole turn spent on "please spawn a turkey and tell me how
+it looks", which is work the agent should be able to do itself in one call.
+
+### 7. An art fix changes one property — never the design, and never deletes the old one
+The hardest failure this project has produced, so it gets its own rule. Any request that
+is a fix to art or feel ("sharper", "HD", "less blurry", "bigger", "cleaner", "the ends
+look bad") is a **clarity** request. It authorises exactly one thing: improving the
+property named, on the asset that already exists.
+
+- **Change only what was asked.** Not the silhouette, not the palette, not the ornament,
+  not the size, not the position. Do not "improve" a subject the dev already approved,
+  and do not offer a redesign as a bonus. If the words are "make it HD, that's it", then
+  the shape that comes out must be recognisably the same shape that went in.
+- **Never delete, overwrite in place, or offer to clean up the previous version** while a
+  look is still under review. The old asset file and the old constant stay on disk and
+  reachable by a one-line revert until the dev says the new look is good. Cleanup of
+  rejected art may only be *raised*, never performed, and only after sign-off.
+- **"Same but HD" is a testable claim, so test it.** Pure interpolation-up-scaling proves
+  nothing: measured on `health_bar_cap.png`, a 16px source Lanczos-resized to 64 and drawn
+  back at the real 19px draw size produced an identical image (231 vs 229 distinct
+  colours, no visible difference). Real clarity at a fixed draw size requires a rebuilt
+  high-resolution source with hardened edges, and it must be compared against the current
+  art at the *actual drawn size* — output at 8× zoom flatters everything and hides the
+  problem. Look at the pixels before wiring anything in; `Image.load_from_file` + an
+  `execute_script` composite is the cheap way to do that.
+- **Before claiming a limit, find out whose limit it is.** If something "can't be
+  done" or has a hard ceiling, check whether the constraint is the engine's, the
+  scene's, or a number the agent itself wrote. On 2026-09-28 the health-bar end caps
+  were explained to the dev as having a hard 16px detail ceiling — a ceiling that
+  existed only because `CAP_WIDTH = 16.0`. The dev solved it in one line ("draw it
+  bigger"); the agent had argued against it for two turns. A limit that is really a
+  value in your own code is a choice to be offered, not physics to be explained.
+- **The dev's sign-off is the completion criterion for art.** Passing unit tests is not
+  "done" and is not permission to move to the next item. Do not say an art change is
+  verified, improved, or fixed until the dev has looked at it and said so.
+- Incident: 2026-09-28, health-bar end caps. The dev asked for the caps to stop looking
+  blurry. Across three turns the agent replaced the approved cap (a four-point gold
+  sparkle with a teal gem over a brown shadow star) with a generated wing ornament, then
+  with a blocky arrowhead, then offered to delete the rejected files — without once
+  inspecting the cap's actual pixels or comparing renders at draw size. The fix was
+  eventually built from the dev's own art (exact 4× pixel duplication, 1px anti-alias,
+  edge hardening) and only after dumping the source alpha map and comparing at 19px.
 
 ### Still open / not yet decided
 - **Shared-file exceptions:** when a boss/feature needs a small opt-in hook

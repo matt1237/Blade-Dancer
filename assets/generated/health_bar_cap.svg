@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <defs>
+    <linearGradient id="gold" gradientUnits="userSpaceOnUse" x1="3" y1="2" x2="14" y2="20">
+      <stop offset="0" stop-color="#ffeeb0"/>
+      <stop offset="0.22" stop-color="#f0c65c"/>
+      <stop offset="0.55" stop-color="#c8912f"/>
+      <stop offset="0.85" stop-color="#8a5a18"/>
+      <stop offset="1" stop-color="#5e3c0e"/>
+    </linearGradient>
+    <linearGradient id="far" gradientUnits="userSpaceOnUse" x1="18" y1="4" x2="22.5" y2="17">
+      <stop offset="0" stop-color="#a8761c" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#4a2c08" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="underside" gradientUnits="userSpaceOnUse" x1="1" y1="12" x2="17" y2="23">
+      <stop offset="0" stop-color="#6b4715"/>
+      <stop offset="1" stop-color="#2f1c06"/>
+    </linearGradient>
+    <radialGradient id="socket" gradientUnits="userSpaceOnUse" cx="12.4" cy="10.2" r="5.0">
+      <stop offset="0" stop-color="#2c5a44"/>
+      <stop offset="1" stop-color="#14302a"/>
+    </radialGradient>
+    <radialGradient id="gem" gradientUnits="userSpaceOnUse" cx="12.2" cy="9.9" r="4.6">
+      <stop offset="0" stop-color="#d8fffb"/>
+      <stop offset="0.3" stop-color="#6fd6d8"/>
+      <stop offset="0.7" stop-color="#249097"/>
+      <stop offset="1" stop-color="#0f4a52"/>
+    </radialGradient>
+  <linearGradient id="lit" gradientUnits="userSpaceOnUse" x1="6" y1="3" x2="15" y2="13">
+      <stop offset="0" stop-color="#fff9dc" stop-opacity="0.9"/>
+      <stop offset="0.55" stop-color="#f6d276" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#e6b44a" stop-opacity="0.0"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M0 12 C 4.5 8.6 12.5 2.4 21 0 L 22.5 3 L 22.5 16.5 L 18 22.5 C 11 18.4 4.4 14.6 0 12 Z"
+        fill="url(#gold)" stroke="#33200a" stroke-width="1.1" stroke-linejoin="round"/>
+
+  <path d="M0.9 11.5 C 5.4 8.5 12.9 2.5 20.9 0.4 L 22.0 3.4 C 15.0 6.0 6.6 10.6 1.6 13.6 Z"
+        fill="url(#lit)"/>
+
+  <path d="M0 12 C 4.4 14.6 11 18.4 18 22.5 L 15.2 21.2 C 9.6 18 4.2 14.8 0.9 12.9 Z"
+        fill="url(#underside)"/>
+
+  <path d="M21 0 L 22.5 3 L 22.5 16.5 L 18 22.5 C 17.4 21.4 18.6 18.4 19.5 15.2 C 20.4 12.0 20.6 5.6 21 0 Z"
+        fill="url(#far)" opacity="0.9"/>
+
+  <path d="M1.4 11.3 C 5.6 8.1 13.2 2.1 20.4 0.8" fill="none" stroke="#fff3bd"
+        stroke-width="0.95" stroke-linecap="round" opacity="0.85"/>
+
+  <circle cx="13.4" cy="11.3" r="4.2" fill="url(#socket)"/>
+  <circle cx="13.4" cy="11.3" r="3.1" fill="url(#gem)" stroke="#0b3237" stroke-width="0.8"/>
+  <ellipse cx="12.3" cy="10.0" rx="0.95" ry="0.72" fill="#e9ffff" opacity="0.7"/>
+</svg>

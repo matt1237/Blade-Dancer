@@ -59,9 +59,12 @@ func test_hit_reaction_settings_and_removed_drag_migration_are_serialized_per_pr
 	for key: String in HitReaction.DEFAULTS.keys():
 		assert(preset_two.has(key), "The shipped GP2 needs its canonical Hit Reaction setting: %s." % key)
 	# The shipped default carries the deliberately authored bone-core sizes — the tuned
-	# 30% on the main GP2 preset and the 50% default on the others — and never ships the
-	# bone-debug overlay, whichever preset is inspected.
-	var expected_bone_core_size: Dictionary = {"1": 50.0, "2": 30.0, "3": 50.0, "4": 50.0}
+	# 35% on the main GP2 preset and the 50% default on the others — and never ships the
+	# bone-debug overlay, whichever preset is inspected. That GP2 number tracks whatever
+	# the live authoring slot holds at bake time: the deep-equality assert above already
+	# requires the package to match the live slot, and the live slot is saved with the
+	# debug overlay ON while the core is being tuned, which the bake strips.
+	var expected_bone_core_size: Dictionary = {"1": 50.0, "2": 35.0, "3": 50.0, "4": 50.0}
 	for preset_key: String in ["1", "2", "3", "4"]:
 		var values: Dictionary = contact_settings.get(preset_key, {}) as Dictionary
 		assert(is_equal_approx(float(values.get("blade_bone_core_size_percent", -1.0)), float(expected_bone_core_size[preset_key])), "Shipped preset %s must carry its authored bone-core size." % preset_key)

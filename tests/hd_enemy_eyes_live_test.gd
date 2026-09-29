@@ -39,7 +39,7 @@ func test_production_adapter() -> void:
 	player.visual_style = "hd"
 	var enemy: EnemyFixture = EnemyFixture.new()
 	enemy.player_ref = player
-	var health_bar: ProgressBar = ProgressBar.new()
+	var health_bar: HealthBar = HealthBar.new()
 	health_bar.name = "HealthBar"
 	enemy.add_child(health_bar)
 	world.add_child(enemy)

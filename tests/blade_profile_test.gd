@@ -8,7 +8,7 @@ const PLAYER_SCENE: PackedScene = preload("res://scenes/player.tscn")
 func _make_player() -> Player:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
-	player.health_bar = player.get_node("HealthBar") as ProgressBar
+	player.health_bar = player.get_node("HealthBar") as HealthBar
 	return player
 
 func test_straight_sword_polyline_is_collinear_and_matches_endpoints() -> void:

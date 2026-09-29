@@ -276,7 +276,14 @@ var entrance_walk_speed: float = 95.0
 
 var dizzy_stars_left: float = 0.0
 var dizzy_stars_time: float = 0.0
-@onready var health_bar: ProgressBar = $HealthBar
+@onready var health_bar: HealthBar = $HealthBar
+## Physics Shells, enemy side. The core shell is a separate body in world space, never a
+## child of this enemy: a rigid body descending from a moving node has its global transform
+## rewritten whenever its ancestor moves, which would fight the solver. It springs back to
+## the enemy's authored core pose instead, so the enemy itself is never moved by physics.
+var bone_core_shell: PhysicsShell = null
+var bone_core_shell_fraction: float = -1.0
+var bone_core_shell_shape_count: int = -1
 
 func _ready() -> void:
 	z_as_relative = false
@@ -301,6 +308,48 @@ func _ready() -> void:
 ## Concrete named enemies override this hook instead of selecting an enum branch.
 func _configure_concrete_enemy() -> void:
 	pass
+
+## Physics Shells, enemy side. A core shell exists only while its switch is on and is removed
+## outright when it is off, so all shells off leaves no body behind. The shell is a sibling in
+## world space rather than a child -- a rigid body under a moving node has its global transform
+## rewritten every time the ancestor moves, which fights the solver -- and it springs back to
+## this enemy's authored core pose, so the enemy itself is never moved by physics.
+func _update_bone_core_shell() -> void:
+	if _combat_setting("bone_core_shell_enabled", 0.0) < 0.5:
+		if bone_core_shell != null:
+			bone_core_shell.queue_free()
+			bone_core_shell = null
+		return
+	if bone_core_shell != null and not is_instance_valid(bone_core_shell):
+		bone_core_shell = null
+	if bone_core_shell == null:
+		bone_core_shell = _create_bone_core_shell()
+	if bone_core_shell == null:
+		return
+	var source_shapes: Array[CollisionShape2D] = []
+	for child: Node in get_children():
+		if child is CollisionShape2D:
+			var collision_shape: CollisionShape2D = child as CollisionShape2D
+			if not collision_shape.disabled and collision_shape.shape != null:
+				source_shapes.append(collision_shape)
+	var fraction: float = HitReaction.inner_bone_fraction(_combat_setting("blade_bone_core_size_percent", 50.0))
+	# Rebuilt only when the source shapes or the core size actually changed, so the mirrored
+	# shape is not reallocated every single frame.
+	if source_shapes.size() != bone_core_shell_shape_count or not is_equal_approx(fraction, bone_core_shell_fraction):
+		bone_core_shell_shape_count = bone_core_shell.build_mirrored_shapes(source_shapes, fraction)
+		bone_core_shell_fraction = fraction
+	bone_core_shell.set_target(global_transform)
+
+func _create_bone_core_shell() -> PhysicsShell:
+	var parent: Node = get_parent()
+	if parent == null:
+		return null
+	var shell: PhysicsShell = PhysicsShell.new()
+	shell.name = "BoneCoreShell"
+	shell.configure_shell(PhysicsShell.BONE_CORE_SHELL_LAYER, PhysicsShell.BLADE_SHELL_LAYER)
+	parent.add_child(shell)
+	shell.global_transform = global_transform
+	return shell
 
 func material_drop_for_roll(roll: float) -> String:
 	return loot_material_name if not loot_material_name.is_empty() and roll < loot_material_chance else ""
@@ -422,6 +471,7 @@ func tick_moving_weapon_combat(delta: float) -> void:
 	clash_cooldown_left = maxf(0.0, clash_cooldown_left - delta)
 
 func _physics_process(delta: float) -> void:
+	_update_bone_core_shell()
 	if hit_visual_elapsed > 0.0:
 		hit_visual_elapsed += delta
 		if hit_visual_elapsed >= HIT_VISUAL_IN + HIT_VISUAL_RETURN:

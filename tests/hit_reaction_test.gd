@@ -1,6 +1,6 @@
 class_name HitReactionTest extends Node
 
-func test_hit_reaction_tab_has_twenty_two_controls_and_existing_per_preset_persistence() -> void:
+func test_hit_reaction_tab_has_every_canonical_control_and_existing_per_preset_persistence() -> void:
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	var tabs: TabContainer = TabContainer.new()
 	menu._build_hit_reaction_tab(tabs)
@@ -89,7 +89,7 @@ func test_hit_reaction_tab_has_twenty_two_controls_and_existing_per_preset_persi
 	assert(player.get_combat_contact_setting("split_kill_chance_percent") == 70.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 22)
+	assert(HitReaction.DEFAULTS.size() == 30, "Bone Slide and Bone Bind each add a canonical Hit Reaction setting plus one Effect Strength tuner apiece, and the Physics Shells layer adds its four switches.")
 	player.free()
 	menu.free()
 	tabs.free()
@@ -111,20 +111,55 @@ func test_inner_bone_boundary_allows_deep_cut_and_broadside_or_stab_yield_is_smo
 	var inner_rectangle: RectangleShape2D = HitReaction.scale_inner_bone_shape(rectangle_shape) as RectangleShape2D
 	assert(inner_rectangle.size.is_equal_approx(Vector2(20.0, 10.0)))
 	assert(is_equal_approx(HitReaction.blade_inner_bone_radius(-3.0), 0.0))
-	var normal: Vector2 = Vector2.DOWN
-	var tangent_cut: float = HitReaction.blade_bone_reaction_angle(Vector2.RIGHT * 500.0, Vector2.ZERO, normal, Vector2.RIGHT, 100.0, false)
-	var broadside_cut: float = HitReaction.blade_bone_reaction_angle(Vector2.RIGHT * 500.0, Vector2.ZERO, normal, Vector2.UP, 100.0, false)
-	var stab_recoil: float = HitReaction.blade_bone_reaction_angle(Vector2.UP * 500.0, Vector2.ZERO, normal, Vector2.UP, 100.0, true)
-	var direct_body_hit: float = HitReaction.blade_bone_reaction_angle(Vector2.DOWN * 500.0, Vector2.ZERO, Vector2.UP, Vector2.RIGHT, 80.0, false)
-	assert(absf(tangent_cut) > 0.05, "A cut at the core should be guided along its boundary.")
-	assert(absf(broadside_cut) > absf(tangent_cut), "A broadside cut near perpendicular to the blade axis should recoil more to avoid sticking.")
-	assert(absf(stab_recoil) > 0.05, "A stab should rebound smoothly from the inner core.")
-	assert(absf(rad_to_deg(direct_body_hit)) >= 38.0 and absf(rad_to_deg(direct_body_hit)) <= 50.0, "A strong inward broadside cut should clearly deflect the blade without exceeding the tuned contact cap.")
 	assert(not HitReaction.blade_physical_reaction_allowed(false, -0.4), "A blade already leaving the target should not be redirected.")
-	var approaching: float = HitReaction.advance_blade_physical_reaction(0.0, broadside_cut, 0.016)
+	var approaching: float = HitReaction.advance_blade_physical_reaction(0.0, 0.35, 0.016)
 	var releasing: float = HitReaction.advance_blade_physical_reaction(approaching, 0.0, 0.016)
-	assert(absf(approaching) > 0.0 and absf(approaching) < absf(broadside_cut), "Core response eases in rather than snapping.")
+	assert(absf(approaching) > 0.0 and absf(approaching) < 0.35, "Core response eases in rather than snapping.")
 	assert(absf(releasing) < absf(approaching), "Once contact ends, response eases back to the authored path.")
+
+func test_bone_slide_and_bone_bind_ship_off_and_mirror_the_blade_effects() -> void:
+	assert(HitReaction.DEFAULTS.has("blade_bone_slide_enabled"), "Bone Slide ships as a canonical Hit Reaction setting.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_bone_slide_enabled"], 0.0), "Bone Slide defaults OFF, so the shipped behaviour stays the fixed glance.")
+	assert(HitReaction.DEFAULTS.has("blade_bone_bind_enabled"), "Bone Bind ships as a canonical Hit Reaction setting.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_bone_bind_enabled"], 0.0), "Bone Bind defaults OFF.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_bone_slide_strength"], 100.0), "Bone Slide ships at its authored full effect strength.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_bone_bind_strength"], 100.0), "Bone Bind ships at its authored full effect strength, which is itself weaker than a blade Bind.")
+	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
+	assert(menu_source.contains("\"blade_bone_slide_enabled\", \"Bone Slide — OFF / ON\""), "Bone Slide needs a visible OFF/ON control in the physical box.")
+	assert(menu_source.contains("\"blade_bone_bind_enabled\", \"Bone Bind — OFF / ON\""), "Bone Bind needs a visible OFF/ON control in the physical box.")
+	assert(menu_source.contains("\"blade_bone_slide_strength\", \"Bone Slide Effect Strength\", 0.0, 100.0, 1.0"), "The slide strength tuner must run 0-100% in 1% steps.")
+	assert(menu_source.contains("\"blade_bone_bind_strength\", \"Bone Bind Effect Strength\", 0.0, 100.0, 1.0"), "The bind strength tuner must run 0-100% in 1% steps.")
+	var source: String = FileAccess.get_file_as_string("res://scripts/player.gd")
+	assert(source.contains("bone_slide_left = maxf(bone_slide_left, BONE_SLIDE_REFRESH)"), "Bone Slide latches on the core and refreshes while the blade keeps overlapping it, exactly like the blade slide.")
+	assert(source.contains("bone_bind_dwell >= BONE_BIND_CAPTURE_TIME"), "Bone Bind must be earned by a continuous capture on the core, like a blade Bind.")
+	assert(source.contains("bone_bind_missing > BONE_BIND_RELEASE_GRACE"), "Bone Bind must release on a short grace once the blade leaves, never pin it.")
+	assert(source.contains("bone_bind_left <= 0.0 or bone_bind_missing"), "Bone Bind must be bounded in time, exactly like a blade Bind.")
+	assert(source.contains("bone_hold_multiplier, minf(bone_slide_target, bone_bind_target), delta)"), "Both bone effects ease in and back out through the shared eased channel, so neither ever snaps.")
+	assert(source.contains("bone_hold_enemy.velocity *="), "The core drags the enemy the way a blade slide does.")
+	assert(source.contains("minf(bone_slide_target, bone_bind_target)"), "The two effects share one hold channel, so they can never stack on the same enemy.")
+	assert(source.contains("HitReaction.scale_effect_strength("), "Both effects must route their hold through the shared Effect Strength scaling.")
+	assert(source.contains("get_combat_contact_setting(\"blade_bone_slide_enabled\") >= 0.5"), "Bone Slide must be gated by its own switch.")
+	assert(source.contains("get_combat_contact_setting(\"blade_bone_bind_enabled\") >= 0.5"), "Bone Bind must be gated by its own switch.")
+	assert(not source.contains("blade_bone_reaction_angle"), "Bone Slide is a copy of the blade slide, not its own pose maths.")
+	assert(not source.contains("bone_recoil_"), "The invented banked recoil must be gone.")
+	assert(source.contains("move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)"), "With Bone Slide OFF the original glance decay must remain untouched.")
+
+func test_effect_strength_scales_a_bone_effect_from_inert_to_full() -> void:
+	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, 0.0), 1.0), "0% effect strength must leave the blade completely untouched.")
+	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, 100.0), 0.35), "100% must deliver the authored full effect.")
+	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, 50.0), 0.675), "Half strength sits half way between no effect and the full effect.")
+	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, 250.0), 0.35), "Over-range strength clamps to the authored effect.")
+	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, -40.0), 1.0), "Under-range strength clamps to inert.")
+
+func test_physics_shells_ship_all_off_and_leave_no_footprint() -> void:
+	for key: String in ["blade_shell_query_enabled", "blade_shell_shove_enabled", "blade_shell_deflect_enabled", "bone_core_shell_enabled"]:
+		assert(HitReaction.DEFAULTS.has(key), "Every Physics Shells switch must be a canonical Hit Reaction setting: %s" % key)
+		assert(is_equal_approx(HitReaction.DEFAULTS[key], 0.0), "Physics Shells must ship OFF so the authored pose stays untouched: %s" % key)
+	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
+	assert(menu_source.contains("\"Physics Shells\""), "The shell switches need their own sub-tab in the Hit Reaction tab.")
+	for label: String in ["Real Contact Normals — OFF / ON", "Blade Shell — OFF / ON", "Blade Deflection — OFF / ON", "Enemy Core Shells — OFF / ON"]:
+		assert(menu_source.contains(label), "Every Physics Shells switch needs a visible OFF/ON control: %s" % label)
+	assert(menu_source.contains("shells_box, \"blade_shell_query_enabled\""), "The shell switches must live in the Physics Shells section, not the physical box.")
 
 func test_blade_sink_depth_and_strength_compose_and_only_apply_during_contact() -> void:
 	assert(is_equal_approx(HitReaction.blade_sink_time_multiplier(true, true, true, 100.0), 0.30), "Full strength uses the default 70% Depth ceiling, so the swing advances at 30%.")

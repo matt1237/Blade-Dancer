@@ -40,6 +40,11 @@ toggle_windup_step={
 ]
 }
 
+[layer_names]
+
+2d_physics/layer_7="blade_shell"
+2d_physics/layer_8="bone_core_shell"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

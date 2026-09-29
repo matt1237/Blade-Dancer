@@ -8,6 +8,45 @@ const DEFAULTS: Dictionary = {
 	"hit_visual_rotation": 7.0,
 	"blade_physical_reaction_enabled": 0.0,
 	"blade_physical_reaction_strength": 55.0,
+	## Surfaced as "Bone Slide". OFF keeps the fixed phase-derived glance. ON gives the
+	## core a weakened copy of the blade slide: the blade latches on it the way it latches
+	## on an opposing blade, is held back for as long as the overlap lasts, and drags the
+	## enemy with it. Steering round the bone, into it, or off it stays the player's hand.
+	"blade_bone_slide_enabled": 0.0,
+	## Surfaced as "Bone Slide Effect Strength". Scales how hard the slide's hold bites and
+	## how much it drags the enemy: 0% leaves the switch inert, 100% is the authored slide.
+	"blade_bone_slide_strength": 100.0,
+	## Surfaced as "Bone Bind". The slide's heavier sibling: the blade must stay on the core
+	## for a short capture before the lock takes, and the lock then holds the swing harder
+	## than a slide and survives a brief gap before letting go. Deliberately weaker than a
+	## real blade Bind -- its bound sword sits at 0.18, this lock at 0.22, the slide at 0.35
+	## -- and bounded in time, so it can never become a pin.
+	"blade_bone_bind_enabled": 0.0,
+	## Surfaced as "Bone Bind Effect Strength". Scales the lock's hold and drag against the
+	## enemy in 1% steps. Ships at 100%: the effect is already the weakened one, so the
+	## switch reads as a real bind next to Bone Slide out of the box.
+	"blade_bone_bind_strength": 100.0,
+	## --- Physics shells: an engine-driven contact layer beneath the authored pose. ---
+	## Surfaced as "Real Contact Normals". OFF keeps the hand-rolled geometric core test.
+	## ON asks the physics space itself for the true contact -- real normal, real point and
+	## the other body's actual velocity -- and hands those to the existing authored response
+	## in place of its approximations. The blade is still posed by hand either way.
+	"blade_shell_query_enabled": 0.0,
+	## Surfaced as "Blade Shell". Gives the blade a frozen kinematic rigid-body shell that
+	## rides the authored pose and shoves the enemy's bone core like a real solid, so the
+	## core yields and spins out of the way. One-way: the blade cannot be turned by it.
+	"blade_shell_shove_enabled": 0.0,
+	## Surfaced as "Blade Deflection". The two-way shell: the blade's own shell is driven
+	## toward the authored pose by force rather than pinned, so the bone pushes back and the
+	## blade genuinely deflects off it. The deflection is bounded and eased, and layered on
+	## top of the authored pose, so the sword can never be unshaped by it.
+	"blade_shell_deflect_enabled": 0.0,
+	## Surfaced as "Enemy Core Shells". The other half of the pair: gives every enemy's bone
+	## core a rigid-body shell of its own, so the core can yield and rotate when the blade's
+	## shell drives into it instead of being an unmovable maths boundary. Independent of the
+	## blade switches -- with this OFF the blade shell simply has nothing to push. With all
+	## four switches OFF no shell node is created at all, so the feature leaves no footprint.
+	"bone_core_shell_enabled": 0.0,
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
 	"blade_sink_depth_percent": 70.0,
@@ -37,7 +76,6 @@ const DEFAULT_BLADE_SINK_DEPTH_PERCENT: float = 70.0
 const INNER_BONE_RADIUS_FRACTION: float = DEFAULT_INNER_BONE_SIZE_PERCENT / 100.0
 const BONE_CONTACT_RESPONSE_SMOOTHING: float = 40.0
 const BONE_RELEASE_RESPONSE_SMOOTHING: float = 16.0
-const BONE_REACTION_MAX_ANGLE: float = 0.872664626
 const MINIMUM_BONE_REACTION_RATIO: float = 0.12
 const MAX_BONE_RECOIL_RATIO: float = 0.7
 const BROADSIDE_RECOIL_START: float = 0.82
@@ -100,31 +138,6 @@ static func advance_blade_physical_reaction(current_angle: float, pending_angle:
 	var smoothing: float = BONE_CONTACT_RESPONSE_SMOOTHING if absf(pending_angle) > absf(current_angle) else BONE_RELEASE_RESPONSE_SMOOTHING
 	return lerpf(current_angle, pending_angle, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
 
-## A shallow-to-deep cut is guided along the core; broadside cuts and stabs yield outward smoothly.
-static func blade_bone_reaction_angle(blade_velocity: Vector2, target_velocity: Vector2, impact_normal: Vector2, blade_axis: Vector2, strength: float, stab_motion: bool) -> float:
-	var relative_velocity: Vector2 = blade_velocity - target_velocity
-	if relative_velocity.length_squared() < 1.0 or impact_normal.length_squared() < 0.001 or blade_axis.length_squared() < 0.001:
-		return 0.0
-	var incoming_direction: Vector2 = relative_velocity.normalized()
-	var normal: Vector2 = impact_normal.normalized()
-	var tangent: Vector2 = normal.orthogonal()
-	var approach: float = maxf(0.0, -incoming_direction.dot(normal))
-	var axis_alignment: float = absf(incoming_direction.dot(blade_axis.normalized()))
-	var strength_ratio: float = clampf(strength / 100.0, 0.0, 1.0)
-	var reflected_direction: Vector2 = (incoming_direction + normal * (2.0 * approach)).normalized()
-	if stab_motion:
-		var stab_ratio: float = smoothstep(0.0, 1.0, approach) * strength_ratio
-		return clampf(angle_difference(incoming_direction.angle(), reflected_direction.angle()), -BONE_REACTION_MAX_ANGLE, BONE_REACTION_MAX_ANGLE) * stab_ratio
-	var broadside_ratio: float = smoothstep(BROADSIDE_RECOIL_START, 1.0, 1.0 - axis_alignment)
-	var tangent_sign: float = signf(incoming_direction.dot(tangent))
-	if tangent_sign == 0.0:
-		tangent_sign = 1.0
-	var outward_bias: float = lerpf(MINIMUM_BONE_REACTION_RATIO, MAX_BONE_RECOIL_RATIO, broadside_ratio)
-	var guided_direction: Vector2 = (tangent * tangent_sign + normal * outward_bias).normalized()
-	var cut_correction: float = angle_difference(incoming_direction.angle(), guided_direction.angle())
-	var cut_weight: float = smoothstep(0.0, 1.0, 0.5 + approach + (1.0 - axis_alignment) * 0.5) * strength_ratio
-	return clampf(cut_correction, -BONE_REACTION_MAX_ANGLE, BONE_REACTION_MAX_ANGLE) * cut_weight
-
 static func sword_knockback_direction(default_direction: Vector2, player_position: Vector2, target_position: Vector2, enabled: bool) -> Vector2:
 	if not enabled:
 		return default_direction
@@ -154,6 +167,14 @@ static func advance_blade_sink(current: float, target: float, delta: float) -> f
 ## hold: raise Sword Stickiness to keep the catch intact, lower it for a crisp cut.
 static func bone_stop_within_hold(bone_stop_duration: float, stickiness: float) -> float:
 	return clampf(minf(maxf(bone_stop_duration, 0.0), maxf(stickiness, 0.0)), 0.0, 0.30)
+
+## Effect Strength dials one bone effect from inert to its authored full value. 0% must
+## leave the blade completely untouched -- no hold, no drag -- and 100% must deliver
+## exactly the tuned effect, so winding a new switch down is never worse than leaving it
+## off. Out-of-range values clamp rather than overshoot.
+static func scale_effect_strength(full_multiplier: float, strength_percent: float) -> float:
+	var strength_ratio: float = clampf(strength_percent / 100.0, 0.0, 1.0)
+	return lerpf(1.0, clampf(full_multiplier, 0.0, 1.0), strength_ratio)
 
 ## Target swing-rate multiplier for the inner core: 1.0 when the blade is not
 ## driving inward, easing toward the yielded floor as it presses deeper. The floor

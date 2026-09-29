@@ -8,7 +8,7 @@ func test_every_bonus_has_seven_ranks_and_generated_text() -> void:
 	for bonus_id: String in BONUS_IDS:
 		var player: Player = PLAYER_SCENE.instantiate() as Player
 		add_child(player)
-		player.health_bar = player.get_node("HealthBar") as ProgressBar
+		player.health_bar = player.get_node("HealthBar") as HealthBar
 		assert(BonusConfig.rank(player, bonus_id) == 0, "%s should begin at Rank 0." % bonus_id)
 		var initial_title: String = BonusConfig.choice_title(bonus_id, player)
 		assert(initial_title.contains("Rank 1 / 7"), "%s choice title should consistently state its next rank." % bonus_id)
@@ -95,7 +95,7 @@ func test_rank_zero_disables_all_optional_bonus_effects() -> void:
 func test_rank_tables_drive_applied_player_values() -> void:
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	add_child(player)
-	player.health_bar = player.get_node("HealthBar") as ProgressBar
+	player.health_bar = player.get_node("HealthBar") as HealthBar
 	for rank_value: int in range(1, BonusConfig.MAX_RANK + 1):
 		BonusConfig.apply_to_player(player, "health")
 		assert(is_equal_approx(player.max_health, BonusConfig.health_maximum(rank_value)))

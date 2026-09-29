@@ -397,9 +397,12 @@ const CONTROLLER_STYLE_NEXT_BUTTON = JOY_BUTTON_DPAD_RIGHT
 @export var sword_fire_bonus_damage: float = ZungarConfig.FIRE_BONUS_DAMAGE
 
 @export_category("Sword Damage Contact Shape")
-## Extra forgiveness around the visible blade when checking enemy contact.
-## This is deliberately smaller than the old broad body-like radius.
-@export var enemy_body_contact_radius: float = 18.0
+## Extra forgiveness around the visible blade when checking enemy contact, measured beyond
+## the enemy's own silhouette. This one number is how precise a stroke has to be: it is the
+## only gate that still lets a hit count while the blade is short of the body, so it decides
+## how far the blade visibly travels before flesh or bone reacts to it.
+## Deliberately smaller than the old broad body-like radius.
+@export var enemy_body_contact_radius: float = 10.0
 ## Fraction of the sword nearest the grip that counts as hilt/crossguard contact.
 ## 0.18 means the first 18% triggers Hilt Bash instead of cutting damage.
 @export_range(0.05, 0.35, 0.01) var hilt_bash_blade_fraction: float = 0.18
@@ -802,6 +805,69 @@ var blade_sink_contact_left: float = 0.0
 var blade_bone_stop_left: float = 0.0
 var blade_bone_stop_cooldown_left: float = 0.0
 var blade_glance_angle: float = 0.0
+## Bone Slide is a weakened copy of the blade slide, applied to the enemy's bone core.
+## The core latches the blade the way an opposing blade does; the latch is refreshed for as
+## long as the blade keeps overlapping the core and then released on the same short tail. The
+## core's only job is to hold the swing back and drag the enemy -- sliding the blade round the
+## bone, into it, or off it is the player's own hand, exactly as it is against another blade.
+## Every number sits one weakened step below the blade slide's own (slide_friction 0.45).
+## BONE_SLIDE_REFRESH doubles as the release tail: the latch is refreshed while the blade
+## keeps overlapping the core, so once the blade leaves it the slide can only ever decay from
+## that refresh -- shorter than the blade slide's own 0.10 s tail, never longer.
+const BONE_SLIDE_SWING_RATE = 0.35
+const BONE_SLIDE_REFRESH = 0.08
+const BONE_SLIDE_ENEMY_FRICTION = 0.70
+## Bone Bind is the same idea one step up, mirroring a real blade Bind in miniature: the
+## blade must stay on the core for a short capture before the lock takes, the lock holds the
+## swing harder than a slide does, and it is bounded -- BONE_BIND_MAX_DURATION caps it and a
+## short grace releases it once the blade leaves, so it can never become a permanent pin.
+## The ladder is one step at a time: a blade Bind's bound sword sits at 0.18, this lock at
+## 0.22, and the bone slide's own drag at 0.35. The bone Bind is therefore deliberately
+## weaker than a real blade Bind, but still heavier than a slide.
+const BONE_BIND_SWING_RATE = 0.22
+const BONE_BIND_CAPTURE_TIME = 0.08
+const BONE_BIND_RELEASE_GRACE = 0.18
+const BONE_BIND_MAX_DURATION = 1.20
+const BONE_BIND_ENEMY_FRICTION = 0.45
+## A gap breaks the capture faster than contact builds it, so letting go of the bone costs
+## you the lock attempt instead of leaving a half-earned lock ready to snap on later.
+const BONE_BIND_DWELL_FALLOFF = 4.0
+## Visible contact bite. Flesh contact pushes the drawn blade INTO the body by this fraction
+## of the enemy's radius; the core is then what the blade rests on and slides along, so at the
+## core the blade is placed on the core surface rather than inside it. Visual only -- the hit
+## geometry is untouched -- and gated on Bone Slide, so OFF is byte-identical to today.
+const BLADE_BITE_FLESH_FRACTION = 0.45
+const BLADE_BITE_MAX = 14.0
+const BLADE_BITE_SMOOTHING = 22.0
+var blade_bite_pending: Vector2 = Vector2.ZERO
+var blade_bite_offset: Vector2 = Vector2.ZERO
+## Live bone-slide latch, and the enemy it is currently dragging.
+var bone_slide_left: float = 0.0
+var bone_slide_target_id: int = 0
+## Live bone-bind lock. Earned by a continuous capture on the core, then held for a bounded
+## time and released on a short grace once the blade has left.
+var bone_bind_left: float = 0.0
+var bone_bind_dwell: float = 0.0
+var bone_bind_missing: float = 0.0
+var bone_bind_locked: bool = false
+## Physics Shells, blade side. The shell is a real body that only ever collides with the
+## enemy core shells, and the deflection it reports is layered on top of the authored pose
+## as presentation -- the pose itself stays authored, never solved.
+var blade_shell: PhysicsShell = null
+var blade_shell_offset: Vector2 = Vector2.ZERO
+var blade_shell_angle: float = 0.0
+## Ceilings for that deflection, and how fast the reported deviation follows the solver. A
+## deflection is punctuation, not a new swing: the blade may never be unshaped by it.
+const BLADE_SHELL_MAX_OFFSET: float = 10.0
+## Radians: exactly the bone glance's own safe 20-degree ceiling, so a deflection can never
+## exceed the deflection the project already trusts a blade to take.
+const BLADE_SHELL_MAX_ANGLE: float = 0.34906585
+const BLADE_SHELL_DEFLECT_SMOOTHING: float = 14.0
+var bone_bind_target_id: int = 0
+## The composed live swing hold the core is applying this frame: the strongest of the
+## slide's drag and the bind's lock, each scaled by its own Effect Strength. 1.0 means the
+## core is not holding the blade at all.
+var bone_hold_multiplier: float = 1.0
 var sword_event_label: String = ""
 var sword_event_point: Vector2 = Vector2.ZERO
 var sword_event_left: float = 0.0
@@ -947,7 +1013,7 @@ var terrain_dash_block_sources: Dictionary[int, bool] = {}
 var terrain_root_left: float = 0.0
 
 @onready var dash_timer: Timer = $DashCooldownTimer
-@onready var health_bar: ProgressBar = $HealthBar
+@onready var health_bar: HealthBar = $HealthBar
 @onready var knight_sprite_hd: AnimatedSprite2D = $KnightSpriteHD
 @onready var grapple_controller: GrappleController = $GrappleController
 
@@ -2810,11 +2876,98 @@ func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 ## blade, so it can never look magnetically pinned. Sink likewise only changes the
 ## live cadence; neither ever translates the visible hilt.
 func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
-	# Bone glance: a bounded, fast-decaying deflection of the rendered pose. It is
-	# the only pose stage the bone reaction owns, so the free swing is never pinned.
+	# Bone glance: a bounded, fast-decaying deflection of the rendered pose.
 	if blade_glance_angle != 0.0:
 		transform_data["angle"] = float(transform_data["angle"]) + blade_glance_angle
+	# The visible bite. The drawn blade is displaced toward whatever it has cut into, so
+	# flesh and bone become things the blade visibly touches rather than rates it only
+	# obeys. Visual only, and the last stage to write, so nothing else can be moved by it.
+	if blade_bite_offset != Vector2.ZERO:
+		transform_data["start"] = (transform_data["start"] as Vector2) + blade_bite_offset
+	# Physics Shells: the deviation the solver actually produced, layered last for the same
+	# reason. Bounded and eased, so a real contact can punctuate the swing without ever
+	# unshaping the sword or taking the pose away from the hand.
+	if blade_shell_offset != Vector2.ZERO:
+		transform_data["start"] = (transform_data["start"] as Vector2) + blade_shell_offset
+	if blade_shell_angle != 0.0:
+		transform_data["angle"] = float(transform_data["angle"]) + blade_shell_angle
 	return transform_data
+
+## The authored pose a blade shell rides: one capsule down the blade's drawn line. The drawn
+## blade is a three-point curve, so a single capsule approximates its solid -- enough for
+## contact, and deliberately not a second description of the blade's shape.
+func _blade_shell_transform(segment_start: Vector2, segment_end: Vector2) -> Transform2D:
+	var axis: Vector2 = segment_end - segment_start
+	var direction: Vector2 = axis.normalized() if axis.length_squared() > 0.0001 else Vector2.RIGHT
+	return Transform2D(direction.angle(), (segment_start + segment_end) * 0.5)
+
+func _create_blade_shell() -> PhysicsShell:
+	if get_parent() == null:
+		return null
+	var shell: PhysicsShell = PhysicsShell.new()
+	shell.name = "BladeShell"
+	shell.configure_shell(PhysicsShell.BLADE_SHELL_LAYER, PhysicsShell.BONE_CORE_SHELL_LAYER)
+	var capsule: CapsuleShape2D = CapsuleShape2D.new()
+	capsule.radius = BLADE_RADIUS
+	capsule.height = maxf(BLADE_LENGTH, BLADE_RADIUS * 2.0 + 1.0)
+	var shape_node: CollisionShape2D = CollisionShape2D.new()
+	shape_node.shape = capsule
+	shell.add_child(shape_node)
+	get_parent().add_child(shell)
+	return shell
+
+## With the shell switches off there is nothing at all: no body, no shape, no collision pair.
+## That is what makes the whole feature removable rather than merely disabled.
+func _release_blade_shell() -> void:
+	if blade_shell != null:
+		blade_shell.queue_free()
+		blade_shell = null
+	blade_shell_offset = Vector2.ZERO
+	blade_shell_angle = 0.0
+
+## Drive the blade's shell off the pose this frame authored, then read back only the part the
+## solver moved. Called after the hit pass, so the shell reflects the blade the player actually
+## swung rather than the one before it.
+func _update_blade_shell(segment_start: Vector2, segment_end: Vector2, delta: float) -> void:
+	var shove_on: bool = get_combat_contact_setting("blade_shell_shove_enabled") >= 0.5
+	var deflect_on: bool = get_combat_contact_setting("blade_shell_deflect_enabled") >= 0.5
+	if not shove_on and not deflect_on:
+		_release_blade_shell()
+		return
+	if blade_shell == null:
+		blade_shell = _create_blade_shell()
+	if blade_shell == null:
+		return
+	# Deflection is the two-way mode, so it supersedes the one-way push when both are on.
+	blade_shell.set_push_only(not deflect_on)
+	blade_shell.set_target(_blade_shell_transform(segment_start, segment_end))
+	if not deflect_on:
+		blade_shell_offset = Vector2.ZERO
+		blade_shell_angle = 0.0
+		return
+	var deviation: Transform2D = blade_shell.deviation_from_target()
+	var wanted_offset: Vector2 = deviation.origin.limit_length(BLADE_SHELL_MAX_OFFSET)
+	var wanted_angle: float = clampf(deviation.get_rotation(), -BLADE_SHELL_MAX_ANGLE, BLADE_SHELL_MAX_ANGLE)
+	blade_shell_offset = blade_shell_offset.lerp(wanted_offset, minf(1.0, delta * BLADE_SHELL_DEFLECT_SMOOTHING))
+	blade_shell_angle = lerpf(blade_shell_angle, wanted_angle, minf(1.0, delta * BLADE_SHELL_DEFLECT_SMOOTHING))
+
+## Ask the physics space itself where a contact is, instead of estimating it: the engine's
+## real surface normal, real contact point and the other body's actual velocity. Queried
+## against the core shells when they exist and against enemy bodies otherwise, so the answer
+## becomes bone-true the moment the cores are real solid bodies.
+func _engine_core_contact(world_point: Vector2) -> Dictionary:
+	var space_state: PhysicsDirectSpaceState2D = get_world_2d().direct_space_state
+	if space_state == null:
+		return {}
+	var probe: CircleShape2D = CircleShape2D.new()
+	probe.radius = maxf(BLADE_RADIUS * 0.5, 2.0)
+	var query: PhysicsShapeQueryParameters2D = PhysicsShapeQueryParameters2D.new()
+	query.shape = probe
+	query.transform = Transform2D(0.0, world_point)
+	query.collide_with_bodies = true
+	query.collide_with_areas = false
+	query.collision_mask = PhysicsShell.BONE_CORE_SHELL_LAYER if get_combat_contact_setting("bone_core_shell_enabled") >= 0.5 else PhysicsShell.ENEMY_BODY_LAYER
+	return space_state.get_rest_info(query)
 
 
 func _apply_charged_guard_pose(transform_data: Dictionary) -> Dictionary:
@@ -4347,7 +4500,20 @@ func _update_sword(delta: float) -> void:
 		blade_core_yield_multiplier = 1.0
 		blade_sink_multiplier = 1.0
 		blade_bone_stop_left = 0.0
+		blade_bite_pending = Vector2.ZERO
+		blade_bite_offset = Vector2.ZERO
 		blade_glance_angle = 0.0
+		bone_slide_left = 0.0
+		bone_slide_target_id = 0
+		bone_bind_left = 0.0
+		bone_bind_dwell = 0.0
+		bone_bind_missing = 0.0
+		bone_bind_locked = false
+		bone_bind_target_id = 0
+		bone_hold_multiplier = 1.0
+		# Physics Shells: sheathing drops the shell body outright rather than parking it, so a
+		# stowed sword leaves nothing in the physics world to shove anything with.
+		_release_blade_shell()
 		blade_velocity = Vector2.ZERO
 		previous_blade_start = Vector2.ZERO
 		previous_blade_end = Vector2.ZERO
@@ -4365,6 +4531,14 @@ func _update_sword(delta: float) -> void:
 		blade_sink_multiplier = HitReaction.advance_blade_sink(blade_sink_multiplier, 1.0, delta)
 		blade_bone_stop_left = 0.0
 		blade_glance_angle = move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)
+		bone_slide_left = 0.0
+		bone_slide_target_id = 0
+		bone_bind_left = 0.0
+		bone_bind_dwell = 0.0
+		bone_bind_missing = 0.0
+		bone_bind_locked = false
+		bone_bind_target_id = 0
+		bone_hold_multiplier = 1.0
 		# Clash/parry weapon freeze remains independent of flesh-only effects.
 		# Player and hilt movement still matter. Real movement creates a slight tug/rip through the enemy.
 		var freeze_data: Dictionary = _sword_transform()
@@ -4425,7 +4599,62 @@ func _update_sword(delta: float) -> void:
 	# bounded glance then eases the blade back to its live swing angle. The stop's
 	# cooldown already ticked at the top of this function.
 	blade_glance_angle = move_toward(blade_glance_angle, 0.0, delta * BLADE_GLANCE_RECOVERY_SPEED)
-	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier
+	# Bone Slide. A weakened copy of the blade slide: while the core's latch is live the swing
+	# is held back and the enemy is dragged, and -- like the blade slide -- it releases on a
+	# short tail rather than a hard cut-off. The core never writes the pose; steering the blade
+	# round the bone, into it or off it is the player's own hand.
+	bone_slide_left = maxf(0.0, bone_slide_left - delta)
+	# Bone Bind. The capture is a meter: contact fills it and a gap drains it faster than
+	# contact fills it, so holding the blade on the bone for BONE_BIND_CAPTURE_TIME earns the
+	# lock and letting go costs the attempt. The lock itself is bounded, and once the blade
+	# has left it survives only BONE_BIND_RELEASE_GRACE, so it can never become a pin.
+	if bone_bind_locked:
+		bone_bind_left = maxf(0.0, bone_bind_left - delta)
+	# The contact pass zeroes this the moment the core is touched, so a non-zero value here
+	# means the last contact pass found no bone. Tested BEFORE the increment, so the tick is
+	# correct whichever of the two passes runs first -- draining on a frame that filled would
+	# cancel the fill, which is exactly what an earned capture must never do.
+	if bone_bind_missing > 0.0 and not bone_bind_locked:
+		bone_bind_dwell = maxf(0.0, bone_bind_dwell - delta * BONE_BIND_DWELL_FALLOFF)
+	bone_bind_missing += delta
+	if bone_bind_locked and (bone_bind_left <= 0.0 or bone_bind_missing > BONE_BIND_RELEASE_GRACE):
+		bone_bind_locked = false
+		bone_bind_missing = 0.0
+		bone_bind_dwell = 0.0
+	# Both effects share one hold channel, so they can never stack on one enemy: whichever is
+	# holding harder this frame wins, and each routes through its own Effect Strength -- 0% on
+	# either switch leaves that switch completely inert.
+	var bone_slide_target: float = 1.0
+	if bone_slide_left > 0.0:
+		bone_slide_target = HitReaction.scale_effect_strength(
+			BONE_SLIDE_SWING_RATE, get_combat_contact_setting("blade_bone_slide_strength"))
+	var bone_bind_target: float = 1.0
+	if bone_bind_locked:
+		bone_bind_target = HitReaction.scale_effect_strength(
+			BONE_BIND_SWING_RATE, get_combat_contact_setting("blade_bone_bind_strength"))
+	bone_hold_multiplier = HitReaction.advance_blade_sink(
+		bone_hold_multiplier, minf(bone_slide_target, bone_bind_target), delta)
+	# The drag follows the effect that is holding hardest, so the two switches can never
+	# both pull on one enemy in the same frame.
+	var bone_drag_id: int = bone_slide_target_id
+	var bone_drag_full_friction: float = BONE_SLIDE_ENEMY_FRICTION
+	var bone_drag_strength: float = get_combat_contact_setting("blade_bone_slide_strength")
+	var bone_drag_active: bool = bone_slide_left > 0.0
+	if bone_bind_locked and bone_bind_target <= bone_slide_target:
+		bone_drag_id = bone_bind_target_id
+		bone_drag_full_friction = BONE_BIND_ENEMY_FRICTION
+		bone_drag_strength = get_combat_contact_setting("blade_bone_bind_strength")
+		bone_drag_active = true
+	var bone_drag_friction: float = HitReaction.scale_effect_strength(bone_drag_full_friction, bone_drag_strength)
+	if bone_drag_active and bone_drag_friction < 1.0:
+		var bone_hold_enemy: Enemy = instance_from_id(bone_drag_id) as Enemy
+		if bone_hold_enemy != null:
+			bone_hold_enemy.velocity *= bone_drag_friction
+	# Visible bite, eased. The pending offset is recomputed from the live contact geometry
+	# every frame, so easing toward it lets the blade slide into the body and back out again
+	# instead of stepping between one frame's worth of overlap and the next.
+	blade_bite_offset = blade_bite_offset.lerp(blade_bite_pending, clampf(delta * BLADE_BITE_SMOOTHING, 0.0, 1.0))
+	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier * bone_hold_multiplier
 	if blade_bone_stop_left > 0.0:
 		sword_delta = 0.0
 		blade_bone_stop_left = maxf(0.0, blade_bone_stop_left - delta)
@@ -4587,6 +4816,9 @@ func _update_sword(delta: float) -> void:
 	else:
 		hilt_trail_points.clear()
 	_check_sword_hits(current_start, current_end, delta)
+	# Physics Shells: driven after the hit pass, so the shell rides the blade that was actually
+	# just swung and any deflection it reports belongs to this frame's contact.
+	_update_blade_shell(current_start, current_end, delta)
 
 func _enemy_body_collision_shapes(target: Node2D) -> Array[CollisionShape2D]:
 	var shapes: Array[CollisionShape2D] = []
@@ -4811,6 +5043,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 	blade_flesh_overlap_active = false
 	blade_sink_strength_active = 0.0
 	blade_core_yield_pending = 1.0
+	blade_bite_pending = Vector2.ZERO
 	var flesh_overlap_this_frame: bool = false
 	if clash_recovery_left > 0.0: return
 	var main_scene: Node = get_tree().current_scene
@@ -4962,7 +5195,12 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			if bool(core_hit["overlap"]):
 				core_contact_normal = core_hit["normal"] as Vector2
 				core_shapes.append({"normal": core_hit["normal"], "shape": scaled_core, "node": collision_shape, "transform": _enemy_body_shape_transform(collision_shape)})
-		var broad_contact_radius: float = maxf(enemy_body_contact_radius, body_contact_radius + BLADE_RADIUS)
+		# The sword's forgiveness beyond the enemy's own silhouette. This is the one gate that
+		# lets a stroke count while the blade is still short of the body, so it is what decides
+		# how precise a hit has to be -- and therefore how far the blade visibly travels before
+		# flesh or bone reacts to it. Body silhouette plus the tuned forgiveness, rather than an
+		# unconditional full blade radius that swamped the setting entirely.
+		var broad_contact_radius: float = body_contact_radius + enemy_body_contact_radius
 		var contact: SwordContactData = SwordInteractionResolver.swept_contact(prev_seg_start, prev_seg_end, seg_start, seg_end, enemy.global_position, broad_contact_radius, delta, velocity, sword_movement_damage_contribution, sword_movement_speed_cap)
 		if flesh_shapes.is_empty() and core_shapes.is_empty():
 			if contact.swept_distance > broad_contact_radius:
@@ -4998,9 +5236,55 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var relative_blade_velocity: Vector2 = contact.blade_velocity - target_velocity
 		var reached_inner_core: bool = not core_shapes.is_empty()
 		var flesh_depth_contact: bool = not flesh_shapes.is_empty()
+		# Physics Shells: when asked, let the engine answer instead of the estimate -- the real
+		# surface normal at the real contact point, taken against the core shells once those
+		# exist and against enemy bodies until then. The estimate remains the fallback, so a
+		# query that finds nothing changes no behaviour at all.
+		if reached_inner_core and get_combat_contact_setting("blade_shell_query_enabled") >= 0.5:
+			var engine_contact: Dictionary = _engine_core_contact(contact.contact_point)
+			if engine_contact.has("normal"):
+				core_contact_normal = engine_contact["normal"] as Vector2
 		var physical_normal: Vector2 = core_contact_normal if reached_inner_core else contact.impact_normal
+		# Visible bite. The drawn blade is pushed toward the enemy until it has visibly cut
+		# in -- into flesh, but only as far as the core surface once the bone is what it has
+		# hit, because from there the core is what the blade rests on and slides along. This
+		# displaces only the drawn blade; the hit geometry above is untouched.
+		if get_combat_contact_setting("blade_bone_slide_enabled") >= 0.5:
+			# Measured against the shape that was actually hit, never the enemy's origin: a
+			# collision shape can sit well off its parent's origin (a bird's body sits under
+			# its head), and the bubble between the two lets the blade bite empty air.
+			var hit_shapes: Array[Dictionary] = core_shapes if reached_inner_core else flesh_shapes
+			var hit_shape: CollisionShape2D = null
+			if not hit_shapes.is_empty():
+				hit_shape = hit_shapes[0].get("node") as CollisionShape2D
+			if hit_shape != null:
+				var shape_centre: Vector2 = hit_shape.global_transform.origin
+				var shape_radius: float = _shape_outer_radius(hit_shape)
+				if reached_inner_core:
+					shape_radius *= core_fraction
+				var outward: Vector2 = physical_normal.normalized()
+				if outward.length_squared() <= 0.001:
+					outward = (seg_start - shape_centre).normalized()
+				if outward.dot(seg_start - shape_centre) < 0.0:
+					outward = -outward
+				var blade_axis_dir: Vector2 = seg_end - seg_start
+				var blade_distance: float = (shape_centre - seg_start).length()
+				if blade_axis_dir.length_squared() > 0.001:
+					blade_distance = absf((shape_centre - seg_start).cross(blade_axis_dir.normalized()))
+				# Only bite once the blade has genuinely reached the body. Contact is deliberately
+				# forgiving, and treating that gap as bite distance would drag the blade through
+				# empty space. The bite starts at the silhouette and is capped at a fraction of
+				# the radius, so it can only ever be a small, believable movement.
+				if blade_distance < shape_radius:
+					var bite_depth: float = shape_radius * (1.0 - BLADE_BITE_FLESH_FRACTION)
+					if reached_inner_core:
+						bite_depth = shape_radius
+					var bite_limit: float = minf(BLADE_BITE_MAX, shape_radius * BLADE_BITE_FLESH_FRACTION)
+					blade_bite_pending = outward * clampf(bite_depth - blade_distance, -bite_limit, bite_limit)
+					if get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5 and blade_bite_pending.length_squared() > 0.01:
+						print("[BLADE BITE] %s: blade at %.1f px, target %.1f px, displaced %.1f px" % [
+							"core" if reached_inner_core else "flesh", blade_distance, bite_depth, blade_bite_pending.length()])
 		var inward_alignment: float = -relative_blade_velocity.normalized().dot(physical_normal.normalized()) if relative_blade_velocity.length_squared() > 1.0 and physical_normal.length_squared() > 0.001 else 0.0
-		inward_alignment = -relative_blade_velocity.normalized().dot(physical_normal.normalized()) if relative_blade_velocity.length_squared() > 1.0 and physical_normal.length_squared() > 0.001 else 0.0
 		if flesh_depth_contact:
 			flesh_overlap_this_frame = true
 			if get_combat_contact_setting("hit_reaction_enabled") >= 0.5 and get_combat_contact_setting("blade_sink_enabled") >= 0.5:
@@ -5011,6 +5295,30 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			if core_yield < blade_core_yield_pending:
 				blade_core_yield_pending = core_yield
 				_set_sword_event("BLADE CORE YIELD", contact.contact_point, 0.18)
+			# Bone Slide: the core latches the blade the way an opposing blade does. The
+			# latch is refreshed for as long as the blade keeps overlapping the core and the
+			# enemy is dragged with it, so the blade visibly rides the bone -- sliding round
+			# it, pressing into it, or being dragged off it. No pose maths: exactly like the
+			# blade slide, steering the blade is the player's own hand.
+			if get_combat_contact_setting("blade_bone_slide_enabled") >= 0.5:
+				if bone_slide_left <= 0.0:
+					_set_sword_event("BONE SLIDE", contact.contact_point, 0.12)
+				bone_slide_left = maxf(bone_slide_left, BONE_SLIDE_REFRESH)
+				bone_slide_target_id = id
+			# Bone Bind: the core was touched again, so the capture advances and the release
+			# grace is cleared. Once the capture is full the lock takes; all of the lock's own
+			# timing lives in one place, the bone-bind tick in _update_sword.
+			if get_combat_contact_setting("blade_bone_bind_enabled") >= 0.5:
+				bone_bind_target_id = id
+				bone_bind_missing = 0.0
+				if bone_bind_locked:
+					bone_bind_left = BONE_BIND_MAX_DURATION
+				else:
+					bone_bind_dwell = minf(bone_bind_dwell + delta, BONE_BIND_CAPTURE_TIME)
+					if bone_bind_dwell >= BONE_BIND_CAPTURE_TIME:
+						bone_bind_locked = true
+						bone_bind_left = BONE_BIND_MAX_DURATION
+						_set_sword_event("BONE BIND", contact.contact_point, 0.16)
 			# C then B: a brief stop when the blade catches the inner core, then a
 			# bounded glance off it. The cooldown makes this punctuation, not a bind.
 			if get_combat_contact_setting("blade_bone_stop_enabled") >= 0.5 and blade_bone_stop_cooldown_left <= 0.0:
@@ -5061,10 +5369,11 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				total_damage_multiplier = charged_guard_thrust_damage_multiplier(total_damage_multiplier)
 			var dealt_damage: float = sword_damage * total_damage_multiplier
 			var reaction_on: bool = get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+			var impact_impulse: Vector2 = impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
-				enemy.take_fire_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
+				enemy.take_fire_damage(dealt_damage, impact_impulse, stagger_duration, contact.impact_quality)
 			else:
-				enemy.take_damage(dealt_damage, impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback, stagger_duration, contact.impact_quality)
+				enemy.take_damage(dealt_damage, impact_impulse, stagger_duration, contact.impact_quality)
 			if reaction_on and combat_enemy != null and combat_enemy.health > 0.0:
 				combat_enemy.play_hit_reaction(contact.blade_velocity, contact.contact_point, contact.impact_quality,
 					get_combat_contact_setting("hit_visual_recoil"), get_combat_contact_setting("hit_visual_rotation"))
@@ -5863,7 +6172,6 @@ func take_damage(amount: float, knockback_force: Vector2 = Vector2.ZERO, attacke
 		main_scene.request_screen_shake(player_hit_screen_shake_strength * damage_shake_scale, player_hit_screen_shake_duration, hit_knockback)
 	health_bar.value = health
 	health_bar.visible = health < max_health
-	health_bar.modulate = Color(1.0, 0.15, 0.1).lerp(Color(0.2, 1.0, 0.25), health / max_health)
 	health_changed.emit(health, max_health)
 	invulnerable = damage_immunity_duration
 	if health <= 0.0:
