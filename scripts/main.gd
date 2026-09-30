@@ -27,6 +27,11 @@ const GEM_JAM_SCENE: PackedScene = preload("res://scenes/minigames/gem_jam.tscn"
 ## from Adventure — it replaced the earlier procedural height-field prototype,
 ## which remains in the project only as a standalone reference scene.
 const RESONANCE_RUSH_SCENE: PackedScene = preload("res://scenes/minigames/resonance_rush/rush_track_world_proof.tscn")
+## PX mode — the standalone physics-motor sword lab. Deliberately decoupled:
+## the game only launches it; the lab shares no runtime code with the game.
+const PX_MODE_SCENE: PackedScene = preload("res://blade_dancer_px/tools/px_sword_lab.tscn")
+## Blade Dancer PX — the playable standalone physics-sword prototype.
+const PX_PROTO_SCENE: PackedScene = preload("res://blade_dancer_px/scenes/px_game.tscn")
 
 @export_category("Checkpoint Campfires")
 ## Every this many cleared waves, offer a safe campfire before continuing.
@@ -162,6 +167,11 @@ var sword_smithing_instance: SwordSmithingGame = null
 var grindstone_instance: GrindstoneGame = null
 var gem_jam_instance: GemJamGame = null
 var resonance_rush_instance: ResonanceRushGame = null
+var px_mode_instance: Node2D = null
+var px_mode_restore_pause: bool = false
+var px_proto_instance: Node2D = null
+var px_proto_container: SubViewportContainer = null
+var px_proto_restore_pause: bool = false
 var run_elapsed_seconds: float = 0.0
 var flow_75_seconds: float = 0.0
 var run_damage_dealt: float = 0.0
@@ -307,6 +317,8 @@ func _ready() -> void:
 	end_run_hub.connect("travel_home_requested", Callable(self, "_travel_home"))
 	end_run_hub.connect("adventure_zone_requested", Callable(self, "_on_adventure_zone_requested"))
 	end_run_hub.connect("resonance_rush_requested", Callable(self, "_on_resonance_rush_requested"))
+	end_run_hub.connect("px_mode_requested", Callable(self, "_on_px_mode_requested"))
+	end_run_hub.connect("px_proto_requested", Callable(self, "_on_px_proto_requested"))
 	end_run_hub.connect("save_requested", Callable(self, "_save_note_from_hub"))
 	end_run_hub.connect("load_requested", Callable(self, "_load_from_hub"))
 	home_menu.connect("progression_changed", Callable(self, "_on_home_progression_changed"))
@@ -2355,6 +2367,71 @@ func _on_resonance_rush_requested() -> void:
 func _on_resonance_rush_closed() -> void:
 	if is_instance_valid(resonance_rush_instance): resonance_rush_instance.queue_free()
 	resonance_rush_instance = null
+	music_director.call("enter_adventure")
+	_advance_forest_time_phase()
+	end_run_hub.visible = true
+	end_run_hub.call("show_tab", 3)
+
+func _on_px_mode_requested() -> void:
+	if is_instance_valid(px_mode_instance): return
+	end_run_hub.visible = false
+	music_director.call("enter_silence")
+	# The hub pauses the tree, and a paused tree does not step the physics
+	# server — a RigidBody2D would freeze mid-swing. The lab needs a real
+	# simulation, so lift the pause for its lifetime and restore it on close.
+	# Both hub entry paths leave the world dormant (player/spawner off,
+	# entities cleared, world hidden), so this wakes nothing harmful.
+	px_mode_restore_pause = get_tree().paused
+	get_tree().paused = false
+	px_mode_instance = PX_MODE_SCENE.instantiate() as Node2D
+	# Same reasoning as Resonance Rush: the hub pauses the tree, so the lab
+	# must ignore that pause or it would freeze on launch.
+	px_mode_instance.process_mode = Node.PROCESS_MODE_ALWAYS
+	# Parented under the SceneTree root (a sibling of Main), not under Main,
+	# so Main's leftover screen-shake transform can never offset the lab.
+	get_tree().root.add_child(px_mode_instance)
+	px_mode_instance.closed.connect(_on_px_mode_closed)
+
+func _on_px_mode_closed() -> void:
+	if is_instance_valid(px_mode_instance): px_mode_instance.queue_free()
+	px_mode_instance = null
+	get_tree().paused = px_mode_restore_pause
+	music_director.call("enter_adventure")
+	_advance_forest_time_phase()
+	end_run_hub.visible = true
+	end_run_hub.call("show_tab", 3)
+
+func _on_px_proto_requested() -> void:
+	if is_instance_valid(px_proto_instance): return
+	end_run_hub.visible = false
+	music_director.call("enter_silence")
+	# Same reasoning as PX mode: the hub's pause would freeze a rigid-body sim.
+	px_proto_restore_pause = get_tree().paused
+	get_tree().paused = false
+	# PX needs its own 2D world: the dormant main-game StaticBody2Ds
+	# otherwise collide with its player and rigid sword through the overlay.
+	var overlay: CanvasLayer = CanvasLayer.new()
+	overlay.layer = 100
+	get_tree().root.add_child(overlay)
+	px_proto_container = SubViewportContainer.new()
+	px_proto_container.size = get_viewport().get_visible_rect().size
+	px_proto_container.stretch = true
+	overlay.add_child(px_proto_container)
+	px_proto_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var px_viewport: SubViewport = SubViewport.new()
+	px_viewport.world_2d = World2D.new()
+	px_viewport.size = Vector2i(get_viewport().get_visible_rect().size)
+	px_proto_container.add_child(px_viewport)
+	px_proto_instance = PX_PROTO_SCENE.instantiate() as Node2D
+	px_proto_instance.process_mode = Node.PROCESS_MODE_ALWAYS
+	px_viewport.add_child(px_proto_instance)
+	px_proto_instance.closed.connect(_on_px_proto_closed)
+
+func _on_px_proto_closed() -> void:
+	if is_instance_valid(px_proto_container): px_proto_container.get_parent().queue_free()
+	px_proto_container = null
+	px_proto_instance = null
+	get_tree().paused = px_proto_restore_pause
 	music_director.call("enter_adventure")
 	_advance_forest_time_phase()
 	end_run_hub.visible = true

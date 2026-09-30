@@ -7,6 +7,8 @@ signal adventure_zone_requested(zone_id: String)
 signal save_requested(note: String)
 signal load_requested()
 signal resonance_rush_requested()
+signal px_mode_requested()
+signal px_proto_requested()
 signal tab_changed(tab: int)
 
 enum Tab { RUN_REVIEW, SCOREBOARD, HOME, ADVENTURE, SAVE_LOAD }
@@ -121,6 +123,39 @@ func _create_resonance_rush_button() -> void:
 	resonance_rush_button.pressed.connect(func() -> void: resonance_rush_requested.emit())
 	adventure_card.add_child(resonance_rush_button)
 
+func _create_px_mode_button() -> void:
+	# PX mode is the isolated physics-motor sword lab. This button only OPENS
+	# it — the lab shares no game code, so the coupling is a doorway, not a
+	# dependency. See blade_dancer_px/tools/px_sword_lab.gd.
+	var px_button: Button = Button.new()
+	px_button.name = "PXModeButton"
+	px_button.position = Vector2(76.0, 350.0)
+	px_button.size = Vector2(246.0, 54.0)
+	px_button.text = "PX MODE — LAB"
+	px_button.tooltip_text = "Standalone physics-motor sword lab (development experiment)."
+	px_button.add_theme_font_size_override("font_size", 20)
+	px_button.pressed.connect(func() -> void: px_mode_requested.emit())
+	adventure_card.add_child(px_button)
+	# Reflow the "future destinations" note below the new button.
+	var future_label: Label = adventure_card.get_node_or_null("FutureZones") as Label
+	if future_label != null:
+		future_label.position.y = 414.0
+		future_label.size.y = 44.0
+	adventure_card.size.y = 478.0
+
+func _create_px_proto_button() -> void:
+	# Blade Dancer PX — the playable standalone physics-sword prototype. Also
+	# all-new and decoupled: this button only opens it. See blade_dancer_px/scripts/px_game.gd.
+	var proto_button: Button = Button.new()
+	proto_button.name = "PXProtoButton"
+	proto_button.position = Vector2(334.0, 350.0)
+	proto_button.size = Vector2(246.0, 54.0)
+	proto_button.text = "PX PROTO — PLAY"
+	proto_button.tooltip_text = "Blade Dancer PX — playable standalone physics-sword prototype."
+	proto_button.add_theme_font_size_override("font_size", 20)
+	proto_button.pressed.connect(func() -> void: px_proto_requested.emit())
+	adventure_card.add_child(proto_button)
+
 func _create_tutorial_forest_glow() -> void:
 	tutorial_glow = TUTORIAL_GLOW_SCRIPT.new() as TutorialButtonGlow
 	tutorial_glow.name = "TutorialForestGlow"
@@ -144,6 +179,8 @@ func _ready() -> void:
 	travel_home_button.pressed.connect(func() -> void: travel_home_requested.emit())
 	forest_button.pressed.connect(func() -> void: adventure_zone_requested.emit("forest"))
 	_create_backyard_button()
+	_create_px_mode_button()
+	_create_px_proto_button()
 	show_tab(Tab.RUN_REVIEW)
 
 func open_to_run_review(review_bbcode: String, scoreboard_text: String) -> void:
