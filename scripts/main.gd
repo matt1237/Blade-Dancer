@@ -32,6 +32,9 @@ const RESONANCE_RUSH_SCENE: PackedScene = preload("res://scenes/minigames/resona
 const PX_MODE_SCENE: PackedScene = preload("res://blade_dancer_px/tools/px_sword_lab.tscn")
 ## Blade Dancer PX — the playable standalone physics-sword prototype.
 const PX_PROTO_SCENE: PackedScene = preload("res://blade_dancer_px/scenes/px_game.tscn")
+## PX in-world: the standalone physics sword, brought into the REAL game behind
+## PX Mode. Self-contained — it never writes the authored sword's transform.
+const PX_INWORLD_SCRIPT: Script = preload("res://blade_dancer_px/scripts/px_inworld.gd")
 
 @export_category("Checkpoint Campfires")
 ## Every this many cleared waves, offer a safe campfire before continuing.
@@ -172,6 +175,8 @@ var px_mode_restore_pause: bool = false
 var px_proto_instance: Node2D = null
 var px_proto_container: SubViewportContainer = null
 var px_proto_restore_pause: bool = false
+## The in-world physics sword, present only while PX Mode is on.
+var px_inworld: Node = null
 var run_elapsed_seconds: float = 0.0
 var flow_75_seconds: float = 0.0
 var run_damage_dealt: float = 0.0
@@ -276,6 +281,9 @@ func _ready() -> void:
 	_apply_forest_visual_settings()
 	set_forest_time_phase(active_forest_time_phase)
 	_create_backyard_training_menu()
+	# Honour a saved PX Mode choice on launch.
+	if bool(BDPXGlobal.load_settings().get("px_mode", false)):
+		set_px_mode.call_deferred(true)
 	# Combat diagnostics remain available through Player's concise console log.
 	# Do not mount the former player-facing Combat Tracker panel.
 	screen_shake_rest_position = position
@@ -374,6 +382,39 @@ func _create_backyard_training_menu() -> void:
 	backyard_training_menu = BACKYARD_TRAINING_MENU_SCRIPT.new() as BackyardTrainingMenu
 	backyard_training_menu.main = self
 	$CanvasLayer.add_child(backyard_training_menu)
+
+## PX Mode: bring the standalone physics sword online in the REAL game, or stand
+## it down. Fully reversible — the node reads the public aim and damages enemies
+## through their own take_damage(), and it never writes the authored sword.
+func set_px_mode(on: bool) -> void:
+	if on:
+		_enable_px_world()
+	else:
+		_disable_px_world()
+
+func _enable_px_world() -> void:
+	if is_instance_valid(px_inworld):
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	var node: Node2D = PX_INWORLD_SCRIPT.new() as Node2D
+	node.name = "PXInWorld"
+	node.position = Vector2.ZERO
+	node.call("setup", player)
+	add_child(node)
+	px_inworld = node
+
+func _disable_px_world() -> void:
+	if is_instance_valid(px_inworld):
+		if px_inworld.has_method("shutdown"):
+			px_inworld.call("shutdown")
+		px_inworld.queue_free()
+	px_inworld = null
+
+## Push live PX tuner values from the Training Tools gateway onto the in-world sword.
+func apply_px_settings(settings: Dictionary) -> void:
+	if is_instance_valid(px_inworld) and px_inworld.has_method("apply_settings"):
+		px_inworld.call("apply_settings", settings)
 
 func set_backyard_training_layout(layout_id: String) -> void:
 	var normalized_layout: String = layout_id.to_lower()
@@ -2414,13 +2455,16 @@ func _on_px_proto_requested() -> void:
 	overlay.layer = 100
 	get_tree().root.add_child(overlay)
 	px_proto_container = SubViewportContainer.new()
-	px_proto_container.size = get_viewport().get_visible_rect().size
-	px_proto_container.stretch = true
+	var layout_size: Vector2 = get_viewport().get_visible_rect().size
+	var render_size: Vector2i = get_window().size
+	px_proto_container.size = Vector2(render_size)
+	px_proto_container.scale = layout_size / Vector2(render_size)
 	overlay.add_child(px_proto_container)
-	px_proto_container.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var px_viewport: SubViewport = SubViewport.new()
 	px_viewport.world_2d = World2D.new()
-	px_viewport.size = Vector2i(get_viewport().get_visible_rect().size)
+	px_viewport.size = render_size
+	px_viewport.size_2d_override = Vector2i(layout_size)
+	px_viewport.size_2d_override_stretch = true
 	px_proto_container.add_child(px_viewport)
 	px_proto_instance = PX_PROTO_SCENE.instantiate() as Node2D
 	px_proto_instance.process_mode = Node.PROCESS_MODE_ALWAYS

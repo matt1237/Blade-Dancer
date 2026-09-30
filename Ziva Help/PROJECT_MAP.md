@@ -9,6 +9,7 @@ looks wrong (files move), fix it here rather than trusting it blindly.
 - Adventure Log continuity: `res://Ziva Help/adventure log/ADVENTURE_LOG_INDEX.md` and `CURRENT_CONTINUITY.md` — chronological session narrative plus the shortest current handoff for a new conversation. Focused tuning snapshots live under `res://Ziva Help/adventure log/checkpoints/`; the current Bind B GP2→GP3 values are recorded there.
 - Idea and resonance pipeline: `res://Ziva Help/IDEA_PIPELINE.md` — authoritative status, player fantasy, next playable milestone, safety rails, and feel questions for active and parked ideas. Update it after meaningful feature work so implementation does not lose the original reason an idea mattered.
 - Grapple Yo-yo detailed parking lot: `res://Ziva Help/GRAPPLE_YOYO_PARKING_LOT.md`.
+- PX Mode (physics sword brought into the game behind a PX Mode toggle): `res://Ziva Help/PX_MODE_PROJECT.md` — the goal, hard rules (never write a blade's transform; PX loads no production code), current status, the bottom-up tuning ladder, and the shared UI/naming conventions (mechanism-name labels with the bench nickname in the tooltip, binaries as 0–1 sliders, `[?]` badges, tabs + collapsible sections). Read it before touching `res://blade_dancer_px/` or the PX half of Training Tools.
 
 ## Player
 - Scene: `res://scenes/player.tscn`

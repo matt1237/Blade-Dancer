@@ -7,6 +7,21 @@ extends Node
 const PX_SCENE: PackedScene = preload("res://blade_dancer_px/scenes/px_game.tscn")
 const PXGame = preload("res://blade_dancer_px/scripts/px_game.gd")
 const Cfg = preload("res://blade_dancer_px/scripts/px_config.gd")
+const GlobalStore = preload("res://blade_dancer_px/scripts/bdpx_global.gd")
+
+## Every proto test starts from a KNOWN state. The prototype auto-loads the last
+## saved settings (including spawn toggles), so a live setup like "chaser on,
+## metronome on" would otherwise leak into the suite. Stash the real save, run on
+## defaults, then put it back — so tests never destroy a player's setup.
+func _stash_and_clear_save() -> Variant:
+	var backup: Variant = GlobalStore.load_settings() if GlobalStore.has_save() else null
+	GlobalStore.clear_save()
+	return backup
+
+func _restore_save(backup: Variant) -> void:
+	GlobalStore.clear_save()
+	if backup != null:
+		GlobalStore.save_settings(backup as Dictionary)
 
 func test_proto_is_source_isolated_from_the_game() -> void:
 	# The prototype must not load any game script or scene — it is a look-alike,
@@ -16,6 +31,7 @@ func test_proto_is_source_isolated_from_the_game() -> void:
 		assert(not source.contains(forbidden), "PX proto must not reference %s." % forbidden)
 
 func test_proto_builds_player_and_starts_with_an_empty_arena() -> void:
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -23,8 +39,10 @@ func test_proto_builds_player_and_starts_with_an_empty_arena() -> void:
 	assert(proto.enemies.is_empty(), "The arena must start empty — enemies are opt-in.")
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_enemy_toggles_keep_exactly_one_each() -> void:
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -40,10 +58,12 @@ func test_enemy_toggles_keep_exactly_one_each() -> void:
 	assert(bool(proto.enemies[0]["armed"]), "The sword enemy must survive the chaser toggle.")
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_blade_jams_on_a_hard_wall() -> void:
 	# Drive the blade straight into a wall and confirm the solver stops it
 	# rather than letting it pass through: its tip must stay inside the arena.
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	proto.player.global_position = Vector2(Cfg.ARENA.end.x - 60.0, 0.0)
@@ -53,8 +73,10 @@ func test_blade_jams_on_a_hard_wall() -> void:
 	assert(tip.x <= Cfg.ARENA.end.x + 6.0, "Blade tunnelled through the wall (tip x=%.1f)." % tip.x)
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_an_enemy_on_the_blade_takes_damage() -> void:
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -67,8 +89,10 @@ func test_an_enemy_on_the_blade_takes_damage() -> void:
 	assert(float(entry["hp"]) < Cfg.ENEMY_MAX_HEALTH, "A body on the blade must take swing damage.")
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_an_enemy_touching_the_player_damages_the_player() -> void:
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -80,10 +104,12 @@ func test_an_enemy_touching_the_player_damages_the_player() -> void:
 	assert(proto.player_health < Cfg.PLAYER_MAX_HEALTH, "Body contact must hurt the player.")
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_without_the_metronome_the_motor_holds_the_aim() -> void:
 	# The control. A still cursor, the metronome OFF: the blade must sit on the
 	# aim, not wander. Anything else means the test below proves nothing.
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -91,11 +117,13 @@ func test_without_the_metronome_the_motor_holds_the_aim() -> void:
 	assert(peak < 0.2, "Free-aim must hold the blade on the aim (peak %.2f rad off)." % peak)
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 func test_the_metronome_sweeps_the_blade_through_the_arc() -> void:
 	# Same motor, same still cursor — the ONLY change is the target angle. The
 	# blade must actually travel the arc. Measured from the BLADE, so it proves
 	# the motor earned the sweep rather than being told where to be.
+	var backup: Variant = _stash_and_clear_save()
 	var proto: PXGame = PX_SCENE.instantiate() as PXGame
 	add_child(proto)
 	await get_tree().physics_frame
@@ -109,6 +137,7 @@ func test_the_metronome_sweeps_the_blade_through_the_arc() -> void:
 	assert(peak < 2.2, "The sweep must stay inside the arc, not run away (peak %.2f rad)." % peak)
 	proto.queue_free()
 	await get_tree().process_frame
+	_restore_save(backup)
 
 ## Widest angle the blade ACTUALLY reached away from the aim, over `frames`
 ## ticks after `warmup`. Signed difference from the aim, so it cannot be fooled
@@ -121,6 +150,25 @@ func _peak_blade_deflection(proto: PXGame, warmup: int, frames: int) -> float:
 		await get_tree().physics_frame
 		peak = maxf(peak, absf(angle_difference(proto.aim_direction.angle(), proto.player_sword.rotation)))
 	return peak
+
+func test_the_whole_arena_fits_one_screen() -> void:
+	# Blade Dancer's own arena is 1280x720 — exactly the base viewport — so the
+	# whole map must be visible in one frame, and the camera must sit centred on
+	# it (not follow the player off-screen). Matches the original's default rect.
+	var backup: Variant = _stash_and_clear_save()
+	var proto: PXGame = PX_SCENE.instantiate() as PXGame
+	add_child(proto)
+	for _i: int in range(30):
+		await get_tree().physics_frame
+	assert(Cfg.ARENA.size.x <= 1280.0 and Cfg.ARENA.size.y <= 720.0,
+		"The arena must fit the 1280x720 viewport in one screen (got %s)." % str(Cfg.ARENA.size))
+	assert(proto.camera.zoom == Vector2.ONE, "Zoom 1 makes one world unit one screen pixel.")
+	assert(proto.camera.global_position.distance_to(Cfg.ARENA.get_center()) < 2.0,
+		"The camera must pin to the arena centre so the whole map stays on screen (at %s)." % str(proto.camera.global_position))
+	proto.queue_free()
+	await get_tree().process_frame
+	_restore_save(backup)
+
 
 func test_tuning_tools_open_and_close_from_the_top_bar() -> void:
 	# The game's own Training Tools arrangement: one bar, clicked to drop the

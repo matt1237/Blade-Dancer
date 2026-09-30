@@ -61,6 +61,37 @@ Added after the health-bar end-cap turn, where three consecutive responses each 
 - Incident: on 2026-09-13, six new Form-local slide-entry tooltips were written as raw baked-value callouts ("Bind B starts at 24 px") instead of the established feel-based tip style used by every other control in the panel ("Raise this if X; lower it if Y"). This was corrected the same day. Treat this as the canonical example of the failure mode this rule exists to prevent.
 - Revised 2026-09-14 after the Grapple/Yo-yo authority audit: tooltip structure and full persistence coverage are mandatory for every slider, not optional polish.
 
+### PX Mode UI conventions (2026-10, Matt + Ziva)
+Agreed so the physics tuner stays clean and legible as it grows, and reads in the
+same voice as the OS tuners. Full detail in `PX_MODE_PROJECT.md`.
+
+- **Named for the mechanism.** The primary label is the mechanism's real, traditional
+  name (e.g. *Motor Damping*, *Helicopter Limit*, *Metronome Lead*). The bench
+  **nickname** (e.g. *Settle*, *Wobble Brake*) now sits at the front of the tooltip's
+  `WHAT IT IS` line, so the friendly word survives without a second sub-label on the
+  control. (Reversed from the brief two-name experiment at Matt's request, 2026-10.)
+- **`[?]` badge on every control**, identical to the OS badge (`Label` reading `[?]`,
+  `mouse_filter = STOP`, `modulate = Color(0.45, 0.85, 1.0, 0.9)`), sharing the
+  tooltip with the label and the slider.
+- **No toggle buttons — binaries are 0–1 sliders.** Every PX on/off is an `HSlider`
+  (min 0, max 1, step 1, label `— OFF / ON`) exactly like the OS Combat Preset's
+  switches. Tooltips phrase both ends as `OFF (0)` / `ON (1)`. Consistent with BDOS by
+  design.
+- **One tooltip builder for both panels.** PX tooltips wrap the OS
+  `_form_three_feel_tip`, adding `WHAT IT IS` + `FEELS LIKE` on top. OS output keeps
+  its exact tokens.
+- **Grouping mirrors the OS Combat Preset:** few **tabs**, and inside each a set of
+  **collapsible section headers**. Every new PX slider must land inside an existing
+  section or a new one — never loose on a tab. A whole *mode* earns its own tab (the
+  metronome swing has **PX Metronome**: Swing / Arc / Frequency / Lead). Growth must not
+  turn the panel into a maze.
+
+### Ask in chat prose, never the checkbox-prompt UI
+When Matt seems confused, or a real decision point arises, ask it as **plain text in
+the chat** — with context and a recommendation. Do **not** use the structured
+question/"little checkbox" prompt UI; the real choices are rarely that clean and the
+fixed options discard nuance. (Recorded at Matt's request; also AGENTS.md §8.)
+
 ## Feel Tuner Restraint
 
 - A technical variable does not automatically deserve a player-facing feel slider. The creative instrument should expose sensations Matt can see and distinguish, not the implementation's entire parameter list.

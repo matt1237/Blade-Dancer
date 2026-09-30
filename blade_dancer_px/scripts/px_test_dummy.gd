@@ -4,7 +4,7 @@ extends RefCounted
 const Cfg = preload("res://blade_dancer_px/scripts/px_config.gd")
 
 
-static func make_entry(parent: Node, position: Vector2) -> Dictionary:
+static func make_entry(parent: Node, position: Vector2, core_radius: float = Cfg.ENEMY_RADIUS) -> Dictionary:
 	var body := CharacterBody2D.new()
 	body.name = "TestDummy"
 	body.collision_layer = Cfg.L_ENEMY
@@ -12,7 +12,7 @@ static func make_entry(parent: Node, position: Vector2) -> Dictionary:
 	body.position = position
 	var shape := CollisionShape2D.new()
 	var circle := CircleShape2D.new()
-	circle.radius = Cfg.ENEMY_RADIUS
+	circle.radius = core_radius
 	shape.shape = circle
 	body.add_child(shape)
 	parent.add_child(body)

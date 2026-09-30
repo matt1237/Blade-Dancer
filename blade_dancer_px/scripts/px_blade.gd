@@ -72,3 +72,13 @@ static func tip_of(sword: RigidBody2D) -> Vector2:
 static func pd_torque(current_angle: float, omega: float, target_angle: float, stiffness: float, damping: float, cap: float) -> float:
 	var error: float = angle_difference(current_angle, target_angle)
 	return clampf(error * stiffness - omega * damping, -cap, cap)
+
+
+## The servo motor: the same PD hold on `target_angle`, plus a feed-forward term
+## on the reference's angular velocity `target_omega`. With target_omega 0 this is
+## exactly pd_torque; with it non-zero the blade matches a MOVING target instead
+## of perpetually lagging it. Clamped to `cap`, so a collision can still overpower
+## it. Pure, so it is testable without a physics world.
+static func servo_torque(current_angle: float, omega: float, target_angle: float, target_omega: float, stiffness: float, damping: float, cap: float) -> float:
+	var error: float = angle_difference(current_angle, target_angle)
+	return clampf(error * stiffness + damping * (target_omega - omega), -cap, cap)

@@ -784,6 +784,11 @@ var previous_blade_end: Vector2 = Vector2.ZERO
 var current_blade_samples: PackedVector2Array = PackedVector2Array()
 var previous_blade_samples: PackedVector2Array = PackedVector2Array()
 var blade_velocity: Vector2 = Vector2.ZERO
+## PX Mode stow. Set ONLY by PX Mode. When ON the authored sword is fully inert —
+## its blade samples clear and no contact can fire — so the physics sword is the
+## only sword in the world. Default false: the game is completely untouched unless
+## PX Mode turns it on.
+var sword_stowed: bool = false
 var blade_trail_points: Array[Vector2] = []
 var hilt_trail_points: Array[Vector2] = []
 var moulinet_aim_direction_sign: float = 1.0
@@ -4779,7 +4784,7 @@ func _update_sword(delta: float) -> void:
 	# The bone-stop cooldown ticks every frame, even while sheathed or inside a
 	# clash/parry freeze, so a queued catch cannot outlive those early returns.
 	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
-	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
+	if sword_stowed or (_authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED):
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
 		blade_sink_contact_left = 0.0

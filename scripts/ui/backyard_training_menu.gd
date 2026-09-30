@@ -29,6 +29,17 @@ var grapple_status_label: Label = null
 var experimental_bind_section: VBoxContainer = null
 var experimental_bind_status: Label = null
 var weapon_collision_zones_button: Button = null
+## PX Mode is the door into the standalone physics-sword lab. This tab owns only
+## the OS/PX switch and the PX prototype's own save; the engine itself is wired
+## in separately, so nothing here can touch the authored sword or combat presets.
+var px_mode_buttons: Dictionary = {}
+var px_mode_status: Label = null
+## The PX tab set (shown only in PX Mode) and its live controls.
+var px_tabs: TabContainer = null
+var px_controls: Dictionary = {}
+var _px_settings: Dictionary = {}
+## The "Last saved" readout on the PX Global section.
+var px_saved_label: Label = null
 
 var last_hand_key: String = ""
 var last_contact_key: String = ""
@@ -72,6 +83,16 @@ func _build_ui() -> void:
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(panel)
 
+	# One shared gateway sits at the very top of the tools: OS MODE / PX MODE.
+	# Under it are two whole tab sets — the game's own (OS) and the PX physics
+	# tuner — and switching the mode swaps which set is shown. Nothing else about
+	# the tools changes, and no OS control is ever edited from PX Mode.
+	var root_box: VBoxContainer = VBoxContainer.new()
+	root_box.name = "TunerRoot"
+	root_box.add_theme_constant_override("separation", 6)
+	panel.add_child(root_box)
+	root_box.add_child(_build_mode_header())
+
 	training_tabs = TabContainer.new()
 	training_tabs.name = "TrainingTabs"
 	training_tabs.focus_mode = Control.FOCUS_NONE
@@ -79,8 +100,19 @@ func _build_ui() -> void:
 	# Hidden combat controls must not force the forest side dock to their width.
 	training_tabs.use_hidden_tabs_for_min_size = false
 	training_tabs.clip_tabs = true
-	training_tabs.set_anchors_preset(Control.PRESET_FULL_RECT)
-	panel.add_child(training_tabs)
+	training_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	training_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_box.add_child(training_tabs)
+
+	px_tabs = TabContainer.new()
+	px_tabs.name = "PXTabs"
+	px_tabs.focus_mode = Control.FOCUS_NONE
+	px_tabs.tab_focus_mode = Control.FOCUS_NONE
+	px_tabs.clip_tabs = true
+	px_tabs.visible = false
+	px_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	px_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_box.add_child(px_tabs)
 
 	_build_layout_tab(training_tabs)
 	_build_enemy_tab(training_tabs)
@@ -94,7 +126,11 @@ func _build_ui() -> void:
 	_build_visualizer_tab(training_tabs)
 	_build_global_presets_tab(training_tabs)
 	_build_forest_visuals_tab(training_tabs)
+	_build_px_tuner(px_tabs)
 	training_tabs.tab_changed.connect(_on_training_tab_changed)
+	px_tabs.tab_changed.connect(_on_training_tab_changed)
+	# Adopt the saved mode immediately, so reopening the tools shows the right set.
+	_refresh_px_mode_ui()
 
 func _build_layout_tab(tabs: TabContainer) -> void:
 	var layout_tab: VBoxContainer = VBoxContainer.new()
@@ -167,6 +203,430 @@ func _on_training_tab_changed(_index: int) -> void:
 	_apply_training_layout()
 	# Reapply after containers invalidate their previous minimum size.
 	_apply_training_layout.call_deferred()
+
+## The shared gateway that sits at the very top of BOTH tuner sets. It only chooses
+## the mode; it never edits a setting itself.
+func _build_mode_header() -> Control:
+	var header: PanelContainer = PanelContainer.new()
+	header.name = "ModeHeader"
+	var row: HBoxContainer = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	header.add_child(row)
+	var os_button: Button = Button.new()
+	os_button.name = "PXModeOS"
+	os_button.text = "OS MODE"
+	os_button.focus_mode = Control.FOCUS_NONE
+	os_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	os_button.custom_minimum_size = Vector2(0.0, 40.0)
+	os_button.pressed.connect(_set_px_mode.bind(false))
+	row.add_child(os_button)
+	var px_button: Button = Button.new()
+	px_button.name = "PXModePX"
+	px_button.text = "PX MODE"
+	px_button.focus_mode = Control.FOCUS_NONE
+	px_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	px_button.custom_minimum_size = Vector2(0.0, 40.0)
+	px_button.pressed.connect(_set_px_mode.bind(true))
+	row.add_child(px_button)
+	px_mode_buttons = {"os": os_button, "px": px_button}
+	px_mode_status = Label.new()
+	px_mode_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	px_mode_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(px_mode_status)
+	return header
+
+## The PX tab set: the physics sword's own live tunables. Every control writes to
+## the PX save (user://bdpx_global.json) and is pushed straight onto the live
+## in-world sword — never to a combat preset or a Global Preset.
+func _build_px_tuner(tabs: TabContainer) -> void:
+	_px_settings = BDPXGlobal.load_settings()
+	px_controls.clear()
+
+	# ── PX Motor ────────────────────────────────────────────────────────────
+	var motor_tab: VBoxContainer = _px_tab(tabs, "PX Motor")
+	var baseline_button: Button = Button.new()
+	baseline_button.text = "Reset to Clean Baseline"
+	baseline_button.tooltip_text = "One click back to the honest starting point: the sword simply follows YOUR aim (no metronome), the motor is stock, and nothing is spawned. Everything is still yours to change afterwards — this is just the clean floor to learn the raw physical sword from."
+	baseline_button.focus_mode = Control.FOCUS_NONE
+	baseline_button.custom_minimum_size = Vector2(0.0, 34.0)
+	baseline_button.pressed.connect(_px_reset_baseline)
+	motor_tab.add_child(baseline_button)
+
+	# ── Global — BDPX's own save (the game's live save is never touched) ─────
+	var global_section: VBoxContainer = _create_section_header(motor_tab, "Global (BDPX save)", true)
+	var global_row: HBoxContainer = HBoxContainer.new()
+	global_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	global_section.add_child(global_row)
+	var save_button: Button = Button.new()
+	save_button.text = "Save Settings"
+	save_button.tooltip_text = "Write the current PX tuning + spawn setup to user://bdpx_global.json — BDPX's own file; the game's live save is never touched. Every control also saves automatically as you move it; this writes it explicitly and refreshes the readout below."
+	save_button.focus_mode = Control.FOCUS_NONE
+	save_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_button.pressed.connect(_px_save_now)
+	global_row.add_child(save_button)
+	var load_button: Button = Button.new()
+	load_button.text = "Load Saved"
+	load_button.tooltip_text = "Re-apply the saved BDPX setup, discarding any unsaved tweaks."
+	load_button.focus_mode = Control.FOCUS_NONE
+	load_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	load_button.pressed.connect(_px_load_saved)
+	global_row.add_child(load_button)
+	px_saved_label = Label.new()
+	px_saved_label.modulate = Color(0.65, 0.75, 0.85)
+	global_section.add_child(px_saved_label)
+	_px_refresh_saved_label()
+
+	# ── Sword Physics: what the OBJECT is ───────────────────────────────────
+	# Grouped as a header (not its own tab) by request — but kept right above the
+	# Grip / Wrist header below, because these two groups physically interact:
+	# mass sets the blade's inertia, which is half of what every stiffness value
+	# is measured against.
+	var sword_body_section: VBoxContainer = _create_section_header(motor_tab, "Sword Physics", true)
+	var body_note: Label = Label.new()
+	body_note.text = "The sword's OWN physical properties — what the object IS. Grip / Wrist below is how strongly YOU control it. Set Mass once and leave it: Godot derives the blade's rotational inertia from mass, so changing mass quietly re-scales what every Stiffness value means."
+	body_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body_note.modulate = Color(0.72, 0.8, 0.9)
+	sword_body_section.add_child(body_note)
+	_px_add_slider(sword_body_section, "sword_mass", "Sword Mass", 0.25, 8.0, 0.05, "", _px_control_tip(
+		"'Heft' — the blade body's mass: how much stuff the sword is made of.",
+		"How hard the sword is to shove, and how much punch it carries into other bodies.",
+		"Light — easy to redirect, knocked off line easily, little punch.",
+		"Heavy — carries momentum and shoves bodies around, but sluggish to turn.",
+		"Set it once, then leave it. Godot works out the blade's rotational inertia from mass, so a mass change silently re-scales every stiffness value — which is exactly why the tuning ladder fixes mass first."))
+	_px_add_slider(sword_body_section, "sword_angular_damp", "Angular Damping", 0.0, 20.0, 0.5, "", _px_control_tip(
+		"'Spin Brake' — PASSIVE angular damping on the blade body: a continuous resistance to whatever rotation is happening, whoever caused it.",
+		"Rotational air resistance. NOT the same as Motor Damping — that only resists your ERRORS; this resists ALL spin, including the swing you asked for.",
+		"0 — no spin brake: the blade keeps rotating until the motor or a contact stops it.",
+		"High — rotation dies fast, but the sword feels underwater and fights your own swings.",
+		"Keep it 0 for a clean baseline. A little (1-3) cleans up aimless drift without noticeably fighting the motor."))
+	_px_add_slider(sword_body_section, "sword_linear_damp", "Linear Damping", 0.0, 20.0, 0.5, "", _px_control_tip(
+		"'Drift Brake' — PASSIVE linear damping on the blade body: a continuous resistance to sideways (translational) motion.",
+		"Brakes on the sword flying off your hand.",
+		"0 — nothing resists drift.",
+		"High — any translation stops almost immediately.",
+		"The hilt is pinned to your hand, so translation is already controlled — small values only, or leave it at 0."))
+	_px_add_slider(sword_body_section, "com_offset", "Center of Mass Offset", 0.0, 84.0, 1.0, " px", _px_control_tip(
+		"'Balance Point' — where along the blade the body balances, in px from the hilt. Godot's automatic centre sits mid-blade at 42; this overrides it.",
+		"Where the blade's weight sits — near the hilt feels nimble, out at the tip feels committed.",
+		"0 — at the hilt: least resistance to rotation, twitchy.",
+		"84 — at the tip: maximum swing inertia, slow to start and slow to stop.",
+		"Gravity is OFF and the hilt is pinned, so there is no hanging weight to feel here — treat this as a collision / inertia knob, not a balance knob, and judge it against a real parry."))
+
+	# ── Grip / Wrist: how strongly YOU control it ───────────────────────────
+	var motor_section: VBoxContainer = _create_section_header(motor_tab, "Grip / Wrist", true)
+	_px_add_slider(motor_section, "stiffness", "Motor Stiffness", 0.0, 300000.0, 1000.0, "", _px_control_tip(
+		"'Snap' — proportional stiffness (N·m/rad): how hard the motor pulls the blade toward the target angle.",
+		"How snappily the sword locks onto your aim.",
+		"Sluggish and rubbery — the blade trails your aim.",
+		"Snappy and stiff — it locks onto your aim, but can jitter at the top end.",
+		"Raise until it tracks your aim tightly, then back off one notch to kill any jitter."))
+	_px_add_slider(motor_section, "damping", "Motor Damping", 0.0, 40000.0, 100.0, "", _px_control_tip(
+		"'Settle' — damping gain (N·m·s/rad): how much the motor brakes the blade's own spin.",
+		"Whether the sword settles onto the arc, or overshoots and wobbles.",
+		"Overshoots and wobbles past your aim — loose and rubbery.",
+		"Dead and heavy — no overshoot, but it feels like swinging in syrup.",
+		"Rule of thumb: Damping ≈ 100 × √(Stiffness). At Stiffness 90,000 that's ~25,000 (near-critical, little wobble). Far below it the blade rings and helicopters."))
+	_px_add_slider(motor_section, "max_torque", "Max Torque", 0.0, 600000.0, 1000.0, "", _px_control_tip(
+		"'Sword Strength' — motor torque ceiling (N·m): the most force the motor may push with.",
+		"How strongly the blade wins against things that resist it.",
+		"Weak — contacts shove your sword off your aim easily.",
+		"Powerful — the blade muscles through and holds its arc, but can jam if maxed.",
+		"This is the 'strength of your grip on the arc'. Pair high torque with higher damping to stay smooth."))
+
+	var guard_section: VBoxContainer = _create_section_header(motor_tab, "Safeguards")
+	_px_add_slider(guard_section, "helicopter_limit", "Helicopter Limit", 100.0, 2000.0, 25.0, " °/s", _px_control_tip(
+		"'Wobble Brake' — angular-velocity cap (deg/s): the fastest the blade is allowed to TURN. Above it, a brake drags the spin back down.",
+		"Whether a wild swing can whirl away out of control, or is always caught at a speed you chose.",
+		"Tight cap — the sword can barely spin: very controlled, but fast swings feel handcuffed.",
+		"Loose cap — the sword whips around freely; at the far right the limit is effectively OFF.",
+		"Start at the right (off). Drag LEFT until the helicoptering stops, then nudge right so genuine fast swings still land."))
+	_px_add_slider(guard_section, "servo_feedforward_on", "Servo Feedforward — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Arc Hold' — reference-velocity feedforward: ON (1), the motor also matches how fast the target is moving, not just where it points.",
+		"Whether the blade holds the swing arc, or lags a fast sweep.",
+		"OFF (0) — plain motor; the blade slightly trails fast swings.",
+		"ON (1) — the blade holds the intended arc through the swing.",
+		"Leave it ON (1). Switch it off only to hear the difference."))
+	_px_add_slider(guard_section, "hilt_spring_on", "Hilt Spring — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Hand Give' — soft pin joint: ON (1), the grip is sprung to your hand instead of welded to it.",
+		"Whether a hit can knock the sword off your hand — and whether it springs back.",
+		"OFF (0) — welded; the hilt never leaves your hand.",
+		"ON (1) — the sword gets shoved and recovers; livelier and more physical.",
+		"Keep it ON (1) once you're cutting. OFF is a clean baseline for tuning the motor."))
+
+	var prop_section: VBoxContainer = _create_section_header(motor_tab, "Visuals")
+	_px_add_slider(prop_section, "show_ghost", "Show Ghost — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Ghost Twin' — reference-pose overlay: ON (1), draw where the hand and blade are ASKED to be as a translucent copy under the blade.",
+		"Whether you can SEE the gap between intended and actual.",
+		"OFF (0) — just the solid blade.",
+		"ON (1) — a faint shadow twin you can tune the blade to hide behind.",
+		"Tune until the ghost hides behind the blade; any visible offset is pure physics lag."))
+	_px_add_slider(prop_section, "ghost_opacity", "Ghost Opacity", 0.0, 100.0, 5.0, "%", _px_control_tip(
+		"'Ghost Fade' — overlay opacity (%): how see-through the ghost is.",
+		"How strongly the reference reads against the blade.",
+		"Invisible.",
+		"Bold — easy to see, can clutter the read.",
+		"~35% reads clearly without hiding the blade."))
+
+	# ── PX Metronome ────────────────────────────────────────────────────────
+	# Its own tab: this is a whole MODE of the sword (swing on its own tempo) rather
+	# than a motor tweak, and every control here is dormant unless Mode is ON (1).
+	var metronome_tab: VBoxContainer = _px_tab(tabs, "PX Metronome")
+	var swing_section: VBoxContainer = _create_section_header(metronome_tab, "The Swing", true)
+	_px_add_slider(swing_section, "metronome_on", "Metronome Swing — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Self-Swing' — oscillator drive: ON (1), the motor chases a swinging arc (±Arc at Frequency) around your aim instead of your aim itself.",
+		"Whether the sword swings on its own tempo, or just points where you point.",
+		"OFF (0) — the blade points where you point.",
+		"ON (1) — the sword sweeps a back-and-forth arc on its own.",
+		"Turn it ON (1) to watch it fight real contact: a blocked swing visibly loses its arc."))
+	_px_add_slider(swing_section, "arc_degrees", "Arc", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Swing Width' — oscillation amplitude (deg): how far the swing sweeps either side of your aim.",
+		"The size of the metronome stroke.",
+		"Tight, quick flicks.",
+		"Huge, wide sweeps.",
+		"105° is the game's feel — up for drama, down for precision."))
+	_px_add_slider(swing_section, "frequency", "Frequency", 0.05, 3.0, 0.05, " Hz", _px_control_tip(
+		"'Swing Tempo' — oscillation frequency (Hz): how many swings per second the metronome runs.",
+		"The tempo of the arc.",
+		"Slow, heavy, deliberate.",
+		"Fast and frantic.",
+		"0.65 Hz is the game's tempo; much faster is hard to read against contacts."))
+	_px_add_slider(swing_section, "lead_degrees", "Metronome Lead", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Leash' — anti-windup error clamp (deg): how far the swinging target may run ahead of the blade before it waits.",
+		"How far the target can diverge from the blade when the swing is blocked.",
+		"The target hugs the blade — nothing to watch, tiny arc.",
+		"The target runs far ahead — a big gap when blocked, and a risk of snapping when freed.",
+		"Keep it modest (30-45°): enough to show the struggle, not enough to helicopter."))
+	var metronome_note: Label = Label.new()
+	metronome_note.text = "Arc, Frequency and Lead shape the swing ONLY while Metronome Swing is ON (1).\nWith it OFF (0) the sword simply follows your aim — those three do nothing."
+	metronome_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	metronome_tab.add_child(metronome_note)
+
+	# ── PX Aim & Hand ───────────────────────────────────────────────────────
+	var hand_tab: VBoxContainer = _px_tab(tabs, "PX Aim & Hand")
+	var reach_section: VBoxContainer = _create_section_header(hand_tab, "Reach", true)
+	_px_add_slider(reach_section, "hand_min", "Hand Min", 0.0, 200.0, 1.0, " px", _px_control_tip(
+		"'Reach — Close' — minimum grip radius (px): the closest the grip orbits to your body when you aim short.",
+		"How tightly the sword hugs you up close.",
+		"Even closer and tighter.",
+		"A wider minimum, even up close.",
+		"5 px matches the game."))
+	_px_add_slider(reach_section, "hand_max", "Hand Max", 0.0, 300.0, 1.0, " px", _px_control_tip(
+		"'Reach — Far' — maximum grip radius (px): the farthest the grip reaches when you aim long.",
+		"Your full reach and lunges.",
+		"Shorter reach.",
+		"Longer reach.",
+		"40 px matches the game."))
+	# ── PX Enemies ──────────────────────────────────────────────────────────
+	var enemy_tab: VBoxContainer = _px_tab(tabs, "PX Enemies")
+	var spawn_section: VBoxContainer = _create_section_header(enemy_tab, "Spawns", true)
+	_px_add_slider(spawn_section, "chaser_wanted", "Spawn Chaser — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Chasers' — spawn homing enemy: ON (1) keeps one unarmed chaser in the world; it walks at you and yields to the blade.",
+		"A moving, physical target to shove and cut.",
+		"OFF (0) — no chaser.",
+		"ON (1) — one chaser, respawning if you destroy it.",
+		"Great for feeling the blade shove a body off its line."))
+	_px_add_slider(spawn_section, "sword_enemy_wanted", "Spawn Sword Enemy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Duelists' — spawn armed enemy: ON (1) keeps one armed enemy with its own physics blade.",
+		"Blade-on-blade parries and binding.",
+		"OFF (0) — no sword enemy.",
+		"ON (1) — one armed enemy, respawning if destroyed.",
+		"Use it to feel parries and hilt give."))
+	_px_add_slider(spawn_section, "test_dummy_wanted", "Spawn Test Dummy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Dummy' — spawn stationary target: ON (1) places a regenerating dummy target.",
+		"A fixed target to study cuts without it moving.",
+		"OFF (0) — no dummy.",
+		"ON (1) — one dummy, heals itself.",
+		"The best place to tune the Flesh & Core tab."))
+	var enemy_note: Label = Label.new()
+	enemy_note.text = "Physical targets for the physics sword — the blade shoves them, they yield.\nONE of each stays alive (it respawns if destroyed); toggle off to remove."
+	enemy_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	enemy_tab.add_child(enemy_note)
+
+	# ── PX Flesh & Core ─────────────────────────────────────────────────────
+	var material_tab: VBoxContainer = _px_tab(tabs, "PX Flesh & Core")
+	var flesh_section: VBoxContainer = _create_section_header(material_tab, "Flesh", true)
+	_px_add_slider(flesh_section, "flesh_radius", "Flesh Radius", 0.0, 80.0, 1.0, " px", _px_control_tip(
+		"'Flesh Ring' — soft-contact radius (px): how far the sword can sink in before it reaches bone — the soft ring around the core. NOT a collider: the blade passes through it.",
+		"How deep a cut bites before it can catch.",
+		"Thin flesh — the blade reaches bone almost immediately.",
+		"Deep flesh — a big soak; cuts swallow the blade before it hits core.",
+		"Grow it until a cut has a beat of 'sink' before it stops."))
+	_px_add_slider(flesh_section, "flesh_drag", "Flesh Drag", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Flesh Drag' — viscous torque: how much the sword slows while it cuts through the flesh ring.",
+		"Whether a cut barely costs you, or hauls the swing down.",
+		"Airy — barely slows; a clean slice.",
+		"Heavy — the blade hauls through; a big cost to your arc.",
+		"Raise until a cut visibly 'bites' and costs a little arc; stop before it feels gluey."))
+	var core_section: VBoxContainer = _create_section_header(material_tab, "Core", true)
+	_px_add_slider(core_section, "core_radius", "Core Radius", 0.0, 60.0, 1.0, " px", _px_control_tip(
+		"'Bone Core' — solid-collision radius (px): the size of the SOLID body the blade physically stops and turns on.",
+		"How much of a hit is a hard BONK versus a slicing cut.",
+		"Tiny bone — almost everything cuts through.",
+		"Big bone — most hits clang and turn on the core.",
+		"Keep it small for easy enemies (turkeys); grow it for armored ones."))
+	_px_add_slider(core_section, "bone_friction", "Bone Friction", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Bone Grip' — contact friction: how much the blade grips the bone core — glance or catch.",
+		"Whether the sword skates around the bone, or catches and drags.",
+		"Slick — skates around the core instantly.",
+		"Grippy — catches and drags before freeing; too far feels stuck.",
+		"Start medium; raise only until a big hit has ONE beat of 'catch'."))
+	var body_section: VBoxContainer = _create_section_header(material_tab, "Enemy Body")
+	_px_add_slider(body_section, "enemy_mass", "Enemy Mass", 0.2, 12.0, 0.2, "", _px_control_tip(
+		"'Enemy Weight' — mass (kg): how heavy enemy bodies are.",
+		"Whether the blade sends them flying, or you feel the recoil.",
+		"Feathers — they fly off your swings.",
+		"Boulders — the sword bounces off and YOU stagger.",
+		"2 is a good middle: they get shoved, but don't launch."))
+
+func _px_tab(tabs: TabContainer, tab_name: String) -> VBoxContainer:
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = tab_name
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(scroll)
+	var box: VBoxContainer = VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 8)
+	scroll.add_child(box)
+	return box
+
+## The PX control contract, built on the SAME builder every OS control uses, so a
+## PX control reads in one voice with the rest of the game: it adds the WHAT IT IS
+## and FEELS LIKE lines on top of the OS description/← LEFT/→ RIGHT/TIP shape.
+static func _px_control_tip(what_it_is: String, feels_like: String, left: String, right: String, tip: String) -> String:
+	return _form_three_feel_tip("WHAT IT IS\n%s\n\nFEELS LIKE\n%s" % [what_it_is, feels_like], left, right, tip)
+
+## The same blue "[?]" badge the OS sliders use: hovering it (or the label, or the
+## slider) reveals the full guidance. Keeps PX and OS visually identical.
+func _px_tip_badge(row: Container, tooltip: String) -> void:
+	var badge: Label = Label.new()
+	badge.text = "[?]"
+	badge.tooltip_text = tooltip
+	badge.mouse_filter = Control.MOUSE_FILTER_STOP
+	badge.modulate = Color(0.45, 0.85, 1.0, 0.9)
+	row.add_child(badge)
+
+## A PX slider row shaped exactly like an OS one: a title row (the mechanism's real
+## name + a [?] badge), the slider, and a right-aligned value. The control is named
+## for the mechanism itself; any bench nickname lives in the tooltip.
+func _px_add_slider(parent: VBoxContainer, key: String, title: String, minimum: float, maximum: float, step: float, suffix: String, tooltip: String = "") -> void:
+	var row: VBoxContainer = VBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(row)
+
+	var title_row: HBoxContainer = HBoxContainer.new()
+	title_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(title_row)
+	var label: Label = Label.new()
+	label.text = title
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.tooltip_text = tooltip
+	title_row.add_child(label)
+	if not tooltip.is_empty():
+		_px_tip_badge(title_row, tooltip)
+
+	var slider: HSlider = HSlider.new()
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = step
+	slider.focus_mode = Control.FOCUS_NONE
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value = float(_px_settings.get(key, minimum))
+	slider.tooltip_text = tooltip
+	row.add_child(slider)
+
+	var value_label: Label = Label.new()
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value_label)
+
+	var refresh: Callable = func() -> void:
+		value_label.text = ("%.2f%s" % [slider.value, suffix]) if step < 1.0 else ("%d%s" % [int(slider.value), suffix])
+	refresh.call()
+	slider.value_changed.connect(func(v: float) -> void:
+		_px_settings[key] = v
+		refresh.call()
+		_px_apply())
+	px_controls[key] = slider
+
+## Persist the PX tunables to the PX save and push them onto the live in-world sword.
+func _px_apply() -> void:
+	BDPXGlobal.save_settings(_px_settings)
+	if is_instance_valid(main) and main.has_method("apply_px_settings"):
+		main.call("apply_px_settings", _px_settings)
+
+## Write the current PX tunables to BDPX's own save on demand — the SAME authority
+## every control already writes to as it moves — and refresh the readout.
+func _px_save_now() -> void:
+	BDPXGlobal.save_settings(_px_settings)
+	_px_refresh_saved_label()
+
+## Re-apply the saved BDPX setup into every control, discarding unsaved tweaks.
+func _px_load_saved() -> void:
+	_px_settings = BDPXGlobal.load_settings()
+	for key: String in px_controls.keys():
+		if not _px_settings.has(key):
+			continue
+		var control: Control = px_controls[key]
+		if control is HSlider:
+			(control as HSlider).value = float(_px_settings[key])
+		elif control is Button:
+			(control as Button).button_pressed = bool(_px_settings[key])
+	_px_apply()
+	_px_refresh_saved_label()
+
+func _px_refresh_saved_label() -> void:
+	if px_saved_label == null:
+		return
+	if BDPXGlobal.has_save():
+		px_saved_label.text = "Last saved: %s" % BDPXGlobal.saved_at()
+	else:
+		px_saved_label.text = "No BDPX save yet."
+
+## One click back to the honest starting point: EVERY tunable returns to its default,
+## so the sword follows your AIM (metronome off), the motor is stock, and nothing is
+## spawned. The clean floor to learn the raw physical sword from the bottom up.
+func _px_reset_baseline() -> void:
+	var defaults: Dictionary = BDPXGlobal.default_settings()
+	for key: String in px_controls.keys():
+		if not defaults.has(key):
+			continue
+		_px_settings[key] = defaults[key]
+		var control: Control = px_controls[key]
+		if control is HSlider:
+			(control as HSlider).value = float(defaults[key])
+		elif control is Button:
+			(control as Button).button_pressed = bool(defaults[key])
+	_set_disk_feedback("Clean baseline restored — the sword follows your aim.")
+	_px_apply()
+
+## The one mode switch. It persists the choice into the PX save, tells main to bring
+## the physics sword up or stand it down, and swaps which tab set is shown.
+func _set_px_mode(px_on: bool) -> void:
+	# Keep the single source of truth (the PX save) in one place: the mode flag
+	# rides in the same dictionary the PX tuner persists, so saving the tuner can
+	# never clobber the mode.
+	_px_settings["px_mode"] = px_on
+	_set_disk_feedback("PX Mode — the physics sword." if px_on else "OS Mode — the game's authored sword.")
+	if is_instance_valid(main) and main.has_method("set_px_mode"):
+		main.call("set_px_mode", px_on)
+	_px_apply()
+	_refresh_px_mode_ui()
+	_apply_training_layout()
+	_apply_training_layout.call_deferred()
+
+func _refresh_px_mode_ui() -> void:
+	var px_on: bool = bool(BDPXGlobal.load_settings().get("px_mode", false))
+	var os_button: Button = px_mode_buttons.get("os") as Button
+	var px_button: Button = px_mode_buttons.get("px") as Button
+	if is_instance_valid(os_button):
+		os_button.disabled = not px_on
+	if is_instance_valid(px_button):
+		px_button.disabled = px_on
+	if px_mode_status != null:
+		px_mode_status.text = "PX — PHYSICS SWORD" if px_on else "OS — AUTHORED SWORD"
+	if training_tabs != null:
+		training_tabs.visible = not px_on
+	if px_tabs != null:
+		px_tabs.visible = px_on
 
 ## Returns a viewport-safe panel rectangle. The separate toggle sits directly
 ## above it, and the combined toggle+panel assembly is centered as one unit.

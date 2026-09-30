@@ -6,7 +6,7 @@ Prefer targeted inspection and small patches over broad rewrites.
 
 ## Golden Rules
 1. Review this `AGENTS.md` before implementing changes or consulting project-specific working rules - every single time. The protocol applies to discussion as much as to implementation: on the FIRST `/discuss`-style prompt of a session, read this `AGENTS.md` and `COLLABORATION_PROTOCOL.md` in full before responding. Discussion mode is not an exemption from the protocol - it is the moment the protocol matters most, because decisions made in discussion set the course of the work that follows.
-2. Ask clarifying questions whenever missing information could materially change the implementation or the direction of a discussion. Ask before implementation when scope, intended behavior, constraints, or design choices are unclear; during discussion, ask as soon as a user's preference or meaning is ambiguous. Continue independent work that does not depend on the answer, and do not guess on a consequential decision.
+2. Ask clarifying questions whenever missing information could materially change the implementation or the direction of a discussion. Ask before implementation when scope, intended behavior, constraints, or design choices are unclear; during discussion, ask as soon as a user's preference or meaning is ambiguous. Continue independent work that does not depend on the answer, and do not guess on a consequential decision. Ask these as plain prose in the chat — never via the structured checkbox/prompt UI (see Ziva Workflow Commitments #8).
 3. DO NOT scan the entire project unless the task genuinely requires it.
 4. Before opening many files, search for the relevant symbol, scene, node, signal, class, or resource name.
 5. Read PROJECT_MAP.md first for system/file locations.
@@ -336,6 +336,16 @@ property named, on the asset that already exists.
   inspecting the cap's actual pixels or comparing renders at draw size. The fix was
   eventually built from the dev's own art (exact 4× pixel duplication, 1px anti-alias,
   edge hardening) and only after dumping the source alpha map and comparing at 19px.
+
+### 8. Ask in chat prose, never with the checkbox-prompt UI
+(Matt's standing preference.) When the user seems confused, or a question, ambiguity,
+or decision point comes up, ask it as **plain text in the chat** — with enough context,
+and with the option you'd recommend and why. Do **NOT** reach for the structured
+question/"little checkbox" prompt UI. Matt dislikes it because the real choices are
+rarely that clean, and forcing them into fixed options discards the nuance the answer
+actually depends on. Prose also lets him answer halfway, think out loud, or push back —
+which is exactly how these decisions get made. State a recommendation and proceed when
+the call is low-stakes; ask in prose when it is a real fork.
 
 ### Still open / not yet decided
 - **Shared-file exceptions:** when a boss/feature needs a small opt-in hook
