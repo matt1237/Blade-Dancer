@@ -397,12 +397,158 @@ func _build_px_tuner(tabs: TabContainer) -> void:
 		"The target runs far ahead — a big gap when blocked, and a risk of snapping when freed.",
 		"Keep it modest (30-45°): enough to show the struggle, not enough to helicopter."))
 	var metronome_note: Label = Label.new()
-	metronome_note.text = "Arc, Frequency and Lead shape the swing ONLY while Metronome Swing is ON (1).\nWith it OFF (0) the sword simply follows your aim — those three do nothing."
+	metronome_note.text = "Everything in this tab — Arc, Frequency, Lead, Wind-up, Commit, Arc Energy and Hang — shapes the swing ONLY while Metronome Swing is ON (1).\nWith it OFF (0) the sword simply follows your aim; none of it does anything."
 	metronome_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	metronome_tab.add_child(metronome_note)
 
+	# ── Stroke Timing: the wind-up / strike / recovery SHAPE of the stroke ──
+	# "Form II": the stroke's SPEED is redistributed so it opens slowly, strikes
+	# fast, then recovers slowly, while the AVERAGE tempo stays at Frequency. Pure
+	# target shaping — the blade still earns every degree from the motor.
+	var timing_section: VBoxContainer = _create_section_header(metronome_tab, "Stroke Timing", true)
+	_px_add_slider(timing_section, "windup_on", "Wind-up — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Form II' — stroke-tempo shaping: ON (1), each metronome stroke is redistributed into a slow open, a fast strike and a slow recovery.",
+		"Whether the swing has a wind-up / strike / recovery character, or is an even sine.",
+		"OFF (0) — the stroke is a plain even sine; no wind-up shape.",
+		"ON (1) — the stroke opens slowly, snaps through the strike, then recovers slowly.",
+		"Dormant unless Metronome Swing is ON (1). It reshapes the TARGET only, so the blade still earns every degree and a block still breaks the stroke."))
+	_px_add_slider(timing_section, "windup_profile", "Wind-up Profile Strength", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Shape Depth' — how strongly the wind-up curve replaces the plain sine (0 = linear timing, 1 = full Form II).",
+		"How pronounced the slow-open / fast-strike contrast is.",
+		"0 — even, linear stroke.",
+		"1 — full wind-up contrast, speed concentrated in the strike.",
+		"1.0 is the game's value; lower it for a subtler tempo."))
+	_px_add_slider(timing_section, "windup_fraction", "Wind-up Share", 0.10, 0.50, 0.01, "", _px_control_tip(
+		"'Open Share' — the fraction of each stroke spent opening before the fast strike window.",
+		"How long the blade takes to reach the strike.",
+		"Short open — the strike arrives quickly.",
+		"Long, deliberate open before the strike.",
+		"0.30 is the game's value. Total stroke time stays the same; this only moves where the speed sits."))
+	_px_add_slider(timing_section, "recovery_fraction", "Follow-through Share", 0.10, 0.40, 0.01, "", _px_control_tip(
+		"'Recovery Share' — the fraction of each stroke spent easing out before the next reversal.",
+		"How long the follow-through lingers.",
+		"Quick ease-out.",
+		"Long, visible recovery.",
+		"0.20 is the game's value."))
+	_px_add_slider(timing_section, "windup_speed", "Wind-up Speed", 0.05, 1.00, 0.05, "×", _px_control_tip(
+		"'Open Drag' — how slow the opening phase runs relative to the base stroke rate.",
+		"How deliberate the wind-up feels.",
+		"Very slow open.",
+		"Nearly base rate — little slowing.",
+		"0.40 is the game's value. The stroke's total time is normalised, so a slower open trades speed out of the strike, not out of the tempo."))
+	_px_add_slider(timing_section, "strike_speed", "Strike Speed", 1.00, 4.00, 0.05, "×", _px_control_tip(
+		"'Strike Snap' — how fast the central committed strike window runs relative to the base rate.",
+		"How hard the strike accelerates.",
+		"Barely faster than the base rate.",
+		"A sharp, fast strike.",
+		"3.25 is the game's value; higher sharpens the contrast without changing cycle time."))
+	_px_add_slider(timing_section, "recovery_speed", "Recovery Speed", 0.05, 1.00, 0.05, "×", _px_control_tip(
+		"'Follow Dwell' — how slow the recovery runs relative to the base rate.",
+		"How long the settle after the strike lasts.",
+		"Very slow recovery.",
+		"Recovery barely slower than base.",
+		"0.20 is the game's value."))
+
+	# ── Action Commitment: the no-cancel window ─────────────────────────────
+	var commit_section: VBoxContainer = _create_section_header(metronome_tab, "Action Commitment", true)
+	_px_add_slider(commit_section, "action_commitment_strength", "Commitment Strength", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'No-Cancel' — how much of your aim authority is removed inside the late-stroke window (0 = freely redirectable, 1 = no-cancel).",
+		"Whether you can steer a committed cut back, or the sword commits.",
+		"0 — you can always redirect the stroke.",
+		"1 — inside the window the stroke cannot be steered at all.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only: it holds the swing's aim, never the blade's pose."))
+	_px_add_slider(commit_section, "action_commitment_start", "Action Phase Start", 0.30, 0.90, 0.01, "", _px_control_tip(
+		"'Commit Point' — where in the stroke the no-cancel window begins (fraction of the stroke).",
+		"How early the sword stops listening to a redirect.",
+		"Begins early — little of the stroke stays steerable.",
+		"Begins late — most of the stroke stays steerable.",
+		"0.60 is the game's value."))
+	_px_add_slider(commit_section, "action_commitment_end", "Action Phase End", 0.70, 1.00, 0.01, "", _px_control_tip(
+		"'Release Point' — where in the stroke aim authority returns, into the final recovery.",
+		"How long the commitment lasts before the next reversal.",
+		"Releases mid-stroke — a short commitment.",
+		"Releases at the very end — a long commitment.",
+		"0.90 is the game's value."))
+
+	# ── Arc Energy ("Authored Metronome"): the swing wakes and sleeps ────────
+	var arc_energy_section: VBoxContainer = _create_section_header(metronome_tab, "Arc Energy", true)
+	_px_add_slider(arc_energy_section, "arc_energy_on", "Arc Energy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Wake & Sleep' — arc energy: ON (1), the swing's width is driven by how fast you move your aim — it opens as you swipe and settles to a point when you rest.",
+		"Whether the metronome wakes from your movement, or always swings at the full Arc.",
+		"OFF (0) — the arc is fixed at the Arc slider.",
+		"ON (1) — moving your aim widens the arc; resting closes it back to a point.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only — the blade still earns every degree, so a block still breaks the swing."))
+	_px_add_slider(arc_energy_section, "arc_wake_speed", "Wake Speed", 50.0, 1200.0, 25.0, " px/s", _px_control_tip(
+		"'Wake Threshold' — how fast the aim must move to start widening the arc.",
+		"How much movement it takes to wake the swing.",
+		"A gentle move starts the arc.",
+		"Only a sharp swipe starts it.",
+		"350 is the game's value. Below it the arc holds its width and winds down."))
+	_px_add_slider(arc_energy_section, "arc_energy_build", "Arc Energy Build", 0.2, 3.0, 0.05, " /s", _px_control_tip(
+		"'Wake Rate' — how fast moving aim fills the arc energy.",
+		"How quickly the arc opens when you move.",
+		"The arc takes its time.",
+		"The arc opens almost the moment you move.",
+		"0.80 is the game's value."))
+	_px_add_slider(arc_energy_section, "arc_energy_fade", "Arc Energy Fade", 0.1, 2.0, 0.05, " /s", _px_control_tip(
+		"'Sleep Rate' — how fast the energy bleeds once the idle grace has passed.",
+		"Whether the wide arc lingers, or narrows quickly.",
+		"The arc lingers a long while.",
+		"The arc closes back to a point quickly.",
+		"0.35 is the game's value. Fade only begins after the Idle Grace."))
+	_px_add_slider(arc_energy_section, "arc_idle_grace", "Idle Grace", 0.5, 8.0, 0.1, " s", _px_control_tip(
+		"'Hold Before Sleep' — how long the arc holds its width after you stop moving before it fades.",
+		"How forgiving a brief pause is.",
+		"The arc starts winding down soon after you stop.",
+		"The arc holds through a long pause.",
+		"2.0 s is the game's value."))
+
+	# ── Apex Hang: a beat at the top of the stroke ──────────────────────────
+	var apex_section: VBoxContainer = _create_section_header(metronome_tab, "Apex Hang", true)
+	_px_add_slider(apex_section, "apex_hang_time", "Apex Hang — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Apex Hang' — endpoint dwell: ON (1), the swinging target pauses for a beat at the top of each stroke before returning.",
+		"Whether each swing hangs at its apex, or turns straight back.",
+		"OFF (0) — the stroke reverses immediately.",
+		"ON (1) — a short committed hold at each end.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only — the blade still earns every degree, so contact can still break the hang."))
+	_px_add_slider(apex_section, "apex_hang_duration", "Apex Hang Time", 0.05, 0.30, 0.01, " s", _px_control_tip(
+		"'Hang Length' — the maximum dwell at each apex, earned by how hard the stroke is driven.",
+		"How long the swing holds at the top.",
+		"A brief 0.05 s punctuation.",
+		"A clear 0.30 s hold before the return.",
+		"0.14 s is the game's value. A fully driven stroke earns the full hold; a sluggish or blocked one earns less."))
+
 	# ── PX Aim & Hand ───────────────────────────────────────────────────────
 	var hand_tab: VBoxContainer = _px_tab(tabs, "PX Aim & Hand")
+	# Core Sword & Reach: PX now owns its aim feel, so these shape the aim PX hands
+	# the motor. Pure input shaping — the request gains weight; the blade still earns
+	# every degree, so the motor can still be out-run.
+	var core_reach_section: VBoxContainer = _create_section_header(hand_tab, "Core Sword & Reach", true)
+	_px_add_slider(core_reach_section, "aim_inertia_on", "Aim Inertia — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Aim Weight' — whether your aim itself has weight: ON (1), a fast flick no longer snaps the request onto the target in a single frame.",
+		"Whether the sword's demand feels immediate or weighted.",
+		"OFF (0) — the aim is your cursor, instantly.",
+		"ON (1) — the aim point and angle drag toward the cursor.",
+		"Target shaping only — the blade still earns every degree, so a fast enough flick can still out-run the motor."))
+	_px_add_slider(core_reach_section, "mouse_drag", "Overall Mouse Drag", 3.0, 35.0, 0.5, "", _px_control_tip(
+		"'Mouse Drag' — how fast the aim POINT chases your cursor (higher = snappier).",
+		"How directly the aim follows the mouse.",
+		"A loose, trailing aim point.",
+		"A tight aim point that tracks the cursor closely.",
+		"32 matches the game. Dormant unless Aim Inertia is ON (1)."))
+	_px_add_slider(core_reach_section, "rotation_speed", "Rotation Speed (Aim Turn Drag)", 2.0, 40.0, 0.5, "", _px_control_tip(
+		"'Turn Drag' — how fast the aim ANGLE settles onto the aim point (higher = snappier).",
+		"How quickly the sword's direction catches up.",
+		"The angle lags well behind the point.",
+		"The angle tracks the point closely.",
+		"10.5 matches the game. Dormant unless Aim Inertia is ON (1)."))
+	_px_add_slider(core_reach_section, "max_turn_speed_deg", "Max Turn Speed", 0.0, 1800.0, 30.0, " °/s", _px_control_tip(
+		"'Turn Speed Cap' — the fastest the aim angle may swing while chasing the point, in degrees/second.",
+		"Whether a violent flick can whip the aim around instantly.",
+		"0.0 — unlimited; the angle can jump as fast as the filter allows.",
+		"A hard ceiling on how fast the aim may turn.",
+		"0 = unlimited. 1080 matches the game. Dormant unless Aim Inertia is ON (1)."))
+
 	var reach_section: VBoxContainer = _create_section_header(hand_tab, "Reach", true)
 	_px_add_slider(reach_section, "hand_min", "Hand Min", 0.0, 200.0, 1.0, " px", _px_control_tip(
 		"'Reach — Close' — minimum grip radius (px): the closest the grip orbits to your body when you aim short.",
@@ -1181,6 +1327,8 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	# always start collapsed and their open state is deliberately never persisted.
 	_create_contact_slider(box, "hit_reaction_enabled", "HIT REACTION — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Master switch for presentation, core-resistance, and sink effects in this tab.", "OFF: only the dedicated knockback-direction option below remains active.", "ON: enabled presentation and blade-contact effects may react to enemy hits.", "Damage, hitstop, and shield/blade contact rules remain unchanged."))
 	_create_contact_slider(box, "sword_knockback_away_enabled", "Sword Knockback Away from Player — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Choose the direction of sword-hit gameplay knockback only.", "OFF: retain the existing impact-normal knockback direction.", "ON: push sword-hit enemies directly away from the player.", "Independent of the Hit Reaction master switch. Does not affect hilt bash, chakram, dash, or other knockback sources."))
+	_create_contact_slider(box, "contact_recoil_delay_enabled", "Recoil Delay — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Hold a flesh hit's separation -- the enemy's knockback and your own recoil push -- for a beat so the contact is felt before anything moves.", "OFF (0): a flesh hit separates on the frame it lands, exactly as it does today.", "ON (1): the enemy's knockback and your own recoil push wait for Recoil Delay Time, so the blade stays against the body for a beat.", "Pure timing: damage, stagger, blood, hitstop and the sword's own kick all stay immediate -- only the separation is held. Independent of the Physics Shells switches, and works with them all off."))
+	_create_contact_slider(box, "contact_recoil_delay", "Recoil Delay Time", 0.0, 0.5, 0.01, " s", _form_three_feel_tip("How long a flesh hit's separation is held before the enemy is knocked back and your own recoil push lands.", "Near 0 s: the separation is almost instant -- the smallest useful beat.", "A longer hold: the blade lingers against the body for a clear moment before anything moves.", "Default 0.00 s, so the feature ships inert. Tuned in 0.01 s steps. The Recoil Delay switch above must be ON (1) for it to bite. This is not hitstop -- it delays the knockback, it does not freeze the fight."))
 	# Grouped detail: five dropdown sections, attached after the shared switches.
 	var sink_box: VBoxContainer = _create_section_header(box, "Blade Sink")
 	var physical_box: VBoxContainer = _create_section_header(box, "Blade Physical Reaction")
@@ -1199,6 +1347,7 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(physical_box, "blade_bone_slide_strength", "Bone Slide Effect Strength", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale how hard the slide's catch holds the swing and how hard it drags the enemy.", "0% — the Bone Slide switch does nothing at all.", "100% — the full authored slide: the swing is dragged to 35% while the catch is live and the enemy is pulled along at 70%.", "Default 100%. Tuned in 1% steps. One dial scales the hold and the drag together; how long a catch clings and how far a loose blade must travel to re-arm stay fixed in code. Needs Bone Slide ON above."))
 	_create_contact_slider(physical_box, "blade_bone_bind_enabled", "Bone Bind — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Earn a short lock on the bone when the blade stays on it.", "OFF: a core catch is only ever a slide — the blade never locks.", "ON: holding the blade on the core for a beat earns a bind, which holds the swing harder than a slide, drags the enemy harder, and survives a short gap before it lets go.", "Deliberately weaker than a real blade Bind, and always bounded: the lock expires after 1.2 s and a break in contact ends it, so it can never pin the blade. If Bone Slide is also on, whichever is holding harder that frame wins — the two never stack. Set Bone Bind Effect Strength below to taste."))
 	_create_contact_slider(physical_box, "blade_bone_bind_strength", "Bone Bind Effect Strength", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale how hard the bind's lock holds the swing and drags the enemy.", "0% — the Bone Bind switch does nothing at all.", "100% — the full authored lock: the swing is held at 22% and the enemy is dragged at 45%, a step harder than Bone Slide's 35% and 70%.", "Default 100%. The lock is already the weakened one — a real blade Bind pins its bound sword at 18%, so Bone Bind sits a step weaker than that and a step harder than a slide. Tuned in 1% steps. The capture time, the release grace and the 1.2 s ceiling stay fixed in code. Needs Bone Bind ON above."))
+	_create_contact_slider(physical_box, "blade_flesh_bind_enabled", "Flesh Bind — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Grip the flesh: the deeper the blade is buried the heavier the swing goes, the harder the blade is to turn, and the more the enemy body shoves you — and it drags the enemy with it.", "OFF (0): flesh only takes its bite — a brief hold at most, and the swing never gets heavier for being deep.", "ON (1): the blade catches in the meat. Sink in and the swing sags under the grip, the buried blade fights being turned, and the body pushes into you; rip the blade back out and it all lets go at once.", "The grip captures the instant the blade meets flesh and sheds fast, so a deep catch is escaped by withdrawing, never by pushing through — you want to rip it out. Three effects ride the one grip: the swing rate, a hinge that resists turning the buried blade (hardest when you turn it deeper, only lightly when you pull it out), and a push from the body's own closing motion. The swing cadence and a small, clamped aim dent are all that change — the hit model is untouched — and both release the moment you withdraw. Needs the Hit Reaction master on. Its own channel, so it composes with Bone Slide and Bone Bind instead of replacing them."))
 	_create_contact_slider(physical_box, "blade_physical_reaction_strength", "Blade Physical Reaction Strength", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("How strongly the live swing slows while the blade drives into the inner core.", "The blade barely resists, cutting through quickly.", "At 100%, the swing advances at roughly 75% of its normal rate in the core; always far gentler than a Bind.", "The core size is tuned separately above. The bite and the core yield both ease in and ease back out, so the blade never feels stuck or magnetic."))
 	_create_contact_slider(physical_box, "blade_core_yield_percent", "Core Yield Amount", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale the gentle, continuous swing-rate cut while the blade is driving into the inner core.", "Less — the core barely slows the swing.", "More — the core resists the swing more strongly; 100% is the strongest allowed cut.", "Default 60%. This is the soft resistance beneath the Bone Stop; it always eases in and back out, so it never pins the blade. Tuned in 1% steps."))
 	_create_contact_slider(physical_box, "blade_bone_debug_enabled", "Bone Boundary Debug — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Show the outer flesh collision (orange) and centered inner bone boundary (cyan) for enemies.", "No collision boundary overlays.", "Draw the actual outer shape and its currently sized inner shape.", "Diagnostic view only; does not affect contact or gameplay."))
@@ -1232,6 +1381,7 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(shells_box, "blade_body_surface_enabled", "Blade Meets Bodies — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a body take a proper bite, then refuse to let the blade burrow through it, and be shoved aside by the body's own movement.", "OFF: the blade sinks as deep as the swing drives it, and an enemy walking into a held sword passes straight through it.", "ON: the blade still bites into flesh -- then the body refuses to let it go deeper. The drawn blade is pushed back out to the body's surface, and an enemy moving into the blade shoves it aside instead of passing through it.", "This is the switch that makes enemies feel solid without breaking cutting, which is why it bites first and stops second: a body that never yielded would fight the bite, the bone stop and the whole core model. It needs only Hit Reaction on, and is deliberately independent of Bone Slide and of every shell switch, so it works with everything else off. It moves the drawn pose only -- damage and the hit geometry are never touched."))
 	_create_contact_slider(shells_box, "blade_bone_constraint_enabled", "Bone Slide Constraint — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Solve the bone core as a real constraint instead of asking physics to fake it: motion into the core is rejected, motion along it is kept, and the blade turns about your hand.", "OFF: bone is handled the old way -- the blade can be drawn through the core and only cadence reacts.", "ON: the core refuses entry. Whatever part of the swing is driving into bone is cancelled and the rest carries the blade around the bone about the authored hilt, so a cut walks along it and clears. A square thrust has no tangent to resolve into, so it stops on the bone instead.", "This is the architecture test, and it owns the blade angle while ON: the bone glance, the wall glance and the shell angle all stand down so nothing fights the solver, and enemy gameplay knockback and your own hit recoil are queued until the blade clears rather than shoving the enemy out of the contact on frame one. Damage, blood, hitstop, audio and cosmetic recoil all stay immediate. Recomputes from live geometry every frame, so a free swing is unchanged and nothing becomes magnetic. Needs Hit Reaction on. Best turned ON with the shells and the fixed Bone Glance OFF."))
 	_create_contact_slider(shells_box, "blade_hard_clash_enabled", "Hard Contact Clash — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Make a hard shape unenterable and stop the blade on it with the same weight a clash carries, instead of letting it ease through.", "OFF: the blade is held out of hard shapes but touching one has the weight of a nudge -- no clang, no stop.", "ON: the sword is stopped dead on the surface the instant it reaches a wall or an enemy's bone core, with a clash-weight hold and the clash presentation, then binds and slides along the surface. Entering a hard shape becomes impossible.", "Hard means hard: the level and the bone core. Flesh still takes its bite, so cutting is untouched -- the bone core itself is what refuses. This is visual and cadence only: the hit model is unchanged, so the bone stop, core yield and bone slide all still fire exactly as before, which is what lets the blade be refused without the bone rules dying. Needs Hit Reaction on; works with every shell switch off."))
+	_create_contact_slider(shells_box, "bone_clash_enabled", "Bone Clash — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Catch the bone core and feel it land: a clash-weight halt, a shake and the clash clang, like a rock or a parry.", "OFF (0): catching the core is weight only -- a soft slow and a halt, with no spectacle.", "ON (1): the catch also reads as a solid strike -- it stops, shakes and clangs like a hard clash.", "Presentation only: no pose is written and the cut model, damage and blood rolls are untouched. It adds only the lightest knockback, so hitting bone never punishes good aim. Needs the Hit Reaction master on. Independent of every other shell switch."))
 	_create_contact_slider(shells_box, "full_physical_enabled", "Full Physical — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Stop approximating: make the sword itself a rigid body, and every enemy's whole collision outline a real solid for it to meet.", "OFF: the blade is posed entirely by the swing, and an enemy is a maths line plus only whichever shells you switched on above.", "ON: the sword is a physical object that contacts genuinely knock, turn and bounce, and every enemy is solid at the outline you can actually see instead of only at its core.", "The blunt switch. The ceiling is loosened far beyond Deflection's safe 10 px and 20 degrees -- out to 40 px and 30 degrees -- so the blade is knocked and turned hard, but it can never leave your hand: an unclamped sword spends its life 190 px away from the player, which is a flying sword rather than a heavy one. Hits can differ from swing to swing, because physics is not deterministic by design. Your existing feel settings still drive the swing the body is pulled toward. Enemies are sprung back to their authored place, so they rock and recover rather than being carried off, and their AI is untouched. Turn this and all four switches above off and no body of this kind exists anywhere."))
 
 func _build_combat_tab(tabs: TabContainer) -> void:
@@ -1548,6 +1698,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(strike_section, "grip_authority_duration", "Grip Authority Duration", 0.0, 0.40, 0.01, " s", "Window immediately after a strike where your wrist has high authority to redirect.")
 	_create_contact_slider(strike_section, "grip_turn_speed_mult", "Grip Turn Speed Multiplier", 1.0, 4.0, 0.1, "×", "Multiplier applied to max turn speed during the Grip Authority window.")
 	_create_contact_slider(strike_section, "blade_roll_speed", "Blade Roll Speed (Edge Flip)", 1.0, 20.0, 0.5, " /s", "How fast every weapon rolls to keep its edge leading actual travel. Higher = snappier flip. Symmetric weapons may show little visual change, but use the same universal rollover logic.")
+	_create_contact_slider(strike_section, "blade_roll_cooldown", "Blade Roll Cooldown", 0.0, 2.0, 0.05, " s", "Minimum time between edge-flip rollovers. 0 = off (the blade flips as fast as travel demands, exactly as before). Higher = after a flip the blade must wait before it can roll back the other way, so a jittery reversal cannot spin it back and forth. A flip blocked by the timer is deferred, never lost.")
 
 	var hilt_section: VBoxContainer = _create_section_header(box, "HILT BASH & POINT-BLANK (Per Preset)")
 	_create_contact_slider(hilt_section, "hilt_bash_enabled", "Hilt Bash Enabled (0 = Off, 1 = On)", 0.0, 1.0, 1.0, "", "Master switch. Set to 0 to restore ignored hilt contact; set to 1 to enable bash, shove, stun, and dizzy stars.")

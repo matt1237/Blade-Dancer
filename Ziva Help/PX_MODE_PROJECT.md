@@ -71,8 +71,10 @@ deliberately references PX scripts (`px_inworld.gd`, `PXInWorldEnemies`,
   already auto-saves to `bdpx_global.json` as it moves; this makes that explicit and
   lets you revert to the saved setup. Same authority, never a second save file.
 - **Metronome became its own tab, and every binary is now a 0–1 slider.** *PX Metronome*
-  holds Metronome Swing / Arc / Frequency / Metronome Lead; the tab spells out that the
-  last three do nothing unless the swing is ON (they are read only inside
+  holds Metronome Swing / Arc / Frequency / Metronome Lead, then the ported OS shaping as
+  **Stroke Timing** (Wind-up profile/shares/speeds), **Action Commitment**, **Arc Energy**
+  and **Apex Hang** — each a collapsible section. The tab spells out that everything in
+  it does nothing unless the swing is ON (all of it is read only inside
   `_advance_target`'s metronome branch). Every PX on/off — Metronome Swing, Servo
   Feedforward, Hilt Spring, Show Ghost, Spawn Chaser / Sword Enemy / Test Dummy — is a
   BDOS-style `HSlider` (min 0, max 1, step 1, `— OFF / ON`), **not** a toggle button;
@@ -90,6 +92,24 @@ deliberately references PX scripts (`px_inworld.gd`, `PXInWorldEnemies`,
   (Godot's own auto mid-blade point), clamped to the blade. Verified by
   `tests/px_sword_body_test.gd`: the values reach the rigid body, and the body stays a
   free rigid body — no freeze, no rotation lock, no pose write.
+- **The OS shaping, re-implemented in BDPX (ported AS DATA, never by calling game
+  code).** *Stroke Timing* (wind-up raw-speed profile + recovery shares; the time
+  normalizer keeps the average tempo = Frequency), *Action Commitment* (inside a
+  progress window the aim's authority over the swing is blended out), *Arc Energy*
+  ("Authored Metronome" wake/sleep: aim travel above the wake speed fills the energy,
+  idle past the grace bleeds it, and the arc width scales by `smoothstep(0,1,energy)`),
+  and *Apex Hang* (a bounded dwell frozen at the top of each stroke, armed when the
+  stroke turns over and scaled by the blade's `_apex_drive()`). All default-OFF/inert;
+  all target shaping only. Verified by `tests/px_windup_test.gd`,
+  `px_action_commitment_test.gd`, `px_authored_metronome_test.gd`.
+- **Core Sword & Reach lives in PX now — "PX owns its aim."** Rather than reading the
+  game's `player.aim_angle` (which the game had already shaped), PX runs **its own**
+  two-stage aim filter in `_update_aim(delta)`: the aim POINT drags toward the cursor
+  (Overall Mouse Drag), then the aim ANGLE drags toward the point (Rotation Speed),
+  capped at Max Turn Speed — the same filter the lab proved in `px_game.gd`. Aim Inertia
+  OFF = the cursor is the aim, instantly. Pure input shaping: it only decides where the
+  motor is ASKED to point, so the blade still earns every degree. Verified by
+  `tests/px_aim_reach_test.gd`.
 - **Labels use the mechanism's real name** (Motor Stiffness / Motor Damping / Max
   Torque / Metronome Swing / Arc / Frequency / Metronome Lead / Helicopter Limit /
   Servo Feedforward / Hilt Spring / Show Ghost / Ghost Opacity / Hand Min / Hand Max /

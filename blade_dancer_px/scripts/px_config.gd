@@ -132,12 +132,26 @@ const BONE_CORE_RADIUS_DEFAULT: float = 10.0
 ## Flesh drag: how hard the swing is retarded while the blade is in the flesh ring,
 ## as a fraction of the torque-per-rad/s ceiling below. 0.5 = a clear bite, still
 ## quick through.
+##
+## The drag is viscous (torque ∝ spin) and the applied total is clamped in the enemy
+## manager by MATERIAL_DRAG_CLAMP — which sits ABOVE the motor's torque. That is
+## deliberate, and it was the fix for "maxed flesh feels like nothing": the old clamp
+## (DEFAULT_MAX_TORQUE, 180k) sat BELOW the live motor (213k), so the motor always
+## out-drove the drag and any bite was cancelled before it could be felt. With the
+## clamp above the motor, a maxed bite genuinely hauls the blade down — while staying
+## finite, so the blade never freezes (it settles into a slow crawl instead).
 const FLESH_DRAG_DEFAULT: float = 0.5
-const FLESH_DRAG_MAX: float = 15000.0
+const FLESH_DRAG_MAX: float = 90000.0
+## The most drag the material model may apply to the blade, at any spin. Kept ABOVE
+## the motor's max torque so flesh/bone can actually beat the motor and be felt; kept
+## finite so the blade can always still crawl through. ~3x the motor's default.
+const MATERIAL_DRAG_CLAMP: float = 540000.0
 ## Bone friction: how hard the blade GRIPS the core (glance ↔ catch), as a fraction
-## of the ceiling below. 0 is slick (skates around the bone); 1 is a hard catch.
+## of the ceiling below. 0 is slick (skates around the bone); 1 is a hard catch. The
+## ceiling is held ABOVE flesh drag's so the core always grips harder than the flesh
+## at equal slider values — bone is the catch, flesh is the slow-through.
 const BONE_FRICTION_DEFAULT: float = 0.35
-const BONE_FRICTION_MAX: float = 60000.0
+const BONE_FRICTION_MAX: float = 180000.0
 
 # ── Helicopter limit (LIVE-tunable) ─────────────────────────────────────────
 ## The fastest the blade may TURN, in degrees per second. Above it, a brake torque
@@ -200,6 +214,28 @@ const RECOVERY_FRACTION: float = 0.2
 const WINDUP_SPEED: float = 0.4
 const STRIKE_SPEED: float = 3.25
 const RECOVERY_SPEED: float = 0.2
+
+# ── Late-stroke Action Commitment ("no-cancel", copied AS DATA) ──
+## Inside a fraction [start, end) of each stroke the aim's authority over the swing
+## is removed by `strength` (1 = fully no-cancel). Again target shaping only: it
+## holds the swing's AIM, never the blade's pose, so the blade still earns every degree.
+const ACTION_COMMITMENT_STRENGTH_DEFAULT: float = 0.0
+const ACTION_COMMITMENT_START_DEFAULT: float = 0.60
+const ACTION_COMMITMENT_END_DEFAULT: float = 0.90
+
+# ── Authored Metronome (arc energy) & Apex Hang (copied AS DATA) ──
+## Arc energy is the single authority for how wide the metronome opens: aim travel
+## above the wake speed fills it, and once the idle grace passes with no movement it
+## bleeds away, easing the blade back to simply pointing at your aim. Apex Hang is a
+## short dwell at the top of each stroke. BOTH shape the TARGET only — the blade still
+## earns every degree, so a block can still break the swing.
+const ARC_ENERGY_ENABLED: bool = false
+const ARC_WAKE_SPEED_DEFAULT: float = 350.0
+const ARC_ENERGY_BUILD_DEFAULT: float = 0.8
+const ARC_ENERGY_FADE_DEFAULT: float = 0.35
+const ARC_IDLE_GRACE_DEFAULT: float = 2.0
+const APEX_HANG_ENABLED: bool = false
+const APEX_HANG_DURATION_DEFAULT: float = 0.14
 
 # ── Reference-following servo ────────────────────────────────────────────────
 ## The rotation motor only knows the ANGLE it is chasing, so it always lags a

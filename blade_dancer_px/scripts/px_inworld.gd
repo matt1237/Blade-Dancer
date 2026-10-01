@@ -3,11 +3,11 @@ class_name PXInWorld extends Node2D
 ## PX Mode.
 ##
 ## It shares NO gameplay code with the game. It builds its own rigid-body blade
-## (via px_blade.gd) and drives it with the PX motor, reading only the game's
-## PUBLIC aim (player.aim_angle). While it is active the authored sword art is
-## hidden, and the physics blade deals damage through the game's own
-## Enemy.take_damage(). The game's sword transform is never written: the blade
-## earns every degree from torque and the solver, exactly like the prototype.
+## (via px_blade.gd) and drives it with the PX motor. PX owns its own aim feel
+## ("Core Sword & Reach"), so the sword-shaping input lives here, not in the game.
+## While it is active the authored sword art is hidden, and the physics blade deals
+## damage through the game's own Enemy.take_damage(). The game's sword transform is
+## never written: the blade earns every degree from torque and the solver.
 
 const Cfg = preload("res://blade_dancer_px/scripts/px_config.gd")
 const PXBlade = preload("res://blade_dancer_px/scripts/px_blade.gd")
@@ -28,6 +28,31 @@ var metronome_on: bool = false
 var arc_degrees: float = Cfg.METRONOME_ARC_DEGREES
 var frequency: float = Cfg.METRONOME_FREQUENCY
 var lead_degrees: float = Cfg.METRONOME_MAX_LEAD_DEGREES
+var windup_on: bool = Cfg.WINDUP_ENABLED
+var windup_profile: float = Cfg.DEFAULT_WINDUP_PROFILE
+var windup_fraction: float = Cfg.WINDUP_FRACTION
+var recovery_fraction: float = Cfg.RECOVERY_FRACTION
+var windup_speed: float = Cfg.WINDUP_SPEED
+var strike_speed: float = Cfg.STRIKE_SPEED
+var recovery_speed: float = Cfg.RECOVERY_SPEED
+var action_commitment_strength: float = Cfg.ACTION_COMMITMENT_STRENGTH_DEFAULT
+var action_commitment_start: float = Cfg.ACTION_COMMITMENT_START_DEFAULT
+var action_commitment_end: float = Cfg.ACTION_COMMITMENT_END_DEFAULT
+var _commit_active: bool = false
+var _commit_base_angle: float = 0.0
+var arc_energy_on: bool = Cfg.ARC_ENERGY_ENABLED
+var arc_wake_speed: float = Cfg.ARC_WAKE_SPEED_DEFAULT
+var arc_energy_build: float = Cfg.ARC_ENERGY_BUILD_DEFAULT
+var arc_energy_fade: float = Cfg.ARC_ENERGY_FADE_DEFAULT
+var arc_idle_grace: float = Cfg.ARC_IDLE_GRACE_DEFAULT
+var apex_hang_on: bool = Cfg.APEX_HANG_ENABLED
+var apex_hang_duration: float = Cfg.APEX_HANG_DURATION_DEFAULT
+var _arc_energy: float = 0.0
+var _energy_idle: float = 0.0
+var _hang_left: float = 0.0
+var _prev_cos: float = 0.0
+var _prev_mouse: Vector2 = Vector2.ZERO
+var _have_prev_mouse: bool = false
 var hand_min: float = Cfg.DEFAULT_HAND_MIN
 var hand_max: float = Cfg.DEFAULT_HAND_MAX
 
@@ -38,7 +63,14 @@ var pin: PinJoint2D = null
 ## The lab's spawnable PX enemies, brought into the world (children of this node).
 var enemies: PXInWorldEnemies = null
 
+var aim_inertia_on: bool = Cfg.AIM_INERTIA_ENABLED
+var mouse_drag: float = Cfg.DEFAULT_MOUSE_DRAG
+var rotation_speed: float = Cfg.DEFAULT_ROTATION_SPEED
+var max_turn_speed_deg: float = Cfg.DEFAULT_MAX_TURN_SPEED_DEG
 var _aim_direction: Vector2 = Vector2.RIGHT
+var _aim_point: Vector2 = Vector2.ZERO
+var _aim_angle: float = 0.0
+var _aim_ready: bool = false
 var _hand_radius: float = Cfg.DEFAULT_HAND_MAX
 var _metronome_phase: float = 0.0
 var _reference_angle: float = 0.0
@@ -99,6 +131,27 @@ func _ready() -> void:
 
 func _load_settings() -> void:
 	var s: Dictionary = BDPXGlobal.load_settings()
+	aim_inertia_on = bool(s.get("aim_inertia_on", aim_inertia_on))
+	mouse_drag = float(s.get("mouse_drag", mouse_drag))
+	rotation_speed = float(s.get("rotation_speed", rotation_speed))
+	max_turn_speed_deg = float(s.get("max_turn_speed_deg", max_turn_speed_deg))
+	arc_energy_on = bool(s.get("arc_energy_on", arc_energy_on))
+	arc_wake_speed = float(s.get("arc_wake_speed", arc_wake_speed))
+	arc_energy_build = float(s.get("arc_energy_build", arc_energy_build))
+	arc_energy_fade = float(s.get("arc_energy_fade", arc_energy_fade))
+	arc_idle_grace = float(s.get("arc_idle_grace", arc_idle_grace))
+	apex_hang_on = bool(s.get("apex_hang_time", apex_hang_on))
+	apex_hang_duration = float(s.get("apex_hang_duration", apex_hang_duration))
+	windup_on = bool(s.get("windup_on", windup_on))
+	windup_profile = float(s.get("windup_profile", windup_profile))
+	windup_fraction = float(s.get("windup_fraction", windup_fraction))
+	recovery_fraction = float(s.get("recovery_fraction", recovery_fraction))
+	windup_speed = float(s.get("windup_speed", windup_speed))
+	strike_speed = float(s.get("strike_speed", strike_speed))
+	recovery_speed = float(s.get("recovery_speed", recovery_speed))
+	action_commitment_strength = float(s.get("action_commitment_strength", action_commitment_strength))
+	action_commitment_start = float(s.get("action_commitment_start", action_commitment_start))
+	action_commitment_end = float(s.get("action_commitment_end", action_commitment_end))
 	stiffness = float(s.get("stiffness", stiffness))
 	damping = float(s.get("damping", damping))
 	max_torque = float(s.get("max_torque", max_torque))
@@ -125,7 +178,7 @@ func _player_local_position() -> Vector2:
 func _physics_process(delta: float) -> void:
 	if not _active or player == null or not is_instance_valid(player) or blade == null:
 		return
-	_update_aim()
+	_update_aim(delta)
 	var hand: Vector2 = _player_local_position() + _aim_direction * _hand_radius
 	grip.position = hand
 	var target: float = _advance_target(delta)
@@ -154,6 +207,27 @@ func _helicopter_brake_torque(omega: float) -> float:
 ## Adopt a live tuner dictionary from the shared Training Tools gateway. Only the
 ## keys we know are read, so the same dictionary may also carry OS-only keys.
 func apply_settings(s: Dictionary) -> void:
+	aim_inertia_on = bool(s.get("aim_inertia_on", aim_inertia_on))
+	mouse_drag = float(s.get("mouse_drag", mouse_drag))
+	rotation_speed = float(s.get("rotation_speed", rotation_speed))
+	max_turn_speed_deg = float(s.get("max_turn_speed_deg", max_turn_speed_deg))
+	arc_energy_on = bool(s.get("arc_energy_on", arc_energy_on))
+	arc_wake_speed = float(s.get("arc_wake_speed", arc_wake_speed))
+	arc_energy_build = float(s.get("arc_energy_build", arc_energy_build))
+	arc_energy_fade = float(s.get("arc_energy_fade", arc_energy_fade))
+	arc_idle_grace = float(s.get("arc_idle_grace", arc_idle_grace))
+	apex_hang_on = bool(s.get("apex_hang_time", apex_hang_on))
+	apex_hang_duration = float(s.get("apex_hang_duration", apex_hang_duration))
+	windup_on = bool(s.get("windup_on", windup_on))
+	windup_profile = float(s.get("windup_profile", windup_profile))
+	windup_fraction = float(s.get("windup_fraction", windup_fraction))
+	recovery_fraction = float(s.get("recovery_fraction", recovery_fraction))
+	windup_speed = float(s.get("windup_speed", windup_speed))
+	strike_speed = float(s.get("strike_speed", strike_speed))
+	recovery_speed = float(s.get("recovery_speed", recovery_speed))
+	action_commitment_strength = float(s.get("action_commitment_strength", action_commitment_strength))
+	action_commitment_start = float(s.get("action_commitment_start", action_commitment_start))
+	action_commitment_end = float(s.get("action_commitment_end", action_commitment_end))
 	stiffness = float(s.get("stiffness", stiffness))
 	damping = float(s.get("damping", damping))
 	max_torque = float(s.get("max_torque", max_torque))
@@ -195,10 +269,47 @@ func _apply_sword_body() -> void:
 	blade.center_of_mass_mode = RigidBody2D.CENTER_OF_MASS_MODE_CUSTOM
 	blade.center_of_mass = Vector2(clampf(com_offset, 0.0, Cfg.BLADE_LENGTH), 0.0)
 
-func _update_aim() -> void:
-	# The game already owns the aim feel; we just read the angle it settled on.
-	_aim_direction = Vector2.from_angle(player.aim_angle)
-	_hand_radius = _hand_radius_from_point(get_global_mouse_position())
+## PX owns its aim feel now ("Core Sword & Reach"), so the sword-shaping input lives
+## here rather than in the game. The COMMANDED aim, with optional weight — it never
+## touches the blade; it only decides where the motor is ASKED to point.
+##
+##   OFF (0) — the aim is the cursor, instantly.
+##   ON  (1) — a two-stage filter: the aim POINT drags toward the cursor (Mouse Drag),
+##             then the aim ANGLE drags toward that point (Rotation Speed), capped at
+##             Max Turn Speed. So a fast flick can't whip the blade — the request has
+##             weight, and the motor still has to earn the motion against real mass.
+func _update_aim(delta: float) -> void:
+	var cursor: Vector2 = get_global_mouse_position()
+	var to_cursor: Vector2 = cursor - player.global_position
+	if not _aim_ready:
+		# Seed from wherever the cursor is so the first frame never snaps.
+		_aim_point = cursor
+		_aim_angle = to_cursor.angle() if to_cursor.length_squared() > 4.0 else _aim_direction.angle()
+		_aim_ready = true
+	if aim_inertia_on:
+		var drag_rate: float = clampf(mouse_drag, 2.0, 50.0)
+		_aim_point = _aim_point.lerp(cursor, clampf(1.0 - exp(-drag_rate * delta), 0.0, 1.0))
+		var to_point: Vector2 = _aim_point - player.global_position
+		var target_angle: float = to_point.angle() if to_point.length_squared() > 4.0 else _aim_angle
+		_aim_angle += _aim_turn_step(_aim_angle, target_angle, delta)
+	else:
+		_aim_point = cursor
+		if to_cursor.length_squared() > 4.0:
+			_aim_angle = to_cursor.angle()
+	_aim_direction = Vector2.from_angle(_aim_angle)
+	_hand_radius = _hand_radius_from_point(_aim_point)
+
+## One frame of the aim-angle filter ("Rotation Speed", capped by "Max Turn Speed").
+## Pure and un-gated, so it can be tested without a live cursor; the Aim Inertia
+## toggle is honoured by the caller. It always returns a fraction of the remaining
+## error, so a big cursor jump is walked down over frames rather than snapping in one.
+func _aim_turn_step(current_angle: float, target_angle: float, delta: float) -> float:
+	var diff: float = angle_difference(current_angle, target_angle)
+	var step: float = diff * clampf(rotation_speed * delta, 0.0, 1.0)
+	if max_turn_speed_deg > 0.0:
+		var max_step: float = deg_to_rad(max_turn_speed_deg) * delta
+		step = clampf(step, -max_step, max_step)
+	return step
 
 ## Blade Dancer's geared hand reach (the same rule the lab copied from the game).
 func _hand_radius_from_point(point: Vector2) -> float:
@@ -214,16 +325,134 @@ func _hand_radius_from_point(point: Vector2) -> float:
 func _advance_target(delta: float) -> float:
 	var base_angle: float = _aim_direction.angle()
 	if not metronome_on:
+		_commit_active = false
 		_reference_angle = base_angle
 		return base_angle
-	_metronome_phase = wrapf(_metronome_phase + delta * frequency * TAU, 0.0, TAU)
-	var ideal: float = base_angle + deg_to_rad(arc_degrees) * sin(_metronome_phase)
+	# Arc Energy ("Authored Metronome", opt-in): the arc widens as you move the aim
+	# and closes back to a point when you rest. OFF leaves the fixed Arc untouched.
+	var arc_scale: float = 1.0
+	if arc_energy_on:
+		_advance_arc_energy(_current_aim_speed(delta), delta)
+		arc_scale = smoothstep(0.0, 1.0, _arc_energy)
+	# Late-stroke Action Commitment: inside the configured window the aim's
+	# authority over the swing is removed (scaled by strength), so a committed cut
+	# cannot be steered away. Target shaping only — the blade still earns every degree.
+	var stroke_progress: float = wrapf(_metronome_phase - PI * 0.5, 0.0, PI) / PI
+	var commit_scale: float = _action_commitment_scale(stroke_progress)
+	if commit_scale < 1.0:
+		if not _commit_active:
+			_commit_base_angle = base_angle
+			_commit_active = true
+		base_angle = lerp_angle(base_angle, _commit_base_angle, 1.0 - commit_scale)
+	else:
+		_commit_active = false
+	# Phase advance with the wind-up shaping, plus the Apex Hang dwell on top: the
+	# hang freezes the target at the top of the stroke and is armed when the stroke
+	# turns over (the sine's own rate passing through zero), for a bounded beat.
+	if _hang_left > 0.0:
+		_hang_left = maxf(0.0, _hang_left - delta)
+	else:
+		_metronome_phase = wrapf(_metronome_phase + delta * frequency * TAU * _metronome_step_scale(_metronome_phase), 0.0, TAU)
+		var cos_now: float = cos(_metronome_phase)
+		if apex_hang_on and cos_now * _prev_cos < 0.0:
+			_hang_left = apex_hang_duration * _apex_drive()
+		_prev_cos = cos_now
+	var ideal: float = base_angle + deg_to_rad(arc_degrees) * arc_scale * sin(_metronome_phase)
 	_reference_angle = ideal
 	# The anti-windup leash: the sweep may lead the blade, but only by a bounded
 	# amount, so a blocked blade cannot store error and snap free.
 	var lead: float = deg_to_rad(lead_degrees)
 	var offset: float = angle_difference(blade.rotation, ideal)
 	return blade.rotation + clampf(offset, -lead, lead)
+
+## Metronome wind-up ("Form II"). The stroke's angular speed is redistributed across
+## the half-cycle — it opens slowly, accelerates through the strike, then eases back
+## across recovery. A time-normalizer keeps the AVERAGE rate at the Frequency slider,
+## so wind-up changes the SHAPE of the stroke, not its tempo. It reshapes the TARGET's
+## motion only; the blade still earns every degree from the motor.
+func _metronome_step_scale(phase: float) -> float:
+	if not windup_on:
+		return 1.0
+	var profile: float = clampf(windup_profile, 0.0, 1.0)
+	if profile <= 0.0:
+		return 1.0
+	# One stroke is one half-cycle: reversals sit at PI/2 and 3*PI/2.
+	var stroke: float = wrapf(phase - PI * 0.5, 0.0, PI) / PI
+	var sample_count: int = 16
+	var inverse_speed_sum: float = 0.0
+	for sample_index: int in range(sample_count):
+		var sample_progress: float = (float(sample_index) + 0.5) / float(sample_count)
+		inverse_speed_sum += 1.0 / maxf(lerpf(1.0, _windup_raw_speed(sample_progress), profile), 0.05)
+	var time_normalizer: float = inverse_speed_sum / float(sample_count)
+	return lerpf(1.0, _windup_raw_speed(stroke), profile) * time_normalizer
+
+## Raw speed multiplier at a point in the stroke, before the profile blend. The same
+## curve the game's Form II uses, borrowed AS DATA — PX owns its own copy.
+func _windup_raw_speed(progress: float) -> float:
+	var open_frac: float = clampf(windup_fraction, 0.05, 0.8)
+	var recover_frac: float = clampf(recovery_fraction, 0.05, 0.8)
+	if open_frac + recover_frac > 0.9:
+		recover_frac = 0.9 - open_frac
+	var fast_speed: float = clampf(strike_speed, 0.1, 6.0)
+	var opening_speed: float = clampf(windup_speed, 0.05, 2.0)
+	var closing_speed: float = clampf(recovery_speed, 0.05, 2.0)
+	if progress < open_frac:
+		var windup_t: float = clampf(progress / open_frac, 0.0, 1.0)
+		var windup_eased: float = windup_t * windup_t * (3.0 - 2.0 * windup_t)
+		return lerpf(opening_speed, fast_speed, windup_eased)
+	var recovery_start: float = 1.0 - recover_frac
+	if progress > recovery_start:
+		var recovery_t: float = clampf((progress - recovery_start) / recover_frac, 0.0, 1.0)
+		var recovery_eased: float = recovery_t * recovery_t * (3.0 - 2.0 * recovery_t)
+		return lerpf(fast_speed, closing_speed, recovery_eased)
+	return fast_speed
+
+## Late-stroke Action Commitment ("no-cancel"). Outside a fraction [start, end) of a
+## stroke the aim's authority is untouched (1.0); inside it the authority is reduced
+## by `strength` (strength 1 = fully no-cancel). Same contract as the game's
+## metronome_action_commitment_scale — it only holds the swing's AIM, never a pose.
+func _action_commitment_scale(progress: float) -> float:
+	var normalized_strength: float = clampf(action_commitment_strength, 0.0, 1.0)
+	if normalized_strength <= 0.0:
+		return 1.0
+	var action_start: float = clampf(action_commitment_start, 0.0, 0.99)
+	var action_end: float = clampf(action_commitment_end, action_start + 0.01, 1.0)
+	var stroke_progress: float = clampf(progress, 0.0, 1.0)
+	if stroke_progress < action_start or stroke_progress >= action_end:
+		return 1.0
+	return 1.0 - normalized_strength
+
+## Arc Energy ("Authored Metronome"): build the arc while the aim is moving fast
+## enough, and fade it only once the idle grace has passed with no movement. The
+## arc's width then opens and closes with it. Pure target shaping.
+func _advance_arc_energy(aim_speed: float, delta: float) -> void:
+	var wake_speed: float = maxf(1.0, arc_wake_speed)
+	if aim_speed >= wake_speed:
+		_energy_idle = 0.0
+		_arc_energy = minf(1.0, _arc_energy + maxf(0.01, arc_energy_build) * delta)
+	else:
+		_energy_idle += delta
+		if _energy_idle >= maxf(0.05, arc_idle_grace):
+			_arc_energy = maxf(0.0, _arc_energy - maxf(0.01, arc_energy_fade) * delta)
+
+## The aim's linear speed (px/s), measured from the cursor's own travel — the same
+## "aim speed" the game's authored metronome wakes on.
+func _current_aim_speed(delta: float) -> float:
+	var mouse: Vector2 = get_global_mouse_position()
+	var speed: float = 0.0
+	if _have_prev_mouse:
+		speed = mouse.distance_to(_prev_mouse) / maxf(delta, 1e-5)
+	_prev_mouse = mouse
+	_have_prev_mouse = true
+	return speed
+
+## How strongly the stroke has been driven, as the blade's achieved rate against the
+## metronome's own nominal peak. A full swing earns 1.0; a sluggish or blocked one less.
+func _apex_drive() -> float:
+	var nominal_peak: float = deg_to_rad(maxf(arc_degrees, 1.0)) * maxf(frequency, 0.01) * TAU
+	if nominal_peak <= 0.001:
+		return 0.0
+	return clampf(absf(_reference_omega) / nominal_peak, 0.0, 1.0)
 
 func _update_reference_omega(delta: float) -> void:
 	if _have_prev_reference:
@@ -271,6 +500,8 @@ func _hide_authored_sword(hide_it: bool) -> void:
 
 func shutdown() -> void:
 	_active = false
+	# Re-seed the aim on the next activation so re-entering PX never snaps.
+	_aim_ready = false
 	if enemies != null and is_instance_valid(enemies):
 		enemies.queue_free()
 		enemies = null

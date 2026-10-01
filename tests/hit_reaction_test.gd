@@ -89,7 +89,7 @@ func test_hit_reaction_tab_has_every_canonical_control_and_existing_per_preset_p
 	assert(player.get_combat_contact_setting("split_kill_chance_percent") == 70.0)
 	var preset_three: Dictionary = player.combat_contact_settings["3"] as Dictionary
 	assert(not preset_three.has("flesh_contact_drag") and not preset_three.has("hilt_contact_drag") and not preset_three.has("farmable_contact_drag"), "Removed drag fields must not be copied as active preset controls.")
-	assert(HitReaction.DEFAULTS.size() == 37, "Bone Slide and Bone Bind each add a canonical Hit Reaction setting plus one Effect Strength tuner apiece, and the Physics Shells layer adds its four switches, Full Physical, Body Block, Blade Meets the World, Blade Meets Walls, Blade Meets Bodies, Hard Contact Clash and Bone Slide Constraint.")
+	assert(HitReaction.DEFAULTS.size() == 41, "Bone Slide and Bone Bind each add a canonical Hit Reaction setting plus one Effect Strength tuner apiece, the Physics Shells layer adds its four switches, Full Physical, Body Block, Blade Meets the World, Blade Meets Walls, Blade Meets Bodies, Hard Contact Clash and Bone Slide Constraint, Contact Recoil Delay adds its switch and its hold time, and Bone Clash and Flesh Bind each add their switch.")
 	player.free()
 	menu.free()
 	tabs.free()
@@ -152,12 +152,12 @@ func test_effect_strength_scales_a_bone_effect_from_inert_to_full() -> void:
 	assert(is_equal_approx(HitReaction.scale_effect_strength(0.35, -40.0), 1.0), "Under-range strength clamps to inert.")
 
 func test_physics_shells_ship_all_off_and_leave_no_footprint() -> void:
-	for key: String in ["blade_shell_query_enabled", "blade_shell_shove_enabled", "blade_shell_deflect_enabled", "bone_core_shell_enabled", "full_physical_enabled", "blade_body_block_enabled", "blade_shell_world_enabled", "blade_wall_block_enabled", "blade_body_surface_enabled", "blade_hard_clash_enabled", "blade_bone_constraint_enabled"]:
+	for key: String in ["blade_shell_query_enabled", "blade_shell_shove_enabled", "blade_shell_deflect_enabled", "bone_core_shell_enabled", "full_physical_enabled", "blade_body_block_enabled", "blade_shell_world_enabled", "blade_wall_block_enabled", "blade_body_surface_enabled", "blade_hard_clash_enabled", "blade_bone_constraint_enabled", "bone_clash_enabled"]:
 		assert(HitReaction.DEFAULTS.has(key), "Every Physics Shells switch must be a canonical Hit Reaction setting: %s" % key)
 		assert(is_equal_approx(HitReaction.DEFAULTS[key], 0.0), "Physics Shells must ship OFF so the authored pose stays untouched: %s" % key)
 	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
 	assert(menu_source.contains("\"Physics Shells\""), "The shell switches need their own sub-tab in the Hit Reaction tab.")
-	for label: String in ["Real Contact Normals — OFF / ON", "Blade Shell — OFF / ON", "Blade Deflection — OFF / ON", "Enemy Core Shells — OFF / ON", "Blade Meets Walls — OFF / ON", "Blade Meets Bodies — OFF / ON", "Hard Contact Clash — OFF / ON", "Bone Slide Constraint — OFF / ON"]:
+	for label: String in ["Real Contact Normals — OFF / ON", "Blade Shell — OFF / ON", "Blade Deflection — OFF / ON", "Enemy Core Shells — OFF / ON", "Blade Meets Walls — OFF / ON", "Blade Meets Bodies — OFF / ON", "Hard Contact Clash — OFF / ON", "Bone Slide Constraint — OFF / ON", "Bone Clash — OFF / ON"]:
 		assert(menu_source.contains(label), "Every Physics Shells switch needs a visible OFF/ON control: %s" % label)
 	assert(menu_source.contains("shells_box, \"blade_shell_query_enabled\""), "The shell switches must live in the Physics Shells section, not the physical box.")
 
@@ -497,3 +497,114 @@ func test_bone_stop_nests_inside_the_sword_stickiness_hold_budget() -> void:
 	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.08, 0.0), 0.0), "A zero hold budget freezes nothing.")
 	assert(is_equal_approx(HitReaction.bone_stop_within_hold(0.5, 0.30), 0.30), "The catch stays within the hold and the 0.30 s ceiling.")
 	assert(is_equal_approx(HitReaction.bone_stop_within_hold(-0.1, 0.10), 0.0), "A negative catch duration clamps to zero.")
+
+func test_bone_clash_is_a_presentation_only_hit_reaction_switch() -> void:
+	# Bone Clash must be a canonical Hit Reaction setting that ships OFF, must expose a visible
+	# OFF/ON control in the Physics Shells section, and must fire only with the master behind it.
+	assert(HitReaction.DEFAULTS.has("bone_clash_enabled"), "Bone Clash must be a canonical Hit Reaction setting.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["bone_clash_enabled"], 0.0), "Bone Clash must ship OFF so the authored pose stays untouched.")
+	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
+	assert(menu_source.contains("shells_box, \"bone_clash_enabled\""), "Bone Clash belongs in the Physics Shells section.")
+	var player: Player = Player.new()
+	player.set_combat_contact_setting("hit_reaction_enabled", 0.0)
+	player.set_combat_contact_setting("bone_clash_enabled", 1.0)
+	assert(not player.bone_clash_on(), "Bone Clash cannot fire without the Hit Reaction master, like every shell switch.")
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	assert(player.bone_clash_on(), "With the master on, the Bone Clash switch turns the effect on.")
+	player.set_combat_contact_setting("bone_clash_enabled", 0.0)
+	assert(not player.bone_clash_on(), "With the switch off the effect is inert.")
+	player.free()
+
+func test_flesh_bind_is_a_master_gated_grip_that_captures_instantly_on_flesh_contact() -> void:
+	# Flesh Bind must ship OFF behind the master, live in the Blade Physical Reaction section, and
+	# capture the grip the instant the blade meets flesh -- no candidate delay -- while still
+	# shedding fast so ripping the blade out restores the swing.
+	assert(HitReaction.DEFAULTS.has("blade_flesh_bind_enabled"), "Flesh Bind must be a canonical Hit Reaction setting.")
+	assert(is_equal_approx(HitReaction.DEFAULTS["blade_flesh_bind_enabled"], 0.0), "Flesh Bind must ship OFF so the authored pose stays untouched.")
+	var menu_source: String = FileAccess.get_file_as_string("res://scripts/ui/backyard_training_menu.gd")
+	assert(menu_source.contains("physical_box, \"blade_flesh_bind_enabled\""), "Flesh Bind belongs in the Blade Physical Reaction section.")
+	var player: Player = Player.new()
+	player.set_combat_contact_setting("hit_reaction_enabled", 0.0)
+	player.set_combat_contact_setting("blade_flesh_bind_enabled", 1.0)
+	assert(not player.flesh_bind_on(), "Flesh Bind cannot fire without the Hit Reaction master.")
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	assert(player.flesh_bind_on(), "With the master on, the Flesh Bind switch turns the grip on.")
+	player.set_combat_contact_setting("blade_flesh_bind_enabled", 0.0)
+	assert(not player.flesh_bind_on(), "With the switch off the grip is inert.")
+	var captured: float = HitReaction.advance_flesh_bind_grip(0.0, 0.8, 0.0)
+	assert(is_equal_approx(captured, 0.8), "The grip must capture the instant the blade meets flesh, with no ramp-in.")
+	var shed: float = HitReaction.advance_flesh_bind_grip(1.0, 0.0, 0.02)
+	assert(shed < 1.0 and shed > 0.0, "Ripping the blade out must shed the grip over a beat, never leave it stuck.")
+	assert(is_equal_approx(HitReaction.advance_flesh_bind_grip(1.0, 0.0, 1.0), 0.0), "Given time out of flesh the grip must clear completely.")
+	player.free()
+
+func test_flesh_bind_hinge_and_push_are_bounded_and_release_with_the_grip() -> void:
+	# The other two halves of Flesh Bind: the buried blade resists turning (hinge, a clamped aim
+	# dent), and the body's own closing motion shoves us (push, capped). Both ride the one grip and
+	# both must be inert when the switch is off -- so a blade is never turned and a body never pushes.
+	var player: Player = Player.new()
+	player.set_combat_contact_setting("hit_reaction_enabled", 1.0)
+	player.set_combat_contact_setting("blade_flesh_bind_enabled", 1.0)
+	# Hinge: a full grip dents the aim's own rotation, but only ever up to the clamp.
+	player.flesh_bind_grip = 1.0
+	player.aim_angle = 0.0
+	player.flesh_bind_prev_aim = 0.0
+	player.aim_angle = 0.5
+	player._apply_flesh_bind_retention()
+	assert(player.aim_angle < 0.5, "A gripped blade must fight being turned.")
+	assert(player.aim_angle >= 0.5 - Player.FLESH_BIND_HINGE_MAX - 0.0001, "The hinge must be a bounded dent, never a lock.")
+	# Directional: with the body outward-up, sweeping the tip down (inward) must be bitten harder
+	# than sweeping it up (the pull-out), and the pull-out must still be resisted, never ignored.
+	player.flesh_bind_contact_normal = Vector2.UP
+	player.flesh_bind_prev_aim = 0.0
+	player.aim_angle = 0.2
+	player._apply_flesh_bind_retention()
+	var inward_moved: float = absf(player.aim_angle)
+	player.flesh_bind_prev_aim = 0.0
+	player.aim_angle = -0.2
+	player._apply_flesh_bind_retention()
+	var outward_moved: float = absf(player.aim_angle)
+	assert(inward_moved < outward_moved, "The inward turn must be bitten harder than the pull-out turn.")
+	assert(outward_moved < 0.2, "The pull-out turn must still be resisted a little, just less.")
+	# With the switch off the aim is untouched.
+	player.set_combat_contact_setting("blade_flesh_bind_enabled", 0.0)
+	player.flesh_bind_prev_aim = 0.0
+	player.aim_angle = 0.5
+	player._apply_flesh_bind_retention()
+	assert(is_equal_approx(player.aim_angle, 0.5), "With Flesh Bind off the hinge must not touch the aim.")
+	player.free()
+	# Push: only a body closing on us pushes, it is capped, and no grip means no push.
+	var toward_us: Vector2 = Vector2(-500.0, 0.0)
+	var away: Vector2 = Vector2.LEFT
+	assert(Player.flesh_bind_push(toward_us, away, 1.0, Player.FLESH_BIND_PUSH_GAIN, Player.FLESH_BIND_PUSH_MAX).length() > 0.0, "A body closing on the blade must shove us.")
+	assert(is_zero_approx(Player.flesh_bind_push(Vector2(500.0, 0.0), away, 1.0, Player.FLESH_BIND_PUSH_GAIN, Player.FLESH_BIND_PUSH_MAX).length()), "A body moving away must not push.")
+	assert(is_zero_approx(Player.flesh_bind_push(toward_us, away, 0.0, Player.FLESH_BIND_PUSH_GAIN, Player.FLESH_BIND_PUSH_MAX).length()), "No grip means no push.")
+	var capped: Vector2 = Player.flesh_bind_push(Vector2(-999999.0, 0.0), away, 1.0, Player.FLESH_BIND_PUSH_GAIN, Player.FLESH_BIND_PUSH_MAX)
+	assert(is_equal_approx(capped.length(), Player.FLESH_BIND_PUSH_MAX), "The push must stay capped so a charging body can never launch us.")
+
+func test_contact_recoil_delay_holds_the_separation_only_when_switched_and_timed() -> void:
+	# The delay is pure timing on a hit's separation: with no switch, no hold, or no cap the impulse
+	# must fire exactly as it does today; with all three it must wait.
+	var player: Player = Player.new()
+	player.set_combat_contact_setting("contact_recoil_delay_enabled", 0.0)
+	player.set_combat_contact_setting("contact_recoil_delay", 0.20)
+	assert(not player.contact_recoil_delay_on(), "A hold time without the switch is inert.")
+	player.set_combat_contact_setting("contact_recoil_delay_enabled", 1.0)
+	player.set_combat_contact_setting("contact_recoil_delay", 0.0)
+	assert(not player.contact_recoil_delay_on(), "A zero hold is not a delay even with the switch on.")
+	player.set_combat_contact_setting("contact_recoil_delay", 0.20)
+	assert(player.contact_recoil_delay_on(), "Switch on with a real hold turns the delay on.")
+	assert(is_equal_approx(player.contact_recoil_delay_seconds(), 0.20), "The hold reads back in seconds.")
+	# A held separation must NOT fire while the hold runs -- even with no constraint holding it.
+	player.bone_constraint_active = false
+	player.pending_sword_impulse = Vector2(10.0, 0.0)
+	player.pending_sword_impulse_left = 0.20
+	player.contact_hold_left = 0.20
+	player._update_pending_bone_knockback(0.016)
+	assert(player.pending_sword_impulse != Vector2.ZERO, "The enemy knockback is held for the delay before it separates.")
+	# Once the hold has run out the impulse fires and clears, so nothing can wait forever.
+	player.contact_hold_left = 0.0
+	player.pending_sword_impulse_left = 0.0
+	player._update_pending_bone_knockback(0.016)
+	assert(player.pending_sword_impulse == Vector2.ZERO, "The knockback fires once the hold and its safety cap both expire.")
+	player.free()

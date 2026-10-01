@@ -354,3 +354,86 @@ the call is low-stakes; ask in prose when it is a real fork.
   boss-specific behavior always live in boss-owned files even at the cost of
   duplication? Not yet decided — ask the dev on a case-by-case basis until
   a rule is agreed.
+
+---
+
+## The Physics-Body Constitution (Authored vs. Physical)
+
+**Why this section exists.** Blade Dancer PX was built because the original
+combat (BDOS) reached a point where physical sword behaviour could no longer be
+added: the sword's **pose was written every frame** from an authored angle
+(`player_sword_visual.set_sword_pose(...)`, `player.gd`). A written pose is not
+a body — it has no mass, no momentum, nothing can push it and it pushes nothing
+back. Once the pose is authored, no physics feature can ever be layered on top,
+because there is no physical state for physics to own. This was discovered late
+and cost roughly a month. This section is the rule that keeps PX — and anything
+ported into it — on the correct side of that line.
+
+### The one law: author the ASK, never the ANSWER
+- A **target** (an angle to chase, a swing/tempo profile, a stance offset) is an
+  *ask*. Always allowed.
+- A **force / torque / impulse** is also an *ask*. Always allowed — the body is
+  free to ignore it.
+- Writing a rigid body's **pose, transform, `rotation`, `global_position`, or
+  assigning `linear_velocity` / `angular_velocity` as a set pose** is the
+  *answer*. **Forbidden for every PX entity.** Never call a `set_*_pose` helper;
+  only ever apply torque/impulse and let the engine integrate.
+
+### Everything in PX is a body
+The player, the blade, every enemy, and every shoveable/destructible prop is a
+physics body that can be pushed and can push back. Nothing in PX is a
+pose-driven puppet. If a feature needs a puppet, it is not a PX feature.
+
+### One gate converts ask → motion
+Every feel-shaping feature feeds the **motor** (or the body as a force). The
+motor is the single place that turns a target into a torque. New features are
+new *target generators* or new *force sources* — never new pose writers. If a
+feature does not produce a target or a force, it is the wrong shape.
+
+### Bench first, toggle always, deletable without loss
+Every authored/feel feature is built **on a bench first** (default OFF or inert)
+with a **binary OFF/ON**, so that if it is wrong it can be switched off, the
+door closed, and the code deleted — leaving the physical baseline intact.
+"Reset to Clean Baseline" must always restore a raw, physical sword. A feature
+that cannot be turned off is not finished.
+
+### Two litmus tests before calling anything good
+1. **Can the body visibly disobey the ask?** If a block, a heavy enemy, or a
+   parry can knock the blade off its intended motion, physics is alive. If the
+   intended motion always wins, you have built a puppet.
+2. **Delete the feature — does the body still work?** Yes → it was shaping.
+   No → it was a crutch holding up a puppet.
+
+### Never special-case a collision
+Do not script a collision response to make an authored outcome come out "right".
+Collisions are resolved by the engine; responses are forces/torques. The moment
+a collision is special-cased to protect a scripted result, the physics is
+theatre.
+
+### Porting an OS/BDOS feature: classify by "does it author the answer?"
+Ask one question: **does it move a body (hilt or player), or write a pose?**
+- **NO** — it only shapes a *target's angle/timing*, applies a *force/impulse*,
+  changes a *material*, or is *cosmetic* → it can be ported as an ask.
+- **YES** — it must be **re-expressed as a force/target, or left out.** Never
+  port the pose write.
+
+**Known unsafe as-is (they write poses / move the hilt):** Charged Guard's
+Whirlwind and Arc Slash pose builders, the Thrust hilt extension,
+`set_sword_pose`, and any OS step/knockback that assigns a velocity as a pose.
+These must be **redesigned as forces**, not copied.
+
+**Known safe (asks / forces / cosmetic):** Metronome wind-up and Stroke Timing,
+Authored Metronome arc energy, Action Commitment, Apex Hang (a target endpoint
+dwell), aim inertia, mouse drag / rotation speed, hand reach, servo feedforward,
+anti-windup leash, wrist freedom, helicopter limit, mass / damping / COM, hilt
+spring, flesh/core material, bone slide/bind/stop/glance (as torques/damping,
+never pose writes), hit visual recoil/lean/squash, blood, and the read-only
+"physics shells" contact-normal queries.
+
+### The world must be reactive, not scripted
+The PX blade must be able to physically interact with the **world** — herbs,
+mushrooms, props — not only the training arena. Those props must respond to
+**blade contact** (an impulse/reaction), not only to the OS authored attack
+system. A world that only reacts to scripted hits is the same failure as a
+sword that only moves on script. Keep the character a physics body too: steps,
+shoves, and knockback are **impulses**, never posed velocity.

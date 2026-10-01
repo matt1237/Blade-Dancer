@@ -101,6 +101,18 @@ func test_gateway_switches_modes_persists_to_px_save_and_swaps_tab_sets() -> voi
 		elif (node as Button).text == "Load Saved":
 			has_load = true
 	assert(has_save and has_load, "The PX tuner must offer a Save Settings and a Load Saved button for BDPX.")
+
+	# Core Sword & Reach: because PX now OWNS its aim feel, the aim-inertia knobs live
+	# at the top of the PX Aim & Hand tab as their own section (distinct from the OS
+	# menu's same-named section, which edits the game's own hand settings).
+	var aim_tab_node: Node = px_tabs.get_node("PX Aim & Hand")
+	var core_reach_found: bool = false
+	for node: Node in aim_tab_node.find_children("*", "Button", true, false):
+		if (node as Button).text.contains("Core Sword & Reach"):
+			core_reach_found = true
+	assert(core_reach_found, "The PX Aim & Hand tab must carry a Core Sword & Reach section header.")
+	for expected_aim_key: String in ["aim_inertia_on", "mouse_drag", "rotation_speed", "max_turn_speed_deg"]:
+		assert(menu.px_controls.has(expected_aim_key), "The PX tuner must expose the Core Sword & Reach control '%s'." % expected_aim_key)
 	menu.free()
 
 	# Restore whatever the PX save looked like before this test.

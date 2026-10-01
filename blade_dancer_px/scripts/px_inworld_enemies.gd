@@ -284,8 +284,9 @@ func _resolve_sword_hits() -> void:
 ## The material model's FORCE. Whenever the blade is inside an enemy's flesh ring
 ## (or on its bone core) we add a viscous drag that OPPOSES the blade's spin — the
 ## "cut into something that isn't air" feel. It is a torque the solver integrates,
-## never a written transform, and it is capped at the motor's own authority so the
-## blade can always still move.
+## never a written transform. It is capped by MATERIAL_DRAG_CLAMP — deliberately
+## ABOVE the motor's torque, so flesh can actually beat the motor and be felt; finite,
+## so the blade can always still crawl through.
 func _apply_blade_drag() -> void:
 	if sword == null or not is_instance_valid(sword):
 		return
@@ -301,7 +302,7 @@ func _apply_blade_drag() -> void:
 			continue
 		total += _drag_torque_for(_segment_point_distance(hilt, tip, body.global_position), omega)
 	if absf(total) > 0.0001:
-		sword.apply_torque(clampf(total, -Cfg.DEFAULT_MAX_TORQUE, Cfg.DEFAULT_MAX_TORQUE))
+		sword.apply_torque(clampf(total, -Cfg.MATERIAL_DRAG_CLAMP, Cfg.MATERIAL_DRAG_CLAMP))
 
 
 ## The drag torque for one enemy at `distance` from the blade segment, given the

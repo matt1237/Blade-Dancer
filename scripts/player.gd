@@ -809,6 +809,15 @@ var blade_sink_contact_left: float = 0.0
 ## metronome clock keep running independently.
 var blade_bone_stop_left: float = 0.0
 var blade_bone_stop_cooldown_left: float = 0.0
+## Bone Clash. Catching the inner core reads as a solid strike -- a clash-weight halt, a shake and
+## the clash clang -- as presentation only, with the lightest knockback. Its own cooldown makes it punctuation, so a blade held on a core clangs once rather than every
+## frame.
+const BONE_CLASH_HITSTOP: float = 0.05
+const BONE_CLASH_KNOCKBACK: float = 55.0
+const BONE_CLASH_SHAKE_STRENGTH: float = 3.0
+const BONE_CLASH_SHAKE_DURATION: float = 0.10
+const BONE_CLASH_COOLDOWN: float = 0.6
+var bone_clash_cooldown_left: float = 0.0
 var blade_glance_angle: float = 0.0
 ## Wall Block's turn-aside, deliberately kept apart from the bone glance above so the two can
 ## never fight over one value: a wall has its own bounded angle and its own ease back to zero,
@@ -841,6 +850,24 @@ const BONE_BIND_ENEMY_FRICTION = 0.45
 ## A gap breaks the capture faster than contact builds it, so letting go of the bone costs
 ## you the lock attempt instead of leaving a half-earned lock ready to snap on later.
 const BONE_BIND_DWELL_FALLOFF = 4.0
+## Flesh Bind. The blade gripping flesh becomes a real hold instead of only a bite: the deeper the
+## blade is buried the heavier the swing goes, and the enemy is dragged with it. The grip captures
+## the instant the blade meets flesh -- no candidate delay -- and sheds fast when the blade pulls
+## out, so a deep catch is escaped by ripping the blade back out, never by pushing through.
+## FLESH_BIND_MIN_RATE is the deepest the swing is allowed to be throttled.
+const FLESH_BIND_MIN_RATE = 0.25
+const FLESH_BIND_ENEMY_FRICTION = 0.55
+## Flesh Bind's other two halves, off the same grip. The body the blade is caught on is a hinge:
+## while gripped the blade refuses to turn freely through the meat (hinge), and the body's own
+## closing motion is fed back as a real shove on the player (push) -- the equal-and-opposite a
+## solid wall gives. Both are bounded and both release the instant the blade is ripped back out.
+const FLESH_BIND_HINGE_FACTOR = 0.45
+const FLESH_BIND_HINGE_MAX = 0.14
+## The pull-out turn is fought only lightly, so withdrawing a buried blade is never locked out.
+## This is the fraction of the inward bite that resists turning the blade back out. Tune here.
+const FLESH_BIND_HINGE_OUTWARD_FACTOR = 0.35
+const FLESH_BIND_PUSH_GAIN = 0.55
+const FLESH_BIND_PUSH_MAX = 220.0
 ## Visible contact bite. Flesh contact pushes the drawn blade INTO the body by this fraction
 ## of the enemy's radius; the core is then what the blade rests on and slides along, so at the
 ## core the blade is placed on the core surface rather than inside it. Visual only -- the hit
@@ -903,6 +930,9 @@ var pending_sword_impulse_id: int = 0
 var pending_sword_impulse_left: float = 0.0
 var pending_sword_recoil: Vector2 = Vector2.ZERO
 var pending_sword_recoil_left: float = 0.0
+## Recoil Delay: how long a flesh hit's separation is held before it fires. 0 when the feature is
+## off (and whenever no hit is pending), so every existing path is byte-identical.
+var contact_hold_left: float = 0.0
 ## Live bone-slide latch, and the enemy it is currently dragging.
 var bone_slide_left: float = 0.0
 var bone_slide_target_id: int = 0
@@ -944,6 +974,18 @@ var bone_bind_target_id: int = 0
 ## slide's drag and the bind's lock, each scaled by its own Effect Strength. 1.0 means the
 ## core is not holding the blade at all.
 var bone_hold_multiplier: float = 1.0
+## Live Flesh Bind grip (0..1), the swing multiplier it produces, how deep the blade was found in
+## flesh this frame, and the enemy the blade is gripping.
+var flesh_bind_grip: float = 0.0
+var flesh_bind_multiplier: float = 1.0
+var flesh_bind_pending_depth: float = 0.0
+var flesh_bind_target_id: int = 0
+## Last frame's authored aim, so the Flesh Bind hinge can dent the aim's own frame-to-frame
+## rotation rather than fight an absolute angle.
+var flesh_bind_prev_aim: float = 0.0
+## The outward direction of the body the blade is gripping, captured with the deepest catch, so the
+## hinge can tell an inward turn from a pull-out. Zero when nothing is gripped.
+var flesh_bind_contact_normal: Vector2 = Vector2.ZERO
 var sword_event_label: String = ""
 var sword_event_point: Vector2 = Vector2.ZERO
 var sword_event_left: float = 0.0
@@ -969,6 +1011,10 @@ var blade_profile_settings: Dictionary = CombatSettingsConfig.built_in_blade_set
 ## polyline, and smoothly passes through edge-on while the orientation changes.
 var blade_roll: float = 1.0
 var blade_roll_target: float = 1.0
+## Blade Roll Cooldown. Minimum time that must pass between edge-flip rollovers, so a jittery
+## reversal cannot spin the blade back and forth. Zero by default -- at 0 the flip fires exactly
+## as it does today, and a flip that is blocked is only deferred, never lost.
+var blade_roll_cooldown_left: float = 0.0
 var blade_travel_sign: float = 1.0
 var blade_travel_sign_candidate: float = 0.0
 var blade_travel_sign_candidate_left: float = 0.0
@@ -1512,6 +1558,7 @@ func _physics_process(delta: float) -> void:
 	_update_charged_guard_gesture(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
 	_apply_experimental_bind_retention(sword_control_delta)
+	_apply_flesh_bind_retention()
 	_update_sword(sword_control_delta)
 	_finish_experimental_bind_frame(sword_control_delta)
 	_update_knight_sprite_hd()
@@ -2172,6 +2219,7 @@ func _blade_edge_side() -> float:
 ## Uses the blade's measured tangential velocity so player-forced reversals can
 ## change rollover before the autonomous phase reaches its normal boundary.
 func _update_blade_roll_target(relative_velocity: Vector2, blade_direction: Vector2, delta: float) -> void:
+	blade_roll_cooldown_left = maxf(0.0, blade_roll_cooldown_left - delta)
 	var tangential_speed: float = blade_direction.cross(relative_velocity)
 	if absf(tangential_speed) < BLADE_TRAVEL_SIGN_THRESHOLD:
 		blade_travel_sign_candidate = 0.0
@@ -2188,8 +2236,14 @@ func _update_blade_roll_target(relative_velocity: Vector2, blade_direction: Vect
 		return
 	blade_travel_sign_candidate_left = maxf(0.0, blade_travel_sign_candidate_left - delta)
 	if blade_travel_sign_candidate_left <= 0.0:
+		# Blade Roll Cooldown: hold the flip until the timer clears, so a jittery reversal cannot
+		# spin the blade back and forth. The candidate is left in place, so the flip is deferred,
+		# not lost -- it fires the moment the cooldown expires if the reversal still holds.
+		if blade_roll_cooldown_left > 0.0:
+			return
 		blade_travel_sign = candidate_sign
 		blade_roll_target = blade_roll_target_for_travel(_blade_edge_side(), blade_travel_sign)
+		blade_roll_cooldown_left = maxf(0.0, get_combat_contact_setting("blade_roll_cooldown"))
 		blade_travel_sign_candidate = 0.0
 
 ## Every weapon participates in rollover. Symmetric art simply makes the state
@@ -2471,7 +2525,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 		"blade_freeze_duration", "bite_velocity_transfer",
 		"blade_recoil_degrees", "blade_recoil_return",
 		"rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration",
-		"blade_roll_speed",
+		"blade_roll_speed", "blade_roll_cooldown",
 		"hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage",
 		"p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale",
 		"p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled",
@@ -2839,6 +2893,8 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		# Roll units/sec; going from +1 to -1 is a distance of 2.0, so 8.0
 		# gives a ~0.25s flip -- snappy but visible, not a hard pop.
 		"blade_roll_speed": result = 8.0
+		# Minimum seconds between edge-flip rollovers. 0 disables the cooldown entirely.
+		"blade_roll_cooldown": result = 0.0
 		# --- Hilt Bash & Point-Blank ---
 		"hilt_bash_enabled": result = 1.0 if distinct else 0.0
 		"hilt_bash_knockback": result = 340.0
@@ -3112,19 +3168,45 @@ func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
 func bone_constraint_setting_on() -> bool:
 	return get_combat_contact_setting("blade_bone_constraint_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
 
+## Recoil Delay. ON, a flesh hit's separation -- the enemy's gameplay knockback and the player's
+## own recoil push -- is held for the delay before it fires, so the blade is felt against the body
+## for a beat instead of the enemy being gone on the hit frame. Pure timing: damage, stagger,
+## blood, hitstop and the sword's own kick all stay immediate. Independent of the shells.
+func contact_recoil_delay_on() -> bool:
+	return get_combat_contact_setting("contact_recoil_delay_enabled") >= 0.5 and contact_recoil_delay_seconds() > 0.0
+
+## The held separation's length in seconds. 0 keeps the delay inert even when its switch is on.
+func contact_recoil_delay_seconds() -> float:
+	return maxf(0.0, get_combat_contact_setting("contact_recoil_delay"))
+
+## Bone Clash. ON with the Hit Reaction master, catching an enemy's bone core also reads as a
+## solid strike: a clash-weight halt, a shake, the clash clang and an arterial blood jet. Needs
+## the master like the other shell switches, and is deliberately independent of all of them.
+func bone_clash_on() -> bool:
+	return get_combat_contact_setting("bone_clash_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+
+## Flesh Bind. ON with the Hit Reaction master, the blade gripping flesh becomes a real hold: the
+## deeper the blade is buried the heavier the swing goes and the enemy is dragged with it. Its own
+## channel, so it composes with the bone holds instead of replacing them.
+func flesh_bind_on() -> bool:
+	return get_combat_contact_setting("blade_flesh_bind_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+
 ## Queued hit knockback waits its turn. While the blade is still being driven into bone the impulse
 ## is held back, so the enemy cannot be shoved out of the contact the constraint needs in order to
 ## work at all. The moment the blade clears -- or the safety timeout expires, so nothing can wait
 ## forever and the enemy is never permanently frozen -- it lands through the force-only door.
 func _update_pending_bone_knockback(delta: float) -> void:
+	# Recoil Delay holds the separation on its own timer, independent of the constraint, so a hit
+	# the constraint never touches can still be felt before the enemy is knocked away.
+	contact_hold_left = maxf(0.0, contact_hold_left - delta)
 	pending_sword_recoil_left = maxf(0.0, pending_sword_recoil_left - delta)
-	if pending_sword_recoil != Vector2.ZERO and (pending_sword_recoil_left <= 0.0 or not bone_constraint_active):
+	if pending_sword_recoil != Vector2.ZERO and (pending_sword_recoil_left <= 0.0 or not bone_constraint_active) and contact_hold_left <= 0.0:
 		velocity += pending_sword_recoil
 		pending_sword_recoil = Vector2.ZERO
 	pending_sword_impulse_left = maxf(0.0, pending_sword_impulse_left - delta)
 	if pending_sword_impulse == Vector2.ZERO:
 		return
-	if bone_constraint_active and pending_sword_impulse_left > 0.0:
+	if (bone_constraint_active and pending_sword_impulse_left > 0.0) or contact_hold_left > 0.0:
 		return
 	var target: Node = instance_from_id(pending_sword_impulse_id)
 	var impulse: Vector2 = pending_sword_impulse
@@ -4784,6 +4866,7 @@ func _update_sword(delta: float) -> void:
 	# The bone-stop cooldown ticks every frame, even while sheathed or inside a
 	# clash/parry freeze, so a queued catch cannot outlive those early returns.
 	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
+	bone_clash_cooldown_left = maxf(0.0, bone_clash_cooldown_left - delta)
 	if sword_stowed or (_authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED):
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
@@ -4792,6 +4875,10 @@ func _update_sword(delta: float) -> void:
 		blade_core_yield_multiplier = 1.0
 		blade_sink_multiplier = 1.0
 		blade_bone_stop_left = 0.0
+		flesh_bind_grip = 0.0
+		flesh_bind_multiplier = 1.0
+		flesh_bind_pending_depth = 0.0
+		flesh_bind_target_id = 0
 		blade_bite_pending = Vector2.ZERO
 		blade_bite_offset = Vector2.ZERO
 		blade_glance_angle = 0.0
@@ -4817,6 +4904,7 @@ func _update_sword(delta: float) -> void:
 		pending_sword_impulse_left = 0.0
 		pending_sword_recoil = Vector2.ZERO
 		pending_sword_recoil_left = 0.0
+		contact_hold_left = 0.0
 		bone_slide_left = 0.0
 		bone_slide_target_id = 0
 		bone_bind_left = 0.0
@@ -4853,6 +4941,8 @@ func _update_sword(delta: float) -> void:
 		bone_bind_locked = false
 		bone_bind_target_id = 0
 		bone_hold_multiplier = 1.0
+		flesh_bind_pending_depth = 0.0
+		flesh_bind_target_id = 0
 		# Clash/parry weapon freeze remains independent of flesh-only effects.
 		# Player and hilt movement still matter. Real movement creates a slight tug/rip through the enemy.
 		var freeze_data: Dictionary = _sword_transform()
@@ -4964,11 +5054,31 @@ func _update_sword(delta: float) -> void:
 		var bone_hold_enemy: Enemy = instance_from_id(bone_drag_id) as Enemy
 		if bone_hold_enemy != null:
 			bone_hold_enemy.velocity *= bone_drag_friction
+	# Flesh Bind. The grip captures the instant the blade meets flesh and sheds fast, so sinking
+	# in costs the swing and ripping out gives it straight back. Its own channel, so it composes
+	# with the bone holds rather than replacing them. Three effects ride the one grip: the swing
+	# rate (below), the hinge (applied to the aim in _apply_flesh_bind_retention), and the push.
+	flesh_bind_grip = HitReaction.advance_flesh_bind_grip(
+		flesh_bind_grip, flesh_bind_pending_depth if flesh_bind_on() else 0.0, delta)
+	flesh_bind_multiplier = lerpf(1.0, FLESH_BIND_MIN_RATE, flesh_bind_grip)
+	if flesh_bind_grip > 0.02:
+		var flesh_bind_enemy: Enemy = instance_from_id(flesh_bind_target_id) as Enemy
+		if flesh_bind_enemy != null:
+			# Drag: the body the blade is gripping is pulled along with it.
+			flesh_bind_enemy.velocity *= lerpf(1.0, FLESH_BIND_ENEMY_FRICTION, flesh_bind_grip)
+			# Push: the body is the hinge the blade is caught on, so its own closing motion is fed
+			# back as a real shove on us -- equal and opposite, capped, and scaled by how deep the
+			# blade is buried. Ripping the blade back out sheds the grip and the push with it.
+			velocity += flesh_bind_push(
+				flesh_bind_enemy.velocity,
+				flesh_bind_enemy.global_position.direction_to(global_position),
+				flesh_bind_grip, FLESH_BIND_PUSH_GAIN, FLESH_BIND_PUSH_MAX)
+	flesh_bind_pending_depth = 0.0
 	# Visible bite, eased. The pending offset is recomputed from the live contact geometry
 	# every frame, so easing toward it lets the blade slide into the body and back out again
 	# instead of stepping between one frame's worth of overlap and the next.
 	blade_bite_offset = blade_bite_offset.lerp(blade_bite_pending, clampf(delta * BLADE_BITE_SMOOTHING, 0.0, 1.0))
-	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier * bone_hold_multiplier
+	var sword_delta: float = delta * (slide_multiplier if has_live_blade_slide_contact() else 1.0) * blade_sink_multiplier * blade_core_yield_multiplier * bone_hold_multiplier * flesh_bind_multiplier
 	if blade_bone_stop_left > 0.0:
 		sword_delta = 0.0
 		blade_bone_stop_left = maxf(0.0, blade_bone_stop_left - delta)
@@ -5555,6 +5665,12 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var target_velocity: Vector2 = (enemy as CharacterBody2D).velocity if enemy is CharacterBody2D else Vector2.ZERO
 		var relative_blade_velocity: Vector2 = contact.blade_velocity - target_velocity
 		var reached_inner_core: bool = not core_shapes.is_empty()
+		# Bone Clash: the blade catching the inner core reads as a solid strike instead of nothing.
+		# Presentation only -- no pose is written, the cut model is untouched, and the knockback is
+		# the lightest nudge -- so a clean bone hit is felt, never punished.
+		if reached_inner_core and bone_clash_on() and bone_clash_cooldown_left <= 0.0:
+			bone_clash_cooldown_left = BONE_CLASH_COOLDOWN
+			_trigger_bone_clash(contact.contact_point)
 		var flesh_depth_contact: bool = not flesh_shapes.is_empty()
 		# Physics Shells: when asked, let the engine answer instead of the estimate -- the real
 		# surface normal at the real contact point, taken against the core shells once those
@@ -5649,6 +5765,26 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			flesh_overlap_this_frame = true
 			if get_combat_contact_setting("hit_reaction_enabled") >= 0.5 and get_combat_contact_setting("blade_sink_enabled") >= 0.5:
 				blade_sink_strength_active = maxf(blade_sink_strength_active, get_combat_contact_setting("blade_sink_strength"))
+			# Flesh Bind: measure how deep the blade is buried in this body, so the deepest catch
+			# of the frame is the one the grip follows. Depth 0 at the silhouette, 1 at the centre.
+			# The swing-rate hold it drives is applied back in _update_sword.
+			if flesh_bind_on():
+				var bind_shape: CollisionShape2D = null
+				if not flesh_shapes.is_empty():
+					bind_shape = flesh_shapes[0].get("node") as CollisionShape2D
+				if bind_shape != null:
+					var bind_radius: float = _shape_outer_radius(bind_shape)
+					var bind_axis: Vector2 = seg_end - seg_start
+					var bind_distance: float = (bind_shape.global_transform.origin - seg_start).length()
+					if bind_axis.length_squared() > 0.001:
+						bind_distance = absf((bind_shape.global_transform.origin - seg_start).cross(bind_axis.normalized()))
+					var bind_depth: float = clampf((bind_radius - bind_distance) / maxf(bind_radius, 1.0), 0.0, 1.0)
+					if bind_depth > flesh_bind_pending_depth:
+						flesh_bind_pending_depth = bind_depth
+						flesh_bind_target_id = id
+						# Outward is from the body's centre out toward the held hilt, which is always
+						# outside the body -- so the hinge can tell which way the blade is being turned.
+						flesh_bind_contact_normal = (seg_start - bind_shape.global_transform.origin).normalized()
 		if physical_reaction_on and reached_inner_core and HitReaction.blade_physical_reaction_allowed(is_stab_motion, inward_alignment):
 			var reaction_strength: float = get_combat_contact_setting("blade_physical_reaction_strength")
 			var core_yield: float = HitReaction.blade_core_yield_target(reaction_strength, true, inward_alignment, get_combat_contact_setting("blade_core_yield_percent"))
@@ -5731,15 +5867,18 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			var reaction_on: bool = get_combat_contact_setting("hit_reaction_enabled") >= 0.5
 			var impact_impulse: Vector2 = impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback
 			var immediate_impulse: Vector2 = impact_impulse
-			if bone_constraint_setting_on():
+			if bone_constraint_setting_on() or contact_recoil_delay_on():
 				# Queue rather than apply. Immediate gameplay knockback is the likeliest reason the
 				# enemy has always separated before any bone constraint could develop, so here the
-				# same impulse is held and fired the moment the blade clears. Damage, stagger,
-				# blood, hitstop, audio and the cosmetic recoil all still land right now.
+				# same impulse is held and fired the moment the blade clears -- or, under Recoil
+				# Delay, once the hold has run. Damage, stagger, blood, hitstop, audio and the
+				# cosmetic recoil all still land right now.
 				immediate_impulse = Vector2.ZERO
 				pending_sword_impulse += impact_impulse
 				pending_sword_impulse_id = id
-				pending_sword_impulse_left = BONE_CONSTRAINT_KNOCKBACK_TIMEOUT
+				var separation_hold: float = contact_recoil_delay_seconds() if contact_recoil_delay_on() else 0.0
+				pending_sword_impulse_left = maxf(BONE_CONSTRAINT_KNOCKBACK_TIMEOUT, separation_hold)
+				contact_hold_left = maxf(contact_hold_left, separation_hold)
 				bone_constraint_hold = 0.0
 			if sword_fire_left > 0.0 and enemy.has_method("take_fire_damage"):
 				enemy.take_fire_damage(dealt_damage, immediate_impulse, stagger_duration, contact.impact_quality)
@@ -5961,12 +6100,15 @@ func _trigger_successful_sword_hit(contact: SwordContactData) -> void:
 	var main_scene: Node = get_tree().current_scene
 	var hitstop_duration: float = lerpf(get_combat_contact_setting("flesh_hitstop_min"), get_combat_contact_setting("flesh_hitstop_max"), contact.impact_quality)
 	if enable_flesh_hit_feedback:
-		if bone_constraint_setting_on():
+		if bone_constraint_setting_on() or contact_recoil_delay_on():
 			# Same reasoning as the enemy impulse: the player's own recoil is held back so it cannot
-			# drag the sword out of the contact before the constraint has done anything. Anything
+			# drag the sword out of the contact before the constraint has done anything, and under
+			# Recoil Delay so the contact is felt for the hold before anything separates. Anything
 			# cosmetic stays immediate.
 			pending_sword_recoil += contact.impact_normal * get_combat_contact_setting("flesh_recoil")
-			pending_sword_recoil_left = BONE_CONSTRAINT_KNOCKBACK_TIMEOUT
+			var separation_hold: float = contact_recoil_delay_seconds() if contact_recoil_delay_on() else 0.0
+			pending_sword_recoil_left = maxf(BONE_CONSTRAINT_KNOCKBACK_TIMEOUT, separation_hold)
+			contact_hold_left = maxf(contact_hold_left, separation_hold)
 		else:
 			velocity += contact.impact_normal * get_combat_contact_setting("flesh_recoil")
 		if main_scene.has_method("request_screen_shake"):
@@ -6145,6 +6287,44 @@ func _apply_experimental_bind_retention(delta: float) -> void:
 	var correction: float = experimental_hinge_correction(current_angle, enemy_angle, experimental_bind_hinge_side, strength, delta, experimental_bind_active)
 	aim_angle += correction
 	elbow_angle += correction
+
+## Flesh Bind's hinge. The body the blade is caught on is a pivot: while gripped the blade refuses
+## to turn through the meat, so the aim's own frame-to-frame rotation is dented back by a fraction
+## of the grip. The bite is directional -- turning the buried blade further IN is fought hard, while
+## the turn that pulls it back out is fought only lightly, so withdrawing is never locked out. It is
+## a dent, not a lock: it is clamped, and the grip sheds fast so ripping free frees the aim at once.
+func _apply_flesh_bind_retention() -> void:
+	var aim_delta: float = angle_difference(flesh_bind_prev_aim, aim_angle)
+	flesh_bind_prev_aim = aim_angle
+	if not flesh_bind_on() or flesh_bind_grip <= 0.02 or aim_delta == 0.0:
+		return
+	# Which way this frame's aim change sweeps the blade's tip: inward (deeper into the body, along
+	# the outward normal) is the hard direction; outward (pulling free) is the light one. With no
+	# captured direction the hinge simply takes the hard setting.
+	var turning_inward: bool = true
+	if flesh_bind_contact_normal.length_squared() > 0.0001:
+		var blade_dir: Vector2 = Vector2.RIGHT.rotated(aim_angle)
+		var tip_motion: Vector2 = blade_dir.rotated(PI * 0.5 * signf(aim_delta))
+		turning_inward = tip_motion.dot(flesh_bind_contact_normal) < 0.0
+	var factor: float = FLESH_BIND_HINGE_FACTOR * (1.0 if turning_inward else FLESH_BIND_HINGE_OUTWARD_FACTOR)
+	var hinge: float = clampf(
+		-aim_delta * clampf(flesh_bind_grip * factor, 0.0, 1.0),
+		-FLESH_BIND_HINGE_MAX, FLESH_BIND_HINGE_MAX)
+	aim_angle += hinge
+	elbow_angle += hinge
+	flesh_bind_prev_aim = aim_angle
+
+## Flesh Bind's push. The body the blade is caught on shoves us by its own closing speed, capped,
+## and scaled by how deep the blade is buried -- the equal-and-opposite of a solid wall. Zero when
+## the body is not closing on us, so a body merely resting in the blade never moves us at all.
+static func flesh_bind_push(enemy_velocity: Vector2, away: Vector2, grip: float, gain: float, maximum: float) -> Vector2:
+	if away.length_squared() <= 0.0001:
+		return Vector2.ZERO
+	var direction: Vector2 = away.normalized()
+	var closing: float = maxf(0.0, enemy_velocity.dot(direction))
+	if closing <= 0.0:
+		return Vector2.ZERO
+	return direction * minf(closing * gain, maximum) * clampf(grip, 0.0, 1.0)
 
 func _closest_path_fraction(point: Vector2, samples: PackedVector2Array) -> float:
 	if samples.size() < 2:
@@ -6575,6 +6755,26 @@ func _trigger_clash(point: Vector2) -> void:
 	if freeze_dur > 0.0:
 		frozen_blade_world_angle = float((_sword_transform())["angle"])
 		blade_freeze_left = freeze_dur
+
+## Bone Clash: fire the clash presentation at a bone catch -- a clash-weight halt, a shake and the
+## clash clang -- plus only the lightest knockback, so a solid strike is felt without being punished.
+## No pose is written here: it is hitstop, shake and sound only.
+func _trigger_bone_clash(point: Vector2) -> void:
+	_set_sword_event("BONE CLASH", point, 0.2)
+	var main_scene: Node = get_tree().current_scene
+	var away: Vector2 = global_position.direction_to(point)
+	if away.length_squared() <= 0.001:
+		away = Vector2.RIGHT
+	if main_scene == null:
+		return
+	if main_scene.has_method("request_hitstop"):
+		main_scene.request_hitstop(BONE_CLASH_HITSTOP)
+	# The lightest possible nudge, so the solid hit is felt but good aim is never punished.
+	velocity -= away * BONE_CLASH_KNOCKBACK
+	if main_scene.has_method("request_screen_shake"):
+		main_scene.request_screen_shake(BONE_CLASH_SHAKE_STRENGTH, BONE_CLASH_SHAKE_DURATION, away)
+	if main_scene.has_method("play_combat_clip"):
+		main_scene.call("play_combat_clip", "parry_clash")
 
 func _trigger_chakram_bat(batted_chakram: Chakram, point: Vector2) -> void:
 	report_tutorial_action("chakram_batted", batted_chakram)
