@@ -1,0 +1,11 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1"]
+[ext_resource type="Script" path="res://tests/forest_restore_safe_main.gd" id="2"]
+[ext_resource type="Script" path="res://tests/chasm_walk_safe_player.gd" id="3"]
+
+[node name="ForestRestoreSafeRig" instance=ExtResource("1")]
+script = ExtResource("2")
+
+[node name="Player" parent="." index="7"]
+script = ExtResource("3")

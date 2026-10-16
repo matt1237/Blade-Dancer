@@ -21,12 +21,12 @@ func test_bind_ids_remain_save_safe_but_only_the_canonical_bind_is_selectable() 
 	assert(int(Player.SwordStyle.METRONOME_BIND) == 8, "Retired Bind A ID must remain load-safe.")
 	assert(int(Player.SwordStyle.METRONOME_BIND_B) == 9, "Canonical Bind ID must remain load-safe.")
 	assert(Player.SwordStyle.METRONOME_BIND not in Player.STYLE_CYCLE_ORDER)
-	assert(Player.STYLE_CYCLE_ORDER.slice(0, 3) == [Player.SwordStyle.METRONOME_BIND_B, Player.SwordStyle.METRONOME_WINDUP, Player.SwordStyle.METRONOME])
+	assert(Player.STYLE_CYCLE_ORDER == [Player.SwordStyle.METRONOME_BIND_B, Player.SwordStyle.WINDUP_THRUST, Player.SwordStyle.MOULINET, Player.SwordStyle.MOULINET_3])
 	var player: Player = PLAYER_SCENE.instantiate() as Player
 	player.sword_style = Player.SwordStyle.METRONOME_BIND_B
 	assert(player._style_name() == "Form I: Bind")
 	player.sword_style = Player.SwordStyle.METRONOME
-	assert(player._style_name() == "Form III: Metronome V")
+	assert(player._style_name() == "Legacy: Metronome V")
 	player.free()
 
 func test_old_curved_bind_profile_is_promoted_to_one_shared_authority() -> void:

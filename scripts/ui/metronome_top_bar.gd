@@ -52,7 +52,9 @@ func set_beat_visualizer_size(value: float) -> void:
 func _process(_delta: float) -> void:
 	if visualizer != null:
 		var viewport_size: Vector2 = get_viewport_rect().size
-		var visualizer_y: float = 64.0 if display_mode == "top_bar" else viewport_size.y - 42.0
+		# Fixed near-score anchor: size changes may grow toward the score, not push
+		# the entire visualizer away. Keep the user's configured scale unchanged.
+		var visualizer_y: float = 104.0
 		visualizer.position = Vector2(viewport_size.x * 0.5, visualizer_y)
 	queue_redraw()
 

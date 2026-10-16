@@ -13,6 +13,9 @@ func _configure_concrete_enemy() -> void:
 	death_sound_category = "goblin_things"
 	death_sound_pitch = 0.88
 
+func _is_knockback_immune() -> bool:
+	return _charge_commitment_active()
+
 func _run_concrete_ai(delta: float) -> void:
 	_elite(delta)
 

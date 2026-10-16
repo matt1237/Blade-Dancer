@@ -36,6 +36,31 @@ var charge_fx: ZungarChargeFX = null
 
 @onready var zungar_visual: ZungarVisual = $VisualRoot
 
+## World rewind stage 1: boss death is final (it completes the boss wave), so Zungar is never
+## retired/revived; while alive his state machine timers are restored. Tree/campfire refs are not.
+func _rewind_retire_on_death() -> bool:
+	return false
+
+func _rewind_extra_stride() -> int:
+	return 16
+
+func _rewind_capture_extra(d: PackedFloat32Array, o: int) -> void:
+	d[o] = float(state); d[o + 1] = state_left; d[o + 2] = attack_cooldown; d[o + 3] = spear_timer
+	d[o + 4] = jump_target.x; d[o + 5] = jump_target.y; d[o + 6] = jump_origin.x; d[o + 7] = jump_origin.y
+	d[o + 8] = jump_marker_left; d[o + 9] = _metronome_phase; d[o + 10] = charge_elapsed
+	d[o + 11] = summon_cooldown_left; d[o + 12] = 1.0 if aggressive_phase else 0.0
+	d[o + 13] = executioner_sword_hit_cooldown; d[o + 14] = fire_stomp_taunt_left; d[o + 15] = 1.0 if summon_issued else 0.0
+
+func _rewind_restore_extra(d: PackedFloat32Array, o: int) -> void:
+	var restored_state: State = int(d[o]) as State
+	# Tree throws reference a world prop that is not rewound: fall back to recovery.
+	if restored_state == State.TREE_THROW or restored_state == State.DEAD: restored_state = State.RECOVERY
+	state = restored_state; state_left = d[o + 1]; attack_cooldown = d[o + 2]; spear_timer = d[o + 3]
+	jump_target = Vector2(d[o + 4], d[o + 5]); jump_origin = Vector2(d[o + 6], d[o + 7])
+	jump_marker_left = d[o + 8]; _metronome_phase = d[o + 9]; charge_elapsed = d[o + 10]
+	summon_cooldown_left = d[o + 11]; aggressive_phase = d[o + 12] >= 0.5
+	executioner_sword_hit_cooldown = d[o + 13]; fire_stomp_taunt_left = d[o + 14]; summon_issued = d[o + 15] >= 0.5
+
 func _boss_damage(base_damage: float) -> float:
 	return base_damage * maxf(1.0, wave_stat_multiplier)
 
@@ -93,6 +118,10 @@ func begin_boss_fight() -> void:
 
 func _physics_process(delta: float) -> void:
 	if player_ref == null or state == State.DEAD: return
+	# World Slow: Zungar's own loop (does not call Enemy._physics_process) scales once here.
+	delta *= WorldTime.enemy_scale()
+	if is_instance_valid(zungar_visual) and zungar_visual.body_sprite != null:
+		zungar_visual.body_sprite.speed_scale = WorldTime.enemy_scale()
 	animation_time += delta
 	state_left = maxf(0.0, state_left - delta)
 	attack_cooldown = maxf(0.0, attack_cooldown - delta)
@@ -130,7 +159,7 @@ func _physics_process(delta: float) -> void:
 			blade_length = ZungarConfig.EXECUTIONER_SWORD_REACH
 			velocity = knockback
 			knockback = knockback.move_toward(Vector2.ZERO, delta * 600.0)
-			move_and_slide()
+			_world_move_and_slide()
 			stun_left = maxf(0.0, stun_left - delta)
 			if stun_left <= 0.0:
 				state = State.CHASE
@@ -191,7 +220,7 @@ func _sync_illustrated_presentation() -> void:
 func _process_chase(_delta: float) -> void:
 	var direction: Vector2 = global_position.direction_to(player_ref.global_position)
 	velocity = direction * ZungarConfig.CHASE_SPEED
-	move_and_slide()
+	_world_move_and_slide()
 	_apply_contact_damage()
 	if attack_cooldown > 0.0: return
 	var speed_multiplier: float = ZungarConfig.AGGRESSIVE_SPEED_MULTIPLIER if aggressive_phase else 1.0
@@ -414,7 +443,7 @@ func _process_fire_stomp(delta: float) -> void:
 	var distance: float = global_position.distance_to(stomp_campfire.global_position)
 	if distance > 70.0:
 		velocity = global_position.direction_to(stomp_campfire.global_position) * ZungarConfig.CHASE_SPEED * 1.7
-		move_and_slide()
+		_world_move_and_slide()
 		return
 	# Arrived — stomp it out.
 	velocity = Vector2.ZERO

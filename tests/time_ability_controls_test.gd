@@ -1,0 +1,95 @@
+class_name TimeAbilityControlsTest
+extends Node
+const Fixture = preload("res://tests/dualblade_test.gd")
+
+func _make_player() -> Player:
+	var fixture: Node = Fixture.new()
+	add_child(fixture)
+	var player: Player = fixture.make_player()
+	player.set_equipped_sword("Basic Longsword")
+	player.set_physics_process(true)
+	return player
+
+func test_direct_slow_needs_no_guard_and_repeat_stops_without_refund() -> void:
+	var player: Player = _make_player()
+	assert(not player.charged_guard_locked)
+	assert(player.use_time_ability("slow"))
+	assert(WorldTime.slow_active())
+	assert(is_equal_approx(player.ability_cooldowns.left("slow"), 30.0))
+	assert(player.use_time_ability("slow"))
+	assert(not WorldTime.slow_active())
+	assert(is_equal_approx(player.ability_cooldowns.left("slow"), 30.0))
+	assert(not player.use_time_ability("slow"))
+	player.get_parent().free()
+
+func test_real_time_cooldown_pause_and_wave_refill_cannot_bypass() -> void:
+	var player: Player = _make_player()
+	player._consume_slow_charge()
+	player._consume_rewind_charge()
+	player.refill_rewind_charge()
+	player.refill_slow_charge()
+	assert(not player.rewind_charge_available and not player.slow_charge_available)
+	player.set_training_menu_input_locked(true)
+	player._tick_ability_cooldowns(10.0)
+	assert(is_equal_approx(player.ability_cooldowns.left("slow"), 30.0))
+	player.set_training_menu_input_locked(false)
+	player._tick_ability_cooldowns(15.0)
+	assert(is_equal_approx(player.ability_cooldowns.left("slow"), 15.0))
+	player._tick_ability_cooldowns(15.0)
+	assert(player.slow_charge_available and player.rewind_charge_available)
+	player.get_parent().free()
+
+func test_rewind_direct_and_second_press_stops_even_while_tree_paused() -> void:
+	var player: Player = _make_player()
+	player._record_rewind_sample(0.1)
+	player.global_position += Vector2(50.0, 0.0)
+	player._record_rewind_sample(0.1)
+	assert(player.use_time_ability("rewind"))
+	assert(player.rewind_active and get_tree().paused)
+	assert(is_equal_approx(player.ability_cooldowns.left("rewind"), 30.0))
+	player._tick_ability_cooldowns(1.0)
+	assert(is_equal_approx(player.ability_cooldowns.left("rewind"), 29.0))
+	assert(player.use_time_ability("rewind"))
+	assert(not player.rewind_active and not get_tree().paused)
+	assert(is_equal_approx(player.ability_cooldowns.left("rewind"), 29.0))
+	player.get_parent().free()
+
+func test_actual_rewind_restores_destination_cooldowns_not_blanket_reset() -> void:
+	var player: Player = _make_player()
+	player.ability_cooldowns.start("slow", 12.0)
+	player._record_rewind_sample(0.1)
+	player.ability_cooldowns.start("slow", 30.0)
+	player._record_rewind_sample(0.1)
+	assert(player.use_time_ability("rewind"))
+	player.rewind_target_age = 1
+	player._finish_rewind()
+	assert(is_equal_approx(player.ability_cooldowns.left("slow"), 12.0))
+	assert(is_equal_approx(player.ability_cooldowns.left("rewind"), 30.0))
+	assert(not player.slow_charge_available)
+	player.ability_cooldowns.start("slow", 0.0)
+	player._record_rewind_sample(0.1)
+	player.ability_cooldowns.start("slow", 30.0)
+	player._record_rewind_sample(0.1)
+	# Exercise a second historical destination without waiting wall-clock time.
+	player.ability_cooldowns.start("rewind", 0.0)
+	assert(player.use_time_ability("rewind"))
+	player.rewind_target_age = 1
+	player._finish_rewind()
+	assert(is_zero_approx(player.ability_cooldowns.left("slow")))
+	assert(player.slow_charge_available)
+	assert(is_equal_approx(player.ability_cooldowns.left("rewind"), 30.0))
+	player.get_parent().free()
+
+func test_cooldown_model_restores_other_abilities_but_never_rewind() -> void:
+	var cooldowns: AbilityCooldowns = AbilityCooldowns.new()
+	cooldowns.start("slow", 12.0)
+	var snapshot: Dictionary = cooldowns.capture_rewindable()
+	assert(not snapshot.has("rewind"))
+	cooldowns.start("rewind")
+	cooldowns.start("slow")
+	cooldowns.restore_rewindable(snapshot)
+	assert(is_equal_approx(cooldowns.left("slow"), 12.0))
+	assert(is_equal_approx(cooldowns.left("rewind"), 30.0))
+	cooldowns.restore_rewindable({"rewind": 0.0, "slow": 0.0})
+	assert(is_equal_approx(cooldowns.left("rewind"), 30.0))
+	assert(is_zero_approx(cooldowns.left("slow")))

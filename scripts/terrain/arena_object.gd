@@ -37,6 +37,9 @@ signal harvested(object: ArenaObject)
 func _ready() -> void:
 	health = max_health
 	add_to_group("arena_objects")
+	add_to_group(WorldRewindRecorder.REWINDABLE_GROUP)
+	# Props come with the map; a missing rewind sample never means "spawned mid-window".
+	set_meta(&"rewind_never_spawned_mid_window", true)
 	if chakram_breakable:
 		add_to_group("chakram_obstructions")
 	if sword_harvestable:
@@ -205,6 +208,35 @@ func _remove_collision() -> void:
 		if shape_node != null: shape_node.set_deferred("disabled", true)
 	body.queue_free()
 	body = null
+
+## --- World rewind (stage 2): props, trees, herbs, chests ---------------------------------
+## Breaking a prop never frees the node (it only hides it and drops its collision), so it is a
+## plain rewindable that is never retired: a prop broken after the restore instant comes back
+## whole -- visual, collision and navigation rebuilt -- and its drop bag is removed by the drop's
+## own rewind track. Static props cost one tiny capture each.
+var rewind_retired: bool = false
+
+func rewind_stride() -> int:
+	return 4
+
+func rewind_capture(d: PackedFloat32Array, o: int) -> void:
+	d[o] = global_position.x; d[o + 1] = global_position.y
+	d[o + 2] = health; d[o + 3] = 1.0 if broken else 0.0
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	health = d[o + 2]
+	var was_broken: bool = d[o + 3] > 0.5
+	if broken and not was_broken:
+		broken = false
+		drop_spawned = false
+		hit_flash_left = 0.0
+		if visual_sprite != null: visual_sprite.visible = true
+		visible = phase_visible
+		_create_collision()
+		var main_scene: Node = get_tree().current_scene if is_inside_tree() else null
+		if main_scene != null and main_scene.has_method("refresh_population_navigation"):
+			main_scene.refresh_population_navigation()
+	_update_damage_visual()
 
 func _draw() -> void:
 	return

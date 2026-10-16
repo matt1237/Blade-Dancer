@@ -3,6 +3,8 @@ class_name WaveSpawner extends Node2D
 const WARNING_SCENE: PackedScene = preload("res://scenes/spawn_warning.tscn")
 const TURKEY_SCENE: PackedScene = preload("res://scenes/enemies/turkey.tscn")
 const GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/goblin.tscn")
+const GOBLIN_BOMBER_SCENE: PackedScene = preload("res://scenes/enemies/goblin_bomber.tscn")
+const GOBLIN_SHAMAN_SCENE: PackedScene = preload("res://scenes/enemies/goblin_shaman.tscn")
 const ARCHER_GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/archer_goblin.tscn")
 const SWORD_GOBLIN_SCENE: PackedScene = preload("res://scenes/enemies/sword_goblin.tscn")
 const BUG_SCENE: PackedScene = preload("res://scenes/enemies/bug.tscn")
@@ -78,6 +80,30 @@ func stat_multiplier_for_wave(wave_number: int) -> float:
 	var wave_steps: int = maxi(0, wave_number)
 	return 1.0 + float(wave_steps) * maxf(0.0, enemy_stat_bonus_per_wave)
 
+func _init() -> void:
+	add_to_group(WorldRewindRecorder.PERSISTENT_GROUP)
+
+## --- World rewind (stage 2): wave clock + spawn bookkeeping are a persistent track ---------
+## Rewound with the world so spawning resumes from the restored instant. Wave-state flags
+## (active/cleanup/awaiting) cannot change inside a rewind: Main marks a barrier at every wave
+## start/clear, so they are captured only as a consistency check.
+func rewind_stride() -> int:
+	return 5
+
+func rewind_capture(data: PackedFloat32Array, offset: int) -> void:
+	data[offset] = wave_elapsed
+	data[offset + 1] = wave_timer
+	data[offset + 2] = spawn_timer
+	data[offset + 3] = float(enemies_to_spawn)
+	data[offset + 4] = float(enemies_alive)
+
+func rewind_restore(data: PackedFloat32Array, offset: int) -> void:
+	wave_elapsed = data[offset]
+	wave_timer = data[offset + 1]
+	spawn_timer = data[offset + 2]
+	enemies_to_spawn = int(data[offset + 3])
+	enemies_alive = int(data[offset + 4])
+
 func _ready() -> void:
 	if player_ref == null: player_ref = get_parent().get_node_or_null("Player") as Player
 	if terrain_generator == null: terrain_generator = get_parent().get_node_or_null("ArenaGenerator") as ArenaGenerator
@@ -90,6 +116,8 @@ func _ready() -> void:
 	spawn_timer = 0.0
 
 func _process(delta: float) -> void:
+	# World Slow also slows the wave clock (elapsed, spawn cadence, intermission countdown).
+	delta *= WorldTime.enemy_scale()
 	if tutorial_turkey_mode:
 		spawn_timer -= delta
 		if spawn_timer <= 0.0 and _count_living_turkeys() < tutorial_turkey_max_alive:
@@ -281,6 +309,8 @@ func scene_for_name(enemy_name: StringName) -> PackedScene:
 		&"turkey", &"chaser": return TURKEY_SCENE
 		&"goblin", &"duelist": return GOBLIN_SCENE
 		&"archer_goblin", &"archer": return ARCHER_GOBLIN_SCENE
+		&"goblin_bomber", &"bomber": return GOBLIN_BOMBER_SCENE
+		&"goblin_shaman", &"shaman": return GOBLIN_SHAMAN_SCENE
 		&"sword_goblin", &"swordsman": return SWORD_GOBLIN_SCENE
 		&"bug", &"ranged": return BUG_SCENE
 		&"wolf", &"charger": return WOLF_SCENE
@@ -302,19 +332,24 @@ func spawn_boss_reinforcement(scene: PackedScene, spawn_position: Vector2) -> En
 	return enemy
 
 func _available_enemy_scenes() -> Array[PackedScene]:
-	var available: Array[PackedScene] = [TURKEY_SCENE]
+	var available: Array[PackedScene] = []
+	if current_wave < 5: available.append(TURKEY_SCENE)
 	if current_wave >= 2: available.append(GOBLIN_SCENE)
 	if current_wave >= 3: available.append(SWORD_GOBLIN_SCENE)
 	if current_wave >= 4: available.append(ARCHER_GOBLIN_SCENE)
 	if current_wave >= 3: available.append(BUG_SCENE)
 	if current_wave >= 4: available.append(WOLF_SCENE)
 	if current_wave >= 5: available.append(OGRE_SCENE)
+	if current_wave >= 6: available.append(GOBLIN_BOMBER_SCENE)
+	if current_wave >= 7: available.append(GOBLIN_SHAMAN_SCENE)
 	return available
 
 func _scene_balance_key(scene: PackedScene) -> StringName:
 	if scene == TURKEY_SCENE: return &"turkey"
 	if scene == GOBLIN_SCENE: return &"goblin"
 	if scene == ARCHER_GOBLIN_SCENE: return &"archer_goblin"
+	if scene == GOBLIN_BOMBER_SCENE: return &"goblin_bomber"
+	if scene == GOBLIN_SHAMAN_SCENE: return &"goblin_shaman"
 	if scene == SWORD_GOBLIN_SCENE: return &"sword_goblin"
 	if scene == BUG_SCENE: return &"bug"
 	if scene == WOLF_SCENE: return &"wolf"

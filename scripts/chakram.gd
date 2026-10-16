@@ -1,6 +1,24 @@
 class_name Chakram extends Area2D
 
 var chakram_texture_hd: Texture2D = null
+const DOWNED_HALO: Texture2D = preload("res://assets/generated/downed_chakram_yellow_halo_v1.png")
+const DOWNED_HALO_RECT: Rect2 = Rect2(-24.0, -24.0, 48.0, 48.0)
+
+## Presentation only: grounded remains the sole downed-state authority.
+func is_downed_for_presentation() -> bool:
+	return grounded and not is_queued_for_deletion()
+
+static func downed_halo_alpha(seconds: float) -> float:
+	return 0.22 + 0.50 * (0.5 + 0.5 * sin(seconds * TAU * 1.1))
+
+## Mirrors the actual world visual, not a second equipment/profile table.
+func draw_recovery_icon(canvas: CanvasItem, center: Vector2) -> void:
+	if owner_player != null and owner_player.visual_style == "hd" and chakram_texture_hd != null:
+		canvas.draw_texture_rect(chakram_texture_hd, Rect2(center - Vector2(13, 13), Vector2(26, 26)), false)
+	else:
+		canvas.draw_arc(center, 11.0, 0.0, TAU, 28, Color("777777"), 4.0, true)
+		canvas.draw_circle(center, 3.7, Color("423344"))
+		canvas.draw_arc(center, 11.0, spin_angle - 0.28, spin_angle + 0.28, 6, Color("fff0a3"), 2.0, true)
 
 @export var flight_duration: float = 5.0
 @export var base_speed: float = 360.0
@@ -74,6 +92,7 @@ var bat_stretch_direction: Vector2 = Vector2.RIGHT
 var spin_angle: float = 0.0
 
 func _ready() -> void:
+	add_to_group(WorldRewindRecorder.REWINDABLE_GROUP)
 	# Steel Chakram is the only Chakram-slot item today; a future per-item
 	# table (mirroring player.gd's ARMOR_VISUALS) can key this off the
 	# equipped item's base name once more Chakram variants exist.
@@ -182,6 +201,8 @@ func become_airborne_for_grapple() -> void:
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
+	if rewind_retired:
+		return
 	if grounded:
 		# A landed Chakram keeps its final authored orientation instead of
 		# continuing to rotate while it waits to be collected.
@@ -486,9 +507,48 @@ func release_sword_contact() -> void:
 	sword_contact_latched = false
 
 func collect() -> void:
-	queue_free()
+	# World rewind may bring a collected disc back if it was still out at the restore instant.
+	WorldRewindRecorder.retire_or_free(self, REWIND_GAMEPLAY_GROUPS)
+
+## --- World rewind (stage 2): the player's chakram ---------------------------------------
+## Flight state rewinds (position, velocity, grounded, flight clock, spin). Grapple/yo-yo
+## attachments are cancelled rather than restored mid-rope. The Player records its own chakram
+## charge count, so a disc removed (thrown after the target) or revived (collected after it)
+## keeps the in-hand count consistent.
+const REWIND_GAMEPLAY_GROUPS: Array[StringName] = [&"chakram"]
+var rewind_retired: bool = false
+
+func rewind_stride() -> int:
+	return 8
+
+func rewind_capture(d: PackedFloat32Array, o: int) -> void:
+	d[o] = global_position.x; d[o + 1] = global_position.y
+	d[o + 2] = velocity.x; d[o + 3] = velocity.y
+	d[o + 4] = time_left; d[o + 5] = 1.0 if grounded else 0.0
+	d[o + 6] = spin_angle; d[o + 7] = 1.0 if boosted else 0.0
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	global_position = Vector2(d[o], d[o + 1])
+	velocity = Vector2(d[o + 2], d[o + 3])
+	time_left = d[o + 4]
+	grounded = d[o + 5] > 0.5
+	spin_angle = d[o + 6]
+	boosted = d[o + 7] > 0.5
+	if grapple_attached:
+		grapple_attached = false
+		clear_yoyo_constraint()
+	sword_contact_latched = false
+	trail_points.clear()
+	if owner_player != null and is_instance_valid(owner_player) and not owner_player.active_chakrams.has(self):
+		owner_player.active_chakrams.append(self)
+		if owner_player.chakram == null: owner_player.chakram = self
+	queue_redraw()
 
 func _draw() -> void:
+	# Local origin is also the actual disc art's center. Keep the small halo
+	# independent of bat stretch/spin, and behind the disc, never gameplay.
+	if is_downed_for_presentation():
+		draw_texture_rect(DOWNED_HALO, DOWNED_HALO_RECT, false, Color(1, 1, 1, downed_halo_alpha(Time.get_ticks_msec() * 0.001)))
 	var bat_transform: Transform2D = _bat_draw_transform()
 	draw_set_transform_matrix(bat_transform)
 	if explosion_flash > 0.0:

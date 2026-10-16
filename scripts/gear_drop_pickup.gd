@@ -6,22 +6,56 @@ class_name GearDropPickup extends Area2D
 var item: Dictionary = {}
 var lifetime: float = 24.0
 
+## World rewind (see DropPickup). Gear is reverted by its unique canonical id.
+const REWIND_GAMEPLAY_GROUPS: Array[StringName] = [&"pickups"]
+var rewind_retired: bool = false
+var collected: bool = false
+
+func _ready() -> void:
+	add_to_group(&"pickups")
+	add_to_group(WorldRewindRecorder.REWINDABLE_GROUP)
+
 func setup(gear_item: Dictionary) -> void:
 	item = gear_item
 	queue_redraw()
 
 func _physics_process(delta: float) -> void:
+	if rewind_retired:
+		return
 	lifetime -= delta
 	if lifetime <= 0.0:
-		queue_free()
+		WorldRewindRecorder.retire_or_free(self, REWIND_GAMEPLAY_GROUPS)
 		return
 	var players: Array[Node] = get_tree().get_nodes_in_group("player")
 	if not players.is_empty():
 		var player: Node2D = players[0] as Node2D
 		if player != null and global_position.distance_to(player.global_position) < 30.0:
-			var main_scene: Node = get_tree().current_scene
-			if main_scene.has_method("collect_gear_drop"): main_scene.collect_gear_drop(item)
-			queue_free()
+			var main_scene: Node = _main_scene()
+			if main_scene != null and main_scene.has_method("collect_gear_drop"): main_scene.collect_gear_drop(item)
+			collected = true
+			WorldRewindRecorder.retire_or_free(self, REWIND_GAMEPLAY_GROUPS)
+			return
+	queue_redraw()
+
+## Main spawns gear drops as its own children; fall back to the running scene.
+func _main_scene() -> Node:
+	var parent: Node = get_parent()
+	if parent != null and parent.has_method("collect_gear_drop"): return parent
+	return get_tree().current_scene if is_inside_tree() else null
+
+func rewind_stride() -> int:
+	return 4
+
+func rewind_capture(d: PackedFloat32Array, o: int) -> void:
+	d[o] = global_position.x; d[o + 1] = global_position.y; d[o + 2] = lifetime; d[o + 3] = 1.0 if collected else 0.0
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	global_position = Vector2(d[o], d[o + 1]); lifetime = d[o + 2]
+	var was_collected: bool = d[o + 3] > 0.5
+	if collected and not was_collected:
+		var main_scene: Node = _main_scene()
+		if main_scene != null and main_scene.has_method("uncollect_gear_drop"): main_scene.uncollect_gear_drop(item)
+	collected = was_collected
 	queue_redraw()
 
 func _draw() -> void:

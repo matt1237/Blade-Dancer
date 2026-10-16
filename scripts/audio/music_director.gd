@@ -44,7 +44,7 @@ enum Mode { COMBAT, HOME, FORGE, SILENT, BOSS }
 var music_player: AudioStreamPlayer = null
 var combat_stream: AudioStream = null
 var active_combat_tracks: Array[AudioStream] = FOREST_TRACKS
-var mode: Mode = Mode.COMBAT
+var mode: Mode = Mode.SILENT
 var home_shuffle_bag: Array[int] = []
 var combat_shuffle_bag: Array[int] = []
 var forge_shuffle_bag: Array[int] = []
@@ -61,11 +61,18 @@ func _ready() -> void:
 
 func setup(player: AudioStreamPlayer) -> void:
 	music_player = player
+	# Home, Town and other hub screens pause the game tree; music is a menu
+	# service and must continue independently of gameplay pause state.
+	music_player.process_mode = Node.PROCESS_MODE_ALWAYS
 	combat_stream = music_player.stream
-	# Combat tracks advance through the shuffle bag instead of looping one track.
-	_set_stream_loop(combat_stream, false)
+	# Main opens at Home. Never autoplay the scene's legacy combat stream,
+	# even briefly before Home's fade or the browser's first unlock gesture.
+	mode = Mode.HOME
+	music_player.stream = _next_home_track()
+	_set_stream_loop(music_player.stream, false)
+	music_player.volume_db = _current_music_volume_db()
 	if not music_player.finished.is_connected(_on_music_finished): music_player.finished.connect(_on_music_finished)
-	if not music_player.playing and music_player.is_inside_tree(): music_player.play()
+	if music_player.is_inside_tree(): music_player.play()
 
 func unlock_audio() -> void:
 	# The browser's first gesture may be needed to allow autoplay. Never restart
@@ -154,6 +161,7 @@ func enter_silence() -> void:
 	if serial != transition_serial or music_player == null: return
 	music_player.stream_paused = true
 
+## Combat entry/resume only: Adventure, Town and review menus use enter_home().
 func enter_adventure() -> void:
 	if music_player == null or mode == Mode.COMBAT: return
 	mode = Mode.COMBAT

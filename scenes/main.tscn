@@ -8,7 +8,6 @@
 [ext_resource type="Script" uid="uid://coc8ntld1rtne" path="res://scripts/forest_floor.gd" id="8_forest_floor"]
 [ext_resource type="Script" uid="uid://ch2o20nmco8b8" path="res://scripts/combat_presentation_fx.gd" id="9_presentation_fx"]
 [ext_resource type="PackedScene" path="res://scenes/terrain/arena_generator.tscn" id="10_terrain"]
-[ext_resource type="Script" uid="uid://dtqs4kc3847s7" path="res://scripts/combat/melee_engagement_director.gd" id="11_engagement"]
 [ext_resource type="PackedScene" path="res://scenes/ui/end_run_hub.tscn" id="12_end_hub"]
 [ext_resource type="PackedScene" uid="uid://lvdg87ggupt4" path="res://scenes/ui/home_menu.tscn" id="13_home_menu"]
 [ext_resource type="Script" uid="uid://o45dewrdk17v" path="res://scripts/ui/metronome_top_bar.gd" id="14_metronome_bar"]
@@ -17,6 +16,25 @@
 [ext_resource type="PackedScene" path="res://scenes/chasm/chasm_stage.tscn" id="17_chasm_stage"]
 [ext_resource type="PackedScene" path="res://scenes/ui/mobile_controls.tscn" id="18_mobile_controls"]
 [ext_resource type="Script" path="res://scripts/blood_decals.gd" id="19_blood_decals"]
+[ext_resource type="Script" path="res://scripts/ui/downed_chakram_hud.gd" id="23_downed_chakram_hud"]
+[ext_resource type="Script" path="res://scripts/ui/ability_bar.gd" id="25_ability_bar"]
+[ext_resource type="Texture2D" path="res://assets/generated/Rewind Icon.png" id="24_rewind_icon"]
+[ext_resource type="Texture2D" path="res://assets/generated/Time Slow.png" id="24_slow_icon"]
+
+[ext_resource type="Shader" path="res://shaders/hud_flow.gdshader" id="20_hud_flow"]
+[ext_resource type="Texture2D" path="res://assets/generated/health_bar_fill.png" id="21_flow_fill"]
+[ext_resource type="Texture2D" path="res://assets/generated/health_bar_track.png" id="22_flow_track"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_hud_flow"]
+resource_local_to_scene = true
+shader = ExtResource("20_hud_flow")
+shader_parameter/flow_speed = 0.35
+shader_parameter/flow_bands = 1.0
+shader_parameter/pale_yellow = Color(1, 0.94, 0.58, 1)
+shader_parameter/dark_gold = Color(0.65, 0.4, 0.04, 1)
+shader_parameter/bright_yellow = Color(1, 0.84, 0.08, 1)
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_flow"]
 
 [sub_resource type="Environment" id="Environment_fx"]
 background_mode = 3
@@ -59,9 +77,6 @@ script = ExtResource("9_presentation_fx")
 z_index = 2
 position = Vector2(640, 360)
 
-[node name="MeleeEngagementDirector" type="Node2D" parent="." unique_id=234598162]
-script = ExtResource("11_engagement")
-
 [node name="ArenaBounds" parent="." unique_id=1993100453 instance=ExtResource("5_bounds")]
 
 [node name="ArenaGenerator" parent="." unique_id=1396902278 instance=ExtResource("10_terrain")]
@@ -77,6 +92,11 @@ script = ExtResource("4_spawner")
 [node name="CanvasLayer" type="CanvasLayer" parent="." unique_id=1858005260]
 layer = 2
 
+[node name="AbilityBar" type="Control" parent="CanvasLayer"]
+process_mode = 3
+mouse_filter = 2
+script = ExtResource("25_ability_bar")
+
 [node name="MetronomeTopBar" type="Control" parent="CanvasLayer" unique_id=715980016]
 layout_mode = 3
 anchors_preset = 15
@@ -88,18 +108,29 @@ mouse_filter = 2
 script = ExtResource("14_metronome_bar")
 
 [node name="WaveLabel" type="Label" parent="CanvasLayer" unique_id=373610654]
-offset_left = 20.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -460.0
 offset_top = 18.0
-offset_right = 420.0
-offset_bottom = 48.0
-theme_override_font_sizes/font_size = 24
+offset_right = -10.0
+offset_bottom = 46.0
+grow_horizontal = 0
+mouse_filter = 2
+horizontal_alignment = 2
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 18
 text = "Wave: 0"
 
 [node name="WaveTimerLabel" type="Label" parent="CanvasLayer" unique_id=37799744]
-offset_left = 127.0
-offset_top = 21.0
-offset_right = 288.0
-offset_bottom = 47.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = 10.0
+offset_top = 18.0
+offset_right = 460.0
+offset_bottom = 46.0
+grow_horizontal = 1
+mouse_filter = 2
+vertical_alignment = 1
 theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
 theme_override_font_sizes/font_size = 18
 text = "TIME: 30"
@@ -111,13 +142,13 @@ offset_right = 420.0
 offset_bottom = 78.0
 theme_override_colors/font_color = Color(0.3, 1, 0.35, 1)
 theme_override_font_sizes/font_size = 24
-text = "HP: 100 / 100"
+text = ""
 
 [node name="StatusLabel" type="Label" parent="CanvasLayer" unique_id=1145134835]
 offset_left = 20.0
-offset_top = 99.0
+offset_top = 104.0
 offset_right = 500.0
-offset_bottom = 129.0
+offset_bottom = 134.0
 theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
 theme_override_font_sizes/font_size = 20
 text = "Chakram: READY"
@@ -138,29 +169,38 @@ offset_right = 300.0
 offset_bottom = 264.0
 theme_override_colors/font_color = Color(0.65, 0.82, 1, 1)
 theme_override_font_sizes/font_size = 18
-text = "Flow: 0%"
+text = ""
 
 [node name="FlowBar" type="ProgressBar" parent="CanvasLayer" unique_id=1563572663]
 offset_left = 20.0
 offset_top = 78.0
-offset_right = 240.0
-offset_bottom = 90.0
+offset_right = 190.0
+offset_bottom = 103.0
+mouse_filter = 2
+theme_override_styles/background = SubResource("StyleBoxEmpty_flow")
+theme_override_styles/fill = SubResource("StyleBoxEmpty_flow")
 show_percentage = false
 
-[node name="FlowTrack" type="ColorRect" parent="CanvasLayer" unique_id=329096316]
+[node name="FlowTrack" type="TextureRect" parent="CanvasLayer" unique_id=329096316]
+texture_filter = 2
 offset_left = 20.0
 offset_top = 78.0
-offset_right = 240.0
-offset_bottom = 90.0
+offset_right = 190.0
+offset_bottom = 103.0
 mouse_filter = 2
-color = Color(0.08, 0.1, 0.15, 0.95)
+texture = ExtResource("22_flow_track")
+expand_mode = 1
 
-[node name="FlowFill" type="ColorRect" parent="CanvasLayer" unique_id=1074333201]
+[node name="FlowFill" type="TextureRect" parent="CanvasLayer" unique_id=1074333201]
+texture_filter = 2
+material = SubResource("ShaderMaterial_hud_flow")
 offset_left = 20.0
 offset_top = 78.0
 offset_right = 20.0
-offset_bottom = 90.0
+offset_bottom = 103.0
 mouse_filter = 2
+texture = ExtResource("21_flow_fill")
+expand_mode = 1
 
 [node name="FlowSparkle" type="Label" parent="CanvasLayer" unique_id=1781559524]
 offset_left = 245.0
@@ -169,7 +209,7 @@ offset_right = 285.0
 offset_bottom = 103.0
 theme_override_colors/font_color = Color(1, 0.9, 0.35, 1)
 theme_override_font_sizes/font_size = 22
-text = "✦"
+text = ""
 
 [node name="DashBar" type="ProgressBar" parent="CanvasLayer" unique_id=1054801143]
 offset_left = 20.0
@@ -206,13 +246,47 @@ theme_override_font_sizes/font_size = 16
 text = "Deflect: -"
 
 [node name="ScoreLabel" type="Label" parent="CanvasLayer" unique_id=1940100778]
-offset_left = 1067.0
-offset_top = 21.0
-offset_right = 1266.0
-offset_bottom = 49.0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -180.0
+offset_top = 48.0
+offset_right = 180.0
+offset_bottom = 76.0
+grow_horizontal = 2
+mouse_filter = 2
+horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 0.85, 0.3, 1)
 theme_override_font_sizes/font_size = 20
 text = "Score: 0"
+
+[node name="RewindIcon" type="TextureRect" parent="CanvasLayer"]
+visible = false
+texture_filter = 2
+offset_left = 22.0
+offset_top = 240.0
+offset_right = 62.0
+offset_bottom = 280.0
+mouse_filter = 2
+texture = ExtResource("24_rewind_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SlowIcon" type="TextureRect" parent="CanvasLayer"]
+visible = false
+texture_filter = 2
+offset_left = 68.0
+offset_top = 240.0
+offset_right = 108.0
+offset_bottom = 280.0
+mouse_filter = 2
+texture = ExtResource("24_slow_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DownedChakramHUD" type="Control" parent="CanvasLayer"]
+process_mode = 3
+mouse_filter = 2
+script = ExtResource("23_downed_chakram_hud")
 
 [node name="BonusPanel" type="Panel" parent="CanvasLayer" unique_id=1509715708]
 process_mode = 3

@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/main.tscn" id="1_main"]
+[ext_resource type="Script" path="res://tests/bdos_collision_sword_rig.gd" id="2_rig"]
+
+[node name="Main" instance=ExtResource("1_main")]
+
+[node name="BDOSCollisionSwordRig" type="Node" parent="."]
+script = ExtResource("2_rig")
+enemy_type = "turkey"
+spawn_count = 1
+spawn_distance = 80.0
+use_saved_contact_features = true
+probe_stagger = true

@@ -20,7 +20,16 @@ var contact_controls: Dictionary = {}
 var blade_shape_controls: Dictionary = {}
 ## Single source of truth for equipped visual, blade shape, and hand tuning.
 var selected_combat_sword_id: String = "Basic Longsword"
+## Selector labels for tuning profiles whose ID is an item base name.
+const COMBAT_SWORD_LABELS: Dictionary = {
+	ArmoryConfig.DUALBLADE_NAME: "Dual Wield",
+	ArmoryConfig.DOUBLE_ENDED_NAME: "Double Sided Sword",
+	ArmoryConfig.GREATSWORD_NAME: "Iron Greatsword",
+}
 var combat_sword_option: OptionButton = null
+var combat_form_option: OptionButton = null
+var shared_form_status: Label = null
+var thrust_form_section: VBoxContainer = null
 var blade_shape_status: Label = null
 var grapple_controls: Dictionary = {}
 var visualizer_controls: Dictionary = {}
@@ -168,6 +177,647 @@ func _on_training_tab_changed(_index: int) -> void:
 	# Reapply after containers invalidate their previous minimum size.
 	_apply_training_layout.call_deferred()
 
+<<<<<<< Updated upstream
+=======
+## The shared gateway that sits at the very top of BOTH tuner sets. It only chooses
+## the mode; it never edits a setting itself.
+func _build_mode_header() -> Control:
+	var header: PanelContainer = PanelContainer.new()
+	header.name = "ModeHeader"
+	var row: HBoxContainer = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	header.add_child(row)
+	var os_button: Button = Button.new()
+	os_button.name = "PXModeOS"
+	os_button.text = "OS MODE"
+	os_button.focus_mode = Control.FOCUS_NONE
+	os_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	os_button.custom_minimum_size = Vector2(0.0, 40.0)
+	os_button.pressed.connect(_set_px_mode.bind(false))
+	row.add_child(os_button)
+	var px_button: Button = Button.new()
+	px_button.name = "PXModePX"
+	px_button.text = "PX MODE"
+	px_button.focus_mode = Control.FOCUS_NONE
+	px_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	px_button.custom_minimum_size = Vector2(0.0, 40.0)
+	px_button.pressed.connect(_set_px_mode.bind(true))
+	row.add_child(px_button)
+	px_mode_buttons = {"os": os_button, "px": px_button}
+	px_mode_status = Label.new()
+	px_mode_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	px_mode_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(px_mode_status)
+	return header
+
+## The PX tab set: the physics sword's own live tunables. Every control writes to
+## the PX save (user://bdpx_global.json) and is pushed straight onto the live
+## in-world sword — never to a combat preset or a Global Preset.
+func _build_px_tuner(tabs: TabContainer) -> void:
+	_px_settings = BDPXGlobal.load_settings()
+	px_controls.clear()
+
+	# ── PX Motor ────────────────────────────────────────────────────────────
+	var motor_tab: VBoxContainer = _px_tab(tabs, "PX Motor")
+	var baseline_button: Button = Button.new()
+	baseline_button.text = "Reset to Clean Baseline"
+	baseline_button.tooltip_text = "One click back to the honest starting point: the sword simply follows YOUR aim (no metronome), the motor is stock, and nothing is spawned. Everything is still yours to change afterwards — this is just the clean floor to learn the raw physical sword from."
+	baseline_button.focus_mode = Control.FOCUS_NONE
+	baseline_button.custom_minimum_size = Vector2(0.0, 34.0)
+	baseline_button.pressed.connect(_px_reset_baseline)
+	motor_tab.add_child(baseline_button)
+
+	# ── Global — BDPX's own save (the game's live save is never touched) ─────
+	var global_section: VBoxContainer = _create_section_header(motor_tab, "Global (BDPX save)", true)
+	var global_row: HBoxContainer = HBoxContainer.new()
+	global_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	global_section.add_child(global_row)
+	var save_button: Button = Button.new()
+	save_button.text = "Save Settings"
+	save_button.tooltip_text = "Write the current PX tuning + spawn setup to user://bdpx_global.json — BDPX's own file; the game's live save is never touched. Every control also saves automatically as you move it; this writes it explicitly and refreshes the readout below."
+	save_button.focus_mode = Control.FOCUS_NONE
+	save_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	save_button.pressed.connect(_px_save_now)
+	global_row.add_child(save_button)
+	var load_button: Button = Button.new()
+	load_button.text = "Load Saved"
+	load_button.tooltip_text = "Re-apply the saved BDPX setup, discarding any unsaved tweaks."
+	load_button.focus_mode = Control.FOCUS_NONE
+	load_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	load_button.pressed.connect(_px_load_saved)
+	global_row.add_child(load_button)
+	px_saved_label = Label.new()
+	px_saved_label.modulate = Color(0.65, 0.75, 0.85)
+	global_section.add_child(px_saved_label)
+	_px_refresh_saved_label()
+
+	# ── Sword Physics: what the OBJECT is ───────────────────────────────────
+	# Grouped as a header (not its own tab) by request — but kept right above the
+	# Grip / Wrist header below, because these two groups physically interact:
+	# mass sets the blade's inertia, which is half of what every stiffness value
+	# is measured against.
+	var sword_body_section: VBoxContainer = _create_section_header(motor_tab, "Sword Physics", true)
+	var body_note: Label = Label.new()
+	body_note.text = "The sword's OWN physical properties — what the object IS. Grip / Wrist below is how strongly YOU control it. Set Mass once and leave it: Godot derives the blade's rotational inertia from mass, so changing mass quietly re-scales what every Stiffness value means."
+	body_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body_note.modulate = Color(0.72, 0.8, 0.9)
+	sword_body_section.add_child(body_note)
+	_px_add_slider(sword_body_section, "sword_mass", "Sword Mass", 0.25, 8.0, 0.05, "", _px_control_tip(
+		"'Heft' — the blade body's mass: how much stuff the sword is made of.",
+		"How hard the sword is to shove, and how much punch it carries into other bodies.",
+		"Light — easy to redirect, knocked off line easily, little punch.",
+		"Heavy — carries momentum and shoves bodies around, but sluggish to turn.",
+		"Set it once, then leave it. Godot works out the blade's rotational inertia from mass, so a mass change silently re-scales every stiffness value — which is exactly why the tuning ladder fixes mass first."))
+	_px_add_slider(sword_body_section, "sword_angular_damp", "Angular Damping", 0.0, 20.0, 0.5, "", _px_control_tip(
+		"'Spin Brake' — PASSIVE angular damping on the blade body: a continuous resistance to whatever rotation is happening, whoever caused it.",
+		"Rotational air resistance. NOT the same as Motor Damping — that only resists your ERRORS; this resists ALL spin, including the swing you asked for.",
+		"0 — no spin brake: the blade keeps rotating until the motor or a contact stops it.",
+		"High — rotation dies fast, but the sword feels underwater and fights your own swings.",
+		"Keep it 0 for a clean baseline. A little (1-3) cleans up aimless drift without noticeably fighting the motor."))
+	_px_add_slider(sword_body_section, "sword_linear_damp", "Linear Damping", 0.0, 20.0, 0.5, "", _px_control_tip(
+		"'Drift Brake' — PASSIVE linear damping on the blade body: a continuous resistance to sideways (translational) motion.",
+		"Brakes on the sword flying off your hand.",
+		"0 — nothing resists drift.",
+		"High — any translation stops almost immediately.",
+		"The hilt is pinned to your hand, so translation is already controlled — small values only, or leave it at 0."))
+	_px_add_slider(sword_body_section, "com_offset", "Center of Mass Offset", 0.0, 84.0, 1.0, " px", _px_control_tip(
+		"'Balance Point' — where along the blade the body balances, in px from the hilt. Godot's automatic centre sits mid-blade at 42; this overrides it.",
+		"Where the blade's weight sits — near the hilt feels nimble, out at the tip feels committed.",
+		"0 — at the hilt: least resistance to rotation, twitchy.",
+		"84 — at the tip: maximum swing inertia, slow to start and slow to stop.",
+		"Gravity is OFF and the hilt is pinned, so there is no hanging weight to feel here — treat this as a collision / inertia knob, not a balance knob, and judge it against a real parry."))
+
+	# ── Grip / Wrist: how strongly YOU control it ───────────────────────────
+	var motor_section: VBoxContainer = _create_section_header(motor_tab, "Grip / Wrist", true)
+	_px_add_slider(motor_section, "stiffness", "Motor Stiffness", 0.0, 300000.0, 1000.0, "", _px_control_tip(
+		"'Snap' — proportional stiffness (N·m/rad): how hard the motor pulls the blade toward the target angle.",
+		"How snappily the sword locks onto your aim.",
+		"Sluggish and rubbery — the blade trails your aim.",
+		"Snappy and stiff — it locks onto your aim, but can jitter at the top end.",
+		"Raise until it tracks your aim tightly, then back off one notch to kill any jitter."))
+	_px_add_slider(motor_section, "damping", "Motor Damping", 0.0, 40000.0, 100.0, "", _px_control_tip(
+		"'Settle' — damping gain (N·m·s/rad): how much the motor brakes the blade's own spin.",
+		"Whether the sword settles onto the arc, or overshoots and wobbles.",
+		"Overshoots and wobbles past your aim — loose and rubbery.",
+		"Dead and heavy — no overshoot, but it feels like swinging in syrup.",
+		"Rule of thumb: Damping ≈ 100 × √(Stiffness). At Stiffness 90,000 that's ~25,000 (near-critical, little wobble). Far below it the blade rings and helicopters."))
+	_px_add_slider(motor_section, "max_torque", "Max Torque", 0.0, 600000.0, 1000.0, "", _px_control_tip(
+		"'Sword Strength' — motor torque ceiling (N·m): the most force the motor may push with.",
+		"How strongly the blade wins against things that resist it.",
+		"Weak — contacts shove your sword off your aim easily.",
+		"Powerful — the blade muscles through and holds its arc, but can jam if maxed.",
+		"This is the 'strength of your grip on the arc'. Pair high torque with higher damping to stay smooth."))
+
+	var guard_section: VBoxContainer = _create_section_header(motor_tab, "Safeguards")
+	_px_add_slider(guard_section, "helicopter_limit", "Helicopter Limit", 100.0, 2000.0, 25.0, " °/s", _px_control_tip(
+		"'Wobble Brake' — angular-velocity cap (deg/s): the fastest the blade is allowed to TURN. Above it, a brake drags the spin back down.",
+		"Whether a wild swing can whirl away out of control, or is always caught at a speed you chose.",
+		"Tight cap — the sword can barely spin: very controlled, but fast swings feel handcuffed.",
+		"Loose cap — the sword whips around freely; at the far right the limit is effectively OFF.",
+		"Start at the right (off). Drag LEFT until the helicoptering stops, then nudge right so genuine fast swings still land."))
+	_px_add_slider(guard_section, "servo_feedforward_on", "Servo Feedforward — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Arc Hold' — reference-velocity feedforward: ON (1), the motor also matches how fast the target is moving, not just where it points.",
+		"Whether the blade holds the swing arc, or lags a fast sweep.",
+		"OFF (0) — plain motor; the blade slightly trails fast swings.",
+		"ON (1) — the blade holds the intended arc through the swing.",
+		"Leave it ON (1). Switch it off only to hear the difference."))
+	_px_add_slider(guard_section, "hilt_spring_on", "Hilt Spring — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Hand Give' — soft pin joint: ON (1), the grip is sprung to your hand instead of welded to it.",
+		"Whether a hit can knock the sword off your hand — and whether it springs back.",
+		"OFF (0) — welded; the hilt never leaves your hand.",
+		"ON (1) — the sword gets shoved and recovers; livelier and more physical.",
+		"Keep it ON (1) once you're cutting. OFF is a clean baseline for tuning the motor."))
+
+	var prop_section: VBoxContainer = _create_section_header(motor_tab, "Visuals")
+	_px_add_slider(prop_section, "show_ghost", "Show Ghost — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Ghost Twin' — reference-pose overlay: ON (1), draw where the hand and blade are ASKED to be as a translucent copy under the blade.",
+		"Whether you can SEE the gap between intended and actual.",
+		"OFF (0) — just the solid blade.",
+		"ON (1) — a faint shadow twin you can tune the blade to hide behind.",
+		"Tune until the ghost hides behind the blade; any visible offset is pure physics lag."))
+	_px_add_slider(prop_section, "ghost_opacity", "Ghost Opacity", 0.0, 100.0, 5.0, "%", _px_control_tip(
+		"'Ghost Fade' — overlay opacity (%): how see-through the ghost is.",
+		"How strongly the reference reads against the blade.",
+		"Invisible.",
+		"Bold — easy to see, can clutter the read.",
+		"~35% reads clearly without hiding the blade."))
+
+	# ── PX Metronome ────────────────────────────────────────────────────────
+	# Its own tab: this is a whole MODE of the sword (swing on its own tempo) rather
+	# than a motor tweak, and every control here is dormant unless Mode is ON (1).
+	var metronome_tab: VBoxContainer = _px_tab(tabs, "PX Metronome")
+	var swing_section: VBoxContainer = _create_section_header(metronome_tab, "The Swing", true)
+	_px_add_slider(swing_section, "metronome_on", "Metronome Swing — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Self-Swing' — oscillator drive: ON (1), the motor chases a swinging arc (±Arc at Frequency) around your aim instead of your aim itself.",
+		"Whether the sword swings on its own tempo, or just points where you point.",
+		"OFF (0) — the blade points where you point.",
+		"ON (1) — the sword sweeps a back-and-forth arc on its own.",
+		"Turn it ON (1) to watch it fight real contact: a blocked swing visibly loses its arc."))
+	_px_add_slider(swing_section, "arc_degrees", "Arc", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Swing Width' — oscillation amplitude (deg): how far the swing sweeps either side of your aim.",
+		"The size of the metronome stroke.",
+		"Tight, quick flicks.",
+		"Huge, wide sweeps.",
+		"105° is the game's feel — up for drama, down for precision."))
+	_px_add_slider(swing_section, "frequency", "Frequency", 0.05, 3.0, 0.05, " Hz", _px_control_tip(
+		"'Swing Tempo' — oscillation frequency (Hz): how many swings per second the metronome runs.",
+		"The tempo of the arc.",
+		"Slow, heavy, deliberate.",
+		"Fast and frantic.",
+		"0.65 Hz is the game's tempo; much faster is hard to read against contacts."))
+	_px_add_slider(swing_section, "lead_degrees", "Metronome Lead", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Leash' — anti-windup error clamp (deg): how far the swinging target may run ahead of the blade before it waits.",
+		"How far the target can diverge from the blade when the swing is blocked.",
+		"The target hugs the blade — nothing to watch, tiny arc.",
+		"The target runs far ahead — a big gap when blocked, and a risk of snapping when freed.",
+		"Keep it modest (30-45°): enough to show the struggle, not enough to helicopter."))
+	var metronome_note: Label = Label.new()
+	metronome_note.text = "Everything in this tab — Arc, Frequency, Lead, Wind-up, Commit, Arc Energy and Hang — shapes the swing ONLY while Metronome Swing is ON (1).\nWith it OFF (0) the sword simply follows your aim; none of it does anything."
+	metronome_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	metronome_tab.add_child(metronome_note)
+
+	# ── Stroke Timing: the wind-up / strike / recovery SHAPE of the stroke ──
+	# "Form II": the stroke's SPEED is redistributed so it opens slowly, strikes
+	# fast, then recovers slowly, while the AVERAGE tempo stays at Frequency. Pure
+	# target shaping — the blade still earns every degree from the motor.
+	var timing_section: VBoxContainer = _create_section_header(metronome_tab, "Stroke Timing", true)
+	_px_add_slider(timing_section, "windup_on", "Wind-up — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Form II' — stroke-tempo shaping: ON (1), each metronome stroke is redistributed into a slow open, a fast strike and a slow recovery.",
+		"Whether the swing has a wind-up / strike / recovery character, or is an even sine.",
+		"OFF (0) — the stroke is a plain even sine; no wind-up shape.",
+		"ON (1) — the stroke opens slowly, snaps through the strike, then recovers slowly.",
+		"Dormant unless Metronome Swing is ON (1). It reshapes the TARGET only, so the blade still earns every degree and a block still breaks the stroke."))
+	_px_add_slider(timing_section, "windup_profile", "Wind-up Profile Strength", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Shape Depth' — how strongly the wind-up curve replaces the plain sine (0 = linear timing, 1 = full Form II).",
+		"How pronounced the slow-open / fast-strike contrast is.",
+		"0 — even, linear stroke.",
+		"1 — full wind-up contrast, speed concentrated in the strike.",
+		"1.0 is the game's value; lower it for a subtler tempo."))
+	_px_add_slider(timing_section, "windup_fraction", "Wind-up Share", 0.10, 0.50, 0.01, "", _px_control_tip(
+		"'Open Share' — the fraction of each stroke spent opening before the fast strike window.",
+		"How long the blade takes to reach the strike.",
+		"Short open — the strike arrives quickly.",
+		"Long, deliberate open before the strike.",
+		"0.30 is the game's value. Total stroke time stays the same; this only moves where the speed sits."))
+	_px_add_slider(timing_section, "recovery_fraction", "Follow-through Share", 0.10, 0.40, 0.01, "", _px_control_tip(
+		"'Recovery Share' — the fraction of each stroke spent easing out before the next reversal.",
+		"How long the follow-through lingers.",
+		"Quick ease-out.",
+		"Long, visible recovery.",
+		"0.20 is the game's value."))
+	_px_add_slider(timing_section, "windup_speed", "Wind-up Speed", 0.05, 1.00, 0.05, "×", _px_control_tip(
+		"'Open Drag' — how slow the opening phase runs relative to the base stroke rate.",
+		"How deliberate the wind-up feels.",
+		"Very slow open.",
+		"Nearly base rate — little slowing.",
+		"0.40 is the game's value. The stroke's total time is normalised, so a slower open trades speed out of the strike, not out of the tempo."))
+	_px_add_slider(timing_section, "strike_speed", "Strike Speed", 1.00, 4.00, 0.05, "×", _px_control_tip(
+		"'Strike Snap' — how fast the central committed strike window runs relative to the base rate.",
+		"How hard the strike accelerates.",
+		"Barely faster than the base rate.",
+		"A sharp, fast strike.",
+		"3.25 is the game's value; higher sharpens the contrast without changing cycle time."))
+	_px_add_slider(timing_section, "recovery_speed", "Recovery Speed", 0.05, 1.00, 0.05, "×", _px_control_tip(
+		"'Follow Dwell' — how slow the recovery runs relative to the base rate.",
+		"How long the settle after the strike lasts.",
+		"Very slow recovery.",
+		"Recovery barely slower than base.",
+		"0.20 is the game's value."))
+
+	# ── Action Commitment: the no-cancel window ─────────────────────────────
+	var commit_section: VBoxContainer = _create_section_header(metronome_tab, "Action Commitment", true)
+	_px_add_slider(commit_section, "action_commitment_strength", "Commitment Strength", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'No-Cancel' — how much of your aim authority is removed inside the late-stroke window (0 = freely redirectable, 1 = no-cancel).",
+		"Whether you can steer a committed cut back, or the sword commits.",
+		"0 — you can always redirect the stroke.",
+		"1 — inside the window the stroke cannot be steered at all.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only: it holds the swing's aim, never the blade's pose."))
+	_px_add_slider(commit_section, "action_commitment_start", "Action Phase Start", 0.30, 0.90, 0.01, "", _px_control_tip(
+		"'Commit Point' — where in the stroke the no-cancel window begins (fraction of the stroke).",
+		"How early the sword stops listening to a redirect.",
+		"Begins early — little of the stroke stays steerable.",
+		"Begins late — most of the stroke stays steerable.",
+		"0.60 is the game's value."))
+	_px_add_slider(commit_section, "action_commitment_end", "Action Phase End", 0.70, 1.00, 0.01, "", _px_control_tip(
+		"'Release Point' — where in the stroke aim authority returns, into the final recovery.",
+		"How long the commitment lasts before the next reversal.",
+		"Releases mid-stroke — a short commitment.",
+		"Releases at the very end — a long commitment.",
+		"0.90 is the game's value."))
+
+	# ── Arc Energy ("Authored Metronome"): the swing wakes and sleeps ────────
+	var arc_energy_section: VBoxContainer = _create_section_header(metronome_tab, "Arc Energy", true)
+	_px_add_slider(arc_energy_section, "arc_energy_on", "Arc Energy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Wake & Sleep' — arc energy: ON (1), the swing's width is driven by how fast you move your aim — it opens as you swipe and settles to a point when you rest.",
+		"Whether the metronome wakes from your movement, or always swings at the full Arc.",
+		"OFF (0) — the arc is fixed at the Arc slider.",
+		"ON (1) — moving your aim widens the arc; resting closes it back to a point.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only — the blade still earns every degree, so a block still breaks the swing."))
+	_px_add_slider(arc_energy_section, "arc_wake_speed", "Wake Speed", 50.0, 1200.0, 25.0, " px/s", _px_control_tip(
+		"'Wake Threshold' — how fast the aim must move to start widening the arc.",
+		"How much movement it takes to wake the swing.",
+		"A gentle move starts the arc.",
+		"Only a sharp swipe starts it.",
+		"350 is the game's value. Below it the arc holds its width and winds down."))
+	_px_add_slider(arc_energy_section, "arc_energy_build", "Arc Energy Build", 0.2, 3.0, 0.05, " /s", _px_control_tip(
+		"'Wake Rate' — how fast moving aim fills the arc energy.",
+		"How quickly the arc opens when you move.",
+		"The arc takes its time.",
+		"The arc opens almost the moment you move.",
+		"0.80 is the game's value."))
+	_px_add_slider(arc_energy_section, "arc_energy_fade", "Arc Energy Fade", 0.1, 2.0, 0.05, " /s", _px_control_tip(
+		"'Sleep Rate' — how fast the energy bleeds once the idle grace has passed.",
+		"Whether the wide arc lingers, or narrows quickly.",
+		"The arc lingers a long while.",
+		"The arc closes back to a point quickly.",
+		"0.35 is the game's value. Fade only begins after the Idle Grace."))
+	_px_add_slider(arc_energy_section, "arc_idle_grace", "Idle Grace", 0.5, 8.0, 0.1, " s", _px_control_tip(
+		"'Hold Before Sleep' — how long the arc holds its width after you stop moving before it fades.",
+		"How forgiving a brief pause is.",
+		"The arc starts winding down soon after you stop.",
+		"The arc holds through a long pause.",
+		"2.0 s is the game's value."))
+
+	# ── Apex Hang: a beat at the top of the stroke ──────────────────────────
+	var apex_section: VBoxContainer = _create_section_header(metronome_tab, "Apex Hang", true)
+	_px_add_slider(apex_section, "apex_hang_time", "Apex Hang — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Apex Hang' — endpoint dwell: ON (1), the swinging target pauses for a beat at the top of each stroke before returning.",
+		"Whether each swing hangs at its apex, or turns straight back.",
+		"OFF (0) — the stroke reverses immediately.",
+		"ON (1) — a short committed hold at each end.",
+		"Dormant unless Metronome Swing is ON (1). Target shaping only — the blade still earns every degree, so contact can still break the hang."))
+	_px_add_slider(apex_section, "apex_hang_duration", "Apex Hang Time", 0.05, 0.30, 0.01, " s", _px_control_tip(
+		"'Hang Length' — the maximum dwell at each apex, earned by how hard the stroke is driven.",
+		"How long the swing holds at the top.",
+		"A brief 0.05 s punctuation.",
+		"A clear 0.30 s hold before the return.",
+		"0.14 s is the game's value. A fully driven stroke earns the full hold; a sluggish or blocked one earns less."))
+
+	# ── PX Charge (LMB) ─────────────────────────────────────────────────────
+	# PX Mode's own use for the primary fire button: hold to bank speed, release to
+	# spend it. Anchored to the SWORD's own motion, not the cursor. OFF (0) leaves
+	# the button to the game (the chakram still throws, as in OS Mode). Every control
+	# here is dormant unless LMB Charge is ON (1).
+	var charge_tab: VBoxContainer = _px_tab(tabs, "PX Charge (LMB)")
+	var charge_section: VBoxContainer = _create_section_header(charge_tab, "Coil & Whip", true)
+	_px_add_slider(charge_section, "lmb_charge_on", "LMB Charge — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Coil & Whip' — charged primary fire: ON (1), PX BORROWS the left mouse button. Hold it and the blade banks speed IN THE DIRECTION IT IS ALREADY MOVING; let go and that stored speed is spent. OFF (0) hands the button straight back to the game's chakram.",
+		"Whether the left button winds the sword up, or throws the chakram.",
+		"OFF (0) — the button is the game's: the chakram throws exactly as in OS Mode.",
+		"ON (1) — the button is PX's: hold to bank speed, release to spend it.",
+		"Turning it OFF is the entire bail-out: the chakram comes straight back. Nothing else in PX changes."))
+	_px_add_slider(charge_section, "lmb_charge_style", "Charge Style", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Wind-Up Character' — which of the two wind-up styles the button uses. A: the blade is held back near-still while the reservoir fills, then pops on release. B: the blade really accelerates in its direction while held, and the release just inherits that speed.",
+		"Whether the wind-up loads a tank (A) or spins the blade up live (B).",
+		"A — Hold & Release: tension, then a distinct pop.",
+		"B — Spin-Up: continuous acceleration, no separate pop.",
+		"Try A first — it is the 'stored speed' reading. Flip to B to feel the live spin-up."),
+		["A — Hold & Release", "B — Spin-Up"])
+	_px_add_slider(charge_section, "lmb_charge_time", "Charge Time", 0.2, 4.0, 0.05, " s", _px_control_tip(
+		"'Load Time' — seconds to fill the reservoir to FULL from the BASE rate alone, with no head-start.",
+		"How long you have to hold before the wind-up is fully loaded.",
+		"0.2 — almost instant: a twitch loads a full charge.",
+		"4.0 — a long, deliberate draw.",
+		"1.0 s is the default. A blade that was already swinging when you pressed fills it faster (see Existing Speed Gain)."))
+	_px_add_slider(charge_section, "lmb_charge_existing_speed_gain", "Existing Speed Gain", 0.0, 3.0, 0.05, "×", _px_control_tip(
+		"'Head Start' — how much a blade that was ALREADY moving when you pressed charges the reservoir faster. Gain 1.0 doubles the fill rate for a fully-swinging blade; 0 ignores how you were moving.",
+		"Whether catching a real swing loads the charge faster.",
+		"0 — only the base rate matters; timing does not help.",
+		"3 — a fast-moving blade winds up very quickly.",
+		"1.0 rewards timing (press mid-swing). Set it to 0 for a flat, predictable charge."))
+	_px_add_slider(charge_section, "lmb_charge_spin_lead_degrees", "Spin-Up Lead", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Spin Drive' — Style B only: how far the motor's target runs AHEAD of the blade at a full charge, so the blade winds faster and faster.",
+		"How hard Style B spins the blade up while you hold.",
+		"0 — no spin-up: Style B does nothing while held.",
+		"180 — a hard, fast wind-up.",
+		"Dormant in Style A. 60° gives a strong, readable spin-up without running away."))
+	_px_add_slider(charge_section, "lmb_charge_fling_impulse", "Fling Impulse", 0.0, 200000.0, 1000.0, " N·m·s", _px_control_tip(
+		"'Whip Force' — Style A only: the angular impulse dumped at a FULL reservoir, scaled linearly by how full it is. A tap is a small flick; a full hold is a hard whip.",
+		"How violently the loaded blade snaps out on release.",
+		"0 — no whip at all: releasing just hands the blade back to the motor.",
+		"200000 — a violent snap, likely to hit the Helicopter Limit.",
+		"Dormant in Style B (the blade is already spinning). This is a torque IMPULSE, not a pose: the blade still earns the spin against real mass."))
+
+	# ── PX Aim & Hand ───────────────────────────────────────────────────────
+	var hand_tab: VBoxContainer = _px_tab(tabs, "PX Aim & Hand")
+	# Core Sword & Reach: PX now owns its aim feel, so these shape the aim PX hands
+	# the motor. Pure input shaping — the request gains weight; the blade still earns
+	# every degree, so the motor can still be out-run.
+	var core_reach_section: VBoxContainer = _create_section_header(hand_tab, "Core Sword & Reach", true)
+	_px_add_slider(core_reach_section, "aim_inertia_on", "Aim Inertia — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Aim Weight' — whether your aim itself has weight: ON (1), a fast flick no longer snaps the request onto the target in a single frame.",
+		"Whether the sword's demand feels immediate or weighted.",
+		"OFF (0) — the aim is your cursor, instantly.",
+		"ON (1) — the aim point and angle drag toward the cursor.",
+		"Target shaping only — the blade still earns every degree, so a fast enough flick can still out-run the motor."))
+	_px_add_slider(core_reach_section, "mouse_drag", "Overall Mouse Drag", 3.0, 35.0, 0.5, "", _px_control_tip(
+		"'Mouse Drag' — how fast the aim POINT chases your cursor (higher = snappier).",
+		"How directly the aim follows the mouse.",
+		"A loose, trailing aim point.",
+		"A tight aim point that tracks the cursor closely.",
+		"32 matches the game. Dormant unless Aim Inertia is ON (1)."))
+	_px_add_slider(core_reach_section, "rotation_speed", "Rotation Speed (Aim Turn Drag)", 2.0, 40.0, 0.5, "", _px_control_tip(
+		"'Turn Drag' — how fast the aim ANGLE settles onto the aim point (higher = snappier).",
+		"How quickly the sword's direction catches up.",
+		"The angle lags well behind the point.",
+		"The angle tracks the point closely.",
+		"10.5 matches the game. Dormant unless Aim Inertia is ON (1)."))
+	_px_add_slider(core_reach_section, "max_turn_speed_deg", "Max Turn Speed", 0.0, 1800.0, 30.0, " °/s", _px_control_tip(
+		"'Turn Speed Cap' — the fastest the aim angle may swing while chasing the point, in degrees/second.",
+		"Whether a violent flick can whip the aim around instantly.",
+		"0.0 — unlimited; the angle can jump as fast as the filter allows.",
+		"A hard ceiling on how fast the aim may turn.",
+		"0 = unlimited. 1080 matches the game. Dormant unless Aim Inertia is ON (1)."))
+
+	# Swing Envelope: normal mode (metronome OFF) points the blade at the raw aim
+	# with NO leash, so a fast cursor whip can hand the motor a runaway error,
+	# saturate it, and fling the blade — which then overshoots and snaps back the
+	# other way, often straight across you. This bounds how far the blade may trail
+	# the aim, so that error (and the fling) can never build. The metronome already
+	# has this bound (Lead Degrees); this gives normal mode the same protection.
+	var envelope_section: VBoxContainer = _create_section_header(hand_tab, "Swing Envelope", true)
+	_px_add_slider(envelope_section, "arc_limit_on", "Aim Arc Limit — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Swing Envelope' — bounds how far the blade may LAG your aim in normal mode. ON (1), the motor is never handed more than Aim Arc of error, so a fast flick cannot fling the blade out and bounce it back across you.",
+		"Whether the sword can be whipped past its arc and snap back, or is held to a bounded arc.",
+		"OFF (0) — the blade may trail the aim without limit (today's behaviour).",
+		"ON (1) — the blade's lag is capped at Aim Arc.",
+		"Target shaping only — it bounds the ERROR the motor sees, never the blade's pose. The metronome already does this with Lead Degrees."))
+	_px_add_slider(envelope_section, "arc_limit_degrees", "Aim Arc", 0.0, 180.0, 1.0, "°", _px_control_tip(
+		"'Swing Envelope Size' — the widest the blade may trail your aim, in degrees. Beyond this the excess error is simply not chased.",
+		"How much room the sword has to run before it is held back.",
+		"0 — the blade is locked in place (no lag allowed at all).",
+		"180 — effectively no limit; the blade may trail a half-turn.",
+		"Dormant unless Aim Arc Limit is ON (1). 90° keeps the blade close without feeling laggy."))
+
+	var reach_section: VBoxContainer = _create_section_header(hand_tab, "Reach", true)
+	_px_add_slider(reach_section, "hand_min", "Hand Min", 0.0, 200.0, 1.0, " px", _px_control_tip(
+		"'Reach — Close' — minimum grip radius (px): the closest the grip orbits to your body when you aim short.",
+		"How tightly the sword hugs you up close.",
+		"Even closer and tighter.",
+		"A wider minimum, even up close.",
+		"5 px matches the game."))
+	_px_add_slider(reach_section, "hand_max", "Hand Max", 0.0, 300.0, 1.0, " px", _px_control_tip(
+		"'Reach — Far' — maximum grip radius (px): the farthest the grip reaches when you aim long.",
+		"Your full reach and lunges.",
+		"Shorter reach.",
+		"Longer reach.",
+		"40 px matches the game."))
+	# ── PX Enemies ──────────────────────────────────────────────────────────
+	var enemy_tab: VBoxContainer = _px_tab(tabs, "PX Enemies")
+	var spawn_section: VBoxContainer = _create_section_header(enemy_tab, "Spawns", true)
+	_px_add_slider(spawn_section, "chaser_wanted", "Spawn Chaser — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Chasers' — spawn homing enemy: ON (1) keeps one unarmed chaser in the world; it walks at you and yields to the blade.",
+		"A moving, physical target to shove and cut.",
+		"OFF (0) — no chaser.",
+		"ON (1) — one chaser, respawning if you destroy it.",
+		"Great for feeling the blade shove a body off its line."))
+	_px_add_slider(spawn_section, "sword_enemy_wanted", "Spawn Sword Enemy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Duelists' — spawn armed enemy: ON (1) keeps one armed enemy with its own physics blade.",
+		"Blade-on-blade parries and binding.",
+		"OFF (0) — no sword enemy.",
+		"ON (1) — one armed enemy, respawning if destroyed.",
+		"Use it to feel parries and hilt give."))
+	_px_add_slider(spawn_section, "test_dummy_wanted", "Spawn Test Dummy — OFF / ON", 0.0, 1.0, 1.0, "", _px_control_tip(
+		"'Dummy' — spawn stationary target: ON (1) places a regenerating dummy target.",
+		"A fixed target to study cuts without it moving.",
+		"OFF (0) — no dummy.",
+		"ON (1) — one dummy, heals itself.",
+		"The best place to tune the Flesh & Core tab."))
+	var enemy_note: Label = Label.new()
+	enemy_note.text = "Physical targets for the physics sword — the blade shoves them, they yield.\nONE of each stays alive (it respawns if destroyed); toggle off to remove."
+	enemy_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	enemy_tab.add_child(enemy_note)
+
+	# ── PX Flesh & Core ─────────────────────────────────────────────────────
+	var material_tab: VBoxContainer = _px_tab(tabs, "PX Flesh & Core")
+	var flesh_section: VBoxContainer = _create_section_header(material_tab, "Flesh", true)
+	_px_add_slider(flesh_section, "flesh_radius", "Flesh Radius", 0.0, 80.0, 1.0, " px", _px_control_tip(
+		"'Flesh Ring' — soft-contact radius (px): how far the sword can sink in before it reaches bone — the soft ring around the core. NOT a collider: the blade passes through it.",
+		"How deep a cut bites before it can catch.",
+		"Thin flesh — the blade reaches bone almost immediately.",
+		"Deep flesh — a big soak; cuts swallow the blade before it hits core.",
+		"Grow it until a cut has a beat of 'sink' before it stops."))
+	_px_add_slider(flesh_section, "flesh_drag", "Flesh Drag", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Flesh Drag' — viscous torque: how much the sword slows while it cuts through the flesh ring.",
+		"Whether a cut barely costs you, or hauls the swing down.",
+		"Airy — barely slows; a clean slice.",
+		"Heavy — the blade hauls through; a big cost to your arc.",
+		"Raise until a cut visibly 'bites' and costs a little arc; stop before it feels gluey."))
+	var core_section: VBoxContainer = _create_section_header(material_tab, "Core", true)
+	_px_add_slider(core_section, "core_radius", "Core Radius", 0.0, 60.0, 1.0, " px", _px_control_tip(
+		"'Bone Core' — solid-collision radius (px): the size of the SOLID body the blade physically stops and turns on.",
+		"How much of a hit is a hard BONK versus a slicing cut.",
+		"Tiny bone — almost everything cuts through.",
+		"Big bone — most hits clang and turn on the core.",
+		"Keep it small for easy enemies (turkeys); grow it for armored ones."))
+	_px_add_slider(core_section, "bone_friction", "Bone Friction", 0.0, 1.0, 0.05, "", _px_control_tip(
+		"'Bone Grip' — contact friction: how much the blade grips the bone core — glance or catch.",
+		"Whether the sword skates around the bone, or catches and drags.",
+		"Slick — skates around the core instantly.",
+		"Grippy — catches and drags before freeing; too far feels stuck.",
+		"Start medium; raise only until a big hit has ONE beat of 'catch'."))
+	var body_section: VBoxContainer = _create_section_header(material_tab, "Enemy Body")
+	_px_add_slider(body_section, "enemy_mass", "Enemy Mass", 0.2, 12.0, 0.2, "", _px_control_tip(
+		"'Enemy Weight' — mass (kg): how heavy enemy bodies are.",
+		"Whether the blade sends them flying, or you feel the recoil.",
+		"Feathers — they fly off your swings.",
+		"Boulders — the sword bounces off and YOU stagger.",
+		"2 is a good middle: they get shoved, but don't launch."))
+
+func _px_tab(tabs: TabContainer, tab_name: String) -> VBoxContainer:
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = tab_name
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(scroll)
+	var box: VBoxContainer = VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 8)
+	scroll.add_child(box)
+	return box
+
+## The PX control contract, built on the SAME builder every OS control uses, so a
+## PX control reads in one voice with the rest of the game: it adds the WHAT IT IS
+## and FEELS LIKE lines on top of the OS description/← LEFT/→ RIGHT/TIP shape.
+static func _px_control_tip(what_it_is: String, feels_like: String, left: String, right: String, tip: String) -> String:
+	return _form_three_feel_tip("WHAT IT IS\n%s\n\nFEELS LIKE\n%s" % [what_it_is, feels_like], left, right, tip)
+
+## The same blue "[?]" badge the OS sliders use: hovering it (or the label, or the
+## slider) reveals the full guidance. Keeps PX and OS visually identical.
+func _px_tip_badge(row: Container, tooltip: String) -> void:
+	var badge: Label = Label.new()
+	badge.text = "[?]"
+	badge.tooltip_text = tooltip
+	badge.mouse_filter = Control.MOUSE_FILTER_STOP
+	badge.modulate = Color(0.45, 0.85, 1.0, 0.9)
+	row.add_child(badge)
+
+## A PX slider row shaped exactly like an OS one: a title row (the mechanism's real
+## name + a [?] badge), the slider, and a right-aligned value. The control is named
+## for the mechanism itself; any bench nickname lives in the tooltip.
+func _px_add_slider(parent: VBoxContainer, key: String, title: String, minimum: float, maximum: float, step: float, suffix: String, tooltip: String = "", labels: Array = []) -> void:
+	var row: VBoxContainer = VBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(row)
+
+	var title_row: HBoxContainer = HBoxContainer.new()
+	title_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(title_row)
+	var label: Label = Label.new()
+	label.text = title
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.tooltip_text = tooltip
+	title_row.add_child(label)
+	if not tooltip.is_empty():
+		_px_tip_badge(title_row, tooltip)
+
+	var slider: HSlider = HSlider.new()
+	slider.min_value = minimum
+	slider.max_value = maximum
+	slider.step = step
+	slider.focus_mode = Control.FOCUS_NONE
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value = float(_px_settings.get(key, minimum))
+	slider.tooltip_text = tooltip
+	row.add_child(slider)
+
+	var value_label: Label = Label.new()
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	row.add_child(value_label)
+
+	var refresh: Callable = func() -> void:
+		if not labels.is_empty():
+			value_label.text = str(labels[clampi(int(round(slider.value)), 0, labels.size() - 1)])
+		else:
+			value_label.text = ("%.2f%s" % [slider.value, suffix]) if step < 1.0 else ("%d%s" % [int(slider.value), suffix])
+	refresh.call()
+	slider.value_changed.connect(func(v: float) -> void:
+		_px_settings[key] = v
+		refresh.call()
+		_px_apply())
+	px_controls[key] = slider
+
+## Persist the PX tunables to the PX save and push them onto the live in-world sword.
+func _px_apply() -> void:
+	BDPXGlobal.save_settings(_px_settings)
+	if is_instance_valid(main) and main.has_method("apply_px_settings"):
+		main.call("apply_px_settings", _px_settings)
+
+## Write the current PX tunables to BDPX's own save on demand — the SAME authority
+## every control already writes to as it moves — and refresh the readout.
+func _px_save_now() -> void:
+	BDPXGlobal.save_settings(_px_settings)
+	_px_refresh_saved_label()
+
+## Re-apply the saved BDPX setup into every control, discarding unsaved tweaks.
+func _px_load_saved() -> void:
+	_px_settings = BDPXGlobal.load_settings()
+	for key: String in px_controls.keys():
+		if not _px_settings.has(key):
+			continue
+		var control: Control = px_controls[key]
+		if control is HSlider:
+			(control as HSlider).value = float(_px_settings[key])
+		elif control is Button:
+			(control as Button).button_pressed = bool(_px_settings[key])
+	_px_apply()
+	_px_refresh_saved_label()
+
+func _px_refresh_saved_label() -> void:
+	if px_saved_label == null:
+		return
+	if BDPXGlobal.has_save():
+		px_saved_label.text = "Last saved: %s" % BDPXGlobal.saved_at()
+	else:
+		px_saved_label.text = "No BDPX save yet."
+
+## One click back to the honest starting point: EVERY tunable returns to its default,
+## so the sword follows your AIM (metronome off), the motor is stock, and nothing is
+## spawned. The clean floor to learn the raw physical sword from the bottom up.
+func _px_reset_baseline() -> void:
+	var defaults: Dictionary = BDPXGlobal.default_settings()
+	for key: String in px_controls.keys():
+		if not defaults.has(key):
+			continue
+		_px_settings[key] = defaults[key]
+		var control: Control = px_controls[key]
+		if control is HSlider:
+			(control as HSlider).value = float(defaults[key])
+		elif control is Button:
+			(control as Button).button_pressed = bool(defaults[key])
+	_set_disk_feedback("Clean baseline restored — the sword follows your aim.")
+	_px_apply()
+
+## The one mode switch. It persists the choice into the PX save, tells main to bring
+## the physics sword up or stand it down, and swaps which tab set is shown.
+func _set_px_mode(px_on: bool) -> void:
+	# Keep the single source of truth (the PX save) in one place: the mode flag
+	# rides in the same dictionary the PX tuner persists, so saving the tuner can
+	# never clobber the mode.
+	_px_settings["px_mode"] = px_on
+	_set_disk_feedback("PX Mode — the physics sword." if px_on else "OS Mode — the game's authored sword.")
+	if is_instance_valid(main) and main.has_method("set_px_mode"):
+		main.call("set_px_mode", px_on)
+	_px_apply()
+	_refresh_px_mode_ui()
+	_apply_training_layout()
+	_apply_training_layout.call_deferred()
+
+func _refresh_px_mode_ui() -> void:
+	var px_on: bool = bool(BDPXGlobal.load_settings().get("px_mode", false))
+	var os_button: Button = px_mode_buttons.get("os") as Button
+	var px_button: Button = px_mode_buttons.get("px") as Button
+	if is_instance_valid(os_button):
+		os_button.disabled = not px_on
+	if is_instance_valid(px_button):
+		px_button.disabled = px_on
+	if px_mode_status != null:
+		px_mode_status.text = "PX — PHYSICS SWORD" if px_on else "OS — AUTHORED SWORD"
+	if training_tabs != null:
+		training_tabs.visible = not px_on
+	if px_tabs != null:
+		px_tabs.visible = px_on
+
+>>>>>>> Stashed changes
 ## Returns a viewport-safe panel rectangle. The separate toggle sits directly
 ## above it, and the combined toggle+panel assembly is centered as one unit.
 ## Explicit top-left geometry avoids container minimum-size changes growing a
@@ -200,10 +850,15 @@ func _apply_training_layout() -> void:
 	panel.offset_bottom = 0.0
 
 func _build_enemy_tab(tabs: TabContainer) -> void:
+	var enemy_scroll: ScrollContainer = ScrollContainer.new()
+	enemy_scroll.name = "Enemies"
+	enemy_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	tabs.add_child(enemy_scroll)
 	var enemy_tab: VBoxContainer = VBoxContainer.new()
-	enemy_tab.name = "Enemies"
+	enemy_tab.name = "SpawnList"
+	enemy_tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enemy_tab.add_theme_constant_override("separation", 8)
-	tabs.add_child(enemy_tab)
+	enemy_scroll.add_child(enemy_tab)
 
 	var title: Label = Label.new()
 	title.text = "SPAWN ENEMIES"
@@ -248,6 +903,8 @@ func _build_enemy_tab(tabs: TabContainer) -> void:
 		{"label":"Turkey", "scene":WaveSpawner.TURKEY_SCENE},
 		{"label":"Spear Goblin", "scene":WaveSpawner.GOBLIN_SCENE},
 		{"label":"Archer Goblin", "scene":WaveSpawner.ARCHER_GOBLIN_SCENE},
+		{"label":"Goblin Bomber", "scene":WaveSpawner.GOBLIN_BOMBER_SCENE},
+		{"label":"Goblin Shaman", "scene":WaveSpawner.GOBLIN_SHAMAN_SCENE},
 		{"label":"Sword Goblin", "scene":WaveSpawner.SWORD_GOBLIN_SCENE},
 		{"label":"Bug", "scene":WaveSpawner.BUG_SCENE},
 		{"label":"Wolf", "scene":WaveSpawner.WOLF_SCENE},
@@ -399,20 +1056,32 @@ func _create_blade_shape_slider(parent: VBoxContainer, key: String, title: Strin
 func _blade_shape_setting_changed(value: float, key: String) -> void:
 	var player: Player = _player()
 	if player == null: return
+	if not Player.BLADE_PROFILES.has(selected_combat_sword_id): return
 	player.set_blade_shape_setting(selected_combat_sword_id, key, value)
 	_sync_blade_shape_controls()
 
 func _sync_blade_shape_controls() -> void:
 	var player: Player = _player()
 	if player == null: return
+	# Twin/double-ended geometry is fixed by construction, so their profiles own
+	# hand tuning only; the shape sliders show (read-only) the Longsword shape.
+	var shape_editable: bool = Player.BLADE_PROFILES.has(selected_combat_sword_id)
+	var shape_sword_id: String = selected_combat_sword_id if shape_editable else Player.TUNING_PROFILE_SEED_SOURCE
 	for key: String in blade_shape_controls:
 		var row: Dictionary = blade_shape_controls[key]
-		var value: float = player.get_blade_shape_setting(selected_combat_sword_id, key)
+		var value: float = player.get_blade_shape_setting(shape_sword_id, key)
 		var suffix: String = str(row.get("suffix", ""))
 		(row["slider"] as HSlider).set_value_no_signal(value)
+		(row["slider"] as HSlider).editable = shape_editable
 		(row["label"] as Label).text = ("%.2f%s" if suffix == "" else "%.1f%s") % [value, suffix]
 	if blade_shape_status != null:
-		blade_shape_status.text = "Editing and equipped: %s" % selected_combat_sword_id
+		var fixed_label: String = str(COMBAT_SWORD_LABELS.get(selected_combat_sword_id, selected_combat_sword_id))
+		if shape_editable:
+			blade_shape_status.text = "Editing and equipped: %s" % selected_combat_sword_id
+		elif selected_combat_sword_id == ArmoryConfig.GREATSWORD_NAME:
+			blade_shape_status.text = "%s uses a fixed traced blade shape (spine + width from its art); blade shape is not tunable for it." % fixed_label
+		else:
+			blade_shape_status.text = "%s uses fixed Longsword-based geometry; blade shape is not tunable for it." % fixed_label
 
 func _build_charged_guard_tab(tabs: TabContainer) -> void:
 	var scroll: ScrollContainer = ScrollContainer.new()
@@ -435,14 +1104,17 @@ func _build_charged_guard_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(box, "charged_guard_position_charge_enabled", "Charged Guard State (Blue) Enabled (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Enable the blue charged-position layer and gesture entries.", "Original Guard only: no blue glow, afterimages, or gestures.", "Pommel catches charge blue after a short delay; enabled G and Z entries arrive blue immediately.", "G and Z entry require this blue state to be on."))
 	_create_contact_slider(box, "charged_guard_entry_g_enabled", "G Gesture Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a counter-clockwise inward spiral drawn outside Guard enter blue Guard immediately.", "Drawing the spiral does not acquire Guard.", "A broad spiral that turns counter-clockwise while clearly tightening enters blue Guard as soon as its shape qualifies.", "Default off. No stillness pause is required; the spiral must fit inside the 1.5-second capture window. Only mouse input is read. Requires Guard and Blue State enabled and the Arc Energy floor reached; it does not use the pommel timing window."))
 	_create_contact_slider(box, "charged_guard_entry_z_enabled", "Z Gesture Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a large Z drawn outside Guard enter blue Guard immediately.", "Drawing Z does not acquire Guard.", "Two broad rightward bars joined by a down-left stroke enter blue Guard.", "Default off. Only mouse input is read today. Each arm must be substantial and straight enough to reject a small scribble. Requires Guard and Blue State enabled and the Arc Energy floor reached."))
+	_create_contact_slider(box, "rewind_gesture_enabled", "Rewind Gesture — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("While holding the blue Charged Guard, draw a counter-clockwise circle with the mouse that starts at the TOP (go left first, around, and back to the top). It uses your one rewind for this wave (no Flow cost) and ends the Guard, rewinding only yourself up to 10 seconds, played backward over half that time (5 s). The world freezes while you play backward; position, health, aim, dash/grapple charges and sword pose return to where you were. The left-HUD clock icon fades once used and refills at the next wave. Press LMB+RMB together during playback to stop early: you are restored to that intermediate moment and the charge is still spent.", "OFF: drawing the circle does nothing.", "ON: a broad, closed, counter-clockwise circle started at its top, drawn inside 2.5 s while in blue Guard, instantly rewinds you (once per wave), invulnerable and frozen-world, then hands control straight back.", "Default ON. Guard-only: never reads outside the blue Charged Guard. One charge per wave; every run and test area starts charged. Clockwise circles, partial arcs, scribbles and circles started at the side or bottom never count. All other gestures (Guard slashes/thrust/whirlwind, G/Z entry) are currently disabled by a code gate; pommel and dual-click Guard entry still work. Not available once dead; negative status effects are cleared, not restored."))
+	_create_contact_slider(box, "world_rewind_gesture_enabled", "World Rewind (Spiral) — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("While holding the blue Charged Guard, draw a counter-clockwise spiral that tightens inward (about one and a quarter turns or more, starting broad, any start point, within 3.5 s). It spends the same once-per-wave rewind charge as the circle, but rewinds the WORLD too, up to 10 s, played backward over half that time (5 s): you; every enemy (position, health, attack timers; kills in the window come back, spawns vanish); enemy projectiles (arrows, bug shots, bomber bombs, shaman heal orbs); your chakram (flight, catches and its charge); loot (drops from undone kills vanish, pickups return to the ground and leave your inventory); broken props, trees and herbs (whole again); your score and run damage totals; and the wave clock and spawn warnings. Press LMB+RMB together during playback to stop early at that moment.", "OFF: drawing the spiral does nothing (the circle still rewinds yourself).", "ON: a broad, inward, counter-clockwise spiral in blue Guard rewinds you and the world (once per wave, shared with the circle).", "Default ON. It never crosses a wave boundary: if a wave or boss wave started or cleared in the window, it stops at that moment (and if that leaves nothing to rewind, it refuses and keeps the charge). A steady circle never reads as the spiral; clockwise or outward spirals do nothing. Equipped gear is never removed by an undone pickup. A defeated Zungar stays defeated."))
+	_create_contact_slider(box, "world_slow_gesture_enabled", "World Slow (Clockwise Circle) — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("While holding the blue Charged Guard, draw any rough clockwise loop -- any start point, any size, it does not need to close neatly (about two-thirds of a turn is enough), firing the moment the loop counts -- no need to stop. It uses the same forgiving loop reading as the old Whirlwind gesture. For 5 seconds every enemy (Zungar and summons too), every enemy projectile (arrows, bug shots, bomber bombs and their fuses, shaman heal orbs) and the wave timer run at half speed while you, your sword, chakram and grapple stay full speed. It has its own once-per-wave charge (the hourglass icon beside the rewind icon) and releases Guard when it fires.", "OFF: the clockwise loop does nothing.", "ON: a rough clockwise loop in blue Guard slows the world to half speed for 5 s, once per wave.", "Default ON. Counter-clockwise loops never slow (they rewind); spirals never slow. The slow counts in your real time and is not undone by World Rewind (its countdown pauses during rewind playback). A steady cool blue-violet wash shows while it is active."))
 	_create_contact_slider(box, "charged_guard_pommel_entry_enabled", "Pommel Pull Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Choose whether the timed pommel pull can acquire Guard.", "Pommel pulls cannot acquire Guard; enabled G or Z gestures can still do so.", "A timed, aligned pull can catch Guard as before.", "Default on. Turn this off if you prefer gesture-only Guard entry."))
-	_create_contact_slider(box, "charged_guard_dual_click_entry_enabled", "Dual-Click Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let holding the left and right mouse buttons together enter blue Guard, with the chakram and grapple suppressed while both are held.", "The dual-click route cannot acquire Guard, and both buttons keep their own chakram and grapple actions.", "Holding LMB and RMB together for the hold time below locks blue Guard and does not throw the chakram or fire the grapple.", "Default on. Only mouse input is read. Requires Guard and Blue State enabled and the Arc Energy floor reached. Turn this off to give the two buttons back to the chakram and grapple."))
+	_create_contact_slider(box, "charged_guard_dual_click_entry_enabled", "Dual-Click Guard Entry (0/1)", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let holding the left and right mouse buttons together enter blue Guard, with the chakram and grapple suppressed while both are held.", "The dual-click route cannot acquire Guard, and both buttons keep their own chakram and grapple actions.", "Holding LMB and RMB together for the hold time below locks blue Guard, and holding them again inside Guard exits it; neither throws the chakram nor fires the grapple.", "Default on. Only mouse input is read. Requires Guard and Blue State enabled and the Arc Energy floor reached. The same held pair inside Guard is the deliberate exit: it releases Guard through the normal release. Let go of both buttons after entering or exiting before the pair acts again, so one hold never bounces in and out. A single LMB or RMB never exits. Turn this off to give the two buttons back to the chakram and grapple (Guard then exits only by the Hold Limit or a gesture)."))
 	_create_contact_slider(box, "charged_guard_dual_click_hold_time", "Dual-Click Hold Time", 0.05, 0.6, 0.05, " s", _form_three_feel_tip("How long the left and right mouse buttons must be held together before the dual-click route locks Guard.", "A short hold is enough; entering is quick but a firm click could trigger by accident.", "The pair must be held firmly before Guard locks, so a fast click never acquires it.", "Default 0.20 seconds. While both buttons are held the chakram and grapple are suppressed, so holding them has no side effects. Raise this if fast clicks ever trigger by accident."))
 	_create_contact_slider(box, "charged_guard_awaken_duration", "Charged Position Confirm Time", 0.20, 0.35, 0.05, " s", _form_three_feel_tip("Delay after Guard catches before the hand turns blue and gestures become available.", "Gestures become available soon after the catch.", "The blue state and gestures wait a little longer.", "This tuning pass caps older saved values at 0.35 seconds without deleting them."))
 	_create_contact_slider(box, "charged_guard_near_body_radius", "Near-Body Charge Radius", 10.0, 100.0, 2.0, " px", _form_three_feel_tip("How close the guarded hand must be to your body to speed up its blue charge.", "Only a tightly pulled-in hand earns the boost.", "A hand farther from the body can still earn the boost.", "Default 48 pixels. Move the guarded hand inside this radius to apply the charge boost below."))
 	_create_contact_slider(box, "charged_guard_near_body_rate", "Near-Body Charge Boost", 0.0, 3.0, 0.1, "×", _form_three_feel_tip("Extra blue charge speed while the guarded hand is inside the Near-Body Charge Radius.", "No extra speed; the confirm delay stays as set above.", "A close hand reaches blue up to four times as fast.", "Default 0. This speeds up gesture availability after Guard catches; it does not make Guard easier to catch."))
-	_create_contact_slider(box, "charged_guard_hold_limit", "Guard Hold Limit", 1.0, 15.0, 0.5, " s", _form_three_feel_tip("How long the blue guard holds before releasing itself, counted from the moment it goes blue.", "The guard is a quick brace: it releases after a second or two.", "The guard can be held for a long stretch, up to fifteen seconds.", "Default 4 seconds. The charge is free, so this counts from blue and never from the moment you start acquiring, and it pauses while you are drawing a gesture so a circle can never be timed out from under your hand. When it expires, a fresh guard is blocked for half a second, so a shape you are still holding does not immediately take again. The exits are a hard sideways flick, this limit, or discharging a gesture."))
-	_create_contact_slider(box, "charged_guard_break_speed", "Guard Flick Break Speed", 100.0, 2000.0, 25.0, " px/s", _form_three_feel_tip("How fast a sideways flick must cross the aim to break the guard, geared by how far out the cursor is held so the same flick works wherever the hand is.", "An easy flick breaks the guard: it lets go almost as soon as you drag across.", "Only a hard, deliberate snap breaks the guard.", "Default 600. It measures lateral speed only -- the part of the motion crossing the aim, not the part running along it -- so a straight drawn stroke can never be mistaken for a flick. This is the quickest way out of a guard; the Guard Hold Limit is the backstop."))
+	_create_contact_slider(box, "charged_guard_hold_limit", "Guard Hold Limit", 1.0, 15.0, 0.5, " s", _form_three_feel_tip("How long the blue guard holds before releasing itself, counted from the moment it goes blue.", "The guard is a quick brace: it releases after a second or two.", "The guard can be held for a long stretch, up to fifteen seconds.", "Default 4 seconds. The charge is free, so this counts from blue and never from the moment you start acquiring, and it pauses while you are drawing a gesture so a circle can never be timed out from under your hand. When it expires, a fresh guard is blocked for half a second, so a shape you are still holding does not immediately take again. The exits are holding LMB and RMB together, this limit, or discharging a gesture."))
+	_create_contact_slider(box, "charged_guard_break_speed", "Guard Flick Break Speed", 100.0, 2000.0, 25.0, " px/s", _form_three_feel_tip("INACTIVE: the flick break is disabled by a code gate; a flick no longer breaks Guard. Hold LMB and RMB together to exit Guard instead. When re-enabled, this is how fast a sideways flick must cross the aim to break the guard, geared by how far out the cursor is held.", "An easy flick breaks the guard: it lets go almost as soon as you drag across.", "Only a hard, deliberate snap breaks the guard.", "Default 600. It measures lateral speed only -- the part of the motion crossing the aim, not the part running along it -- so a straight drawn stroke can never be mistaken for a flick. Kept for a possible return; moving it has no effect while the gate is off. The deliberate exit is the LMB+RMB pair; the Guard Hold Limit is the backstop."))
 	_create_contact_slider(box, "charged_guard_acquisition_window", "Guard Rhythm Window", 0.20, 0.95, 0.01, "", _form_three_feel_tip("How much of each metronome turn permits a pommel pull to catch Guard.", "A narrow beat demands precise pull timing.", "A wider beat forgives timing without forgiving weak or misaligned pulls.", "The pull must build its travel and intent inside this window; outside it no new Guard evidence is earned."))
 	_create_contact_slider(box, "charged_guard_min_arc_energy", "Minimum Arc Energy for Guard", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("Minimum metronome Arc Energy required before any Guard entry route can fire.", "At zero, even a small waking arc can qualify.", "At 100%, only the fully opened swing can qualify.", "Default 100%. Try 85-95% if entry feels delayed. This applies to pommel, G, and Z entry when Authored Metronome is enabled."))
 	_create_contact_slider(box, "charged_guard_pommel_alignment", "Pommel Direction Precision", 0.50, 0.99, 0.01, "", _form_three_feel_tip("How straight the counter-drive must be against the blade before it counts at all.", "Quite diagonal drives still count.", "The drive must be almost exactly against the blade.", "Measured against the blade the metronome is swinging, so the drive has to answer the swing as it happens. Alignment decides whether a drive counts, and scales how much of it banks."))
@@ -727,6 +1399,7 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	var visual_box: VBoxContainer = _create_section_header(box, "Enemy Visual FX")
 	var blood_box: VBoxContainer = _create_section_header(box, "Blood & Death")
 	var shells_box: VBoxContainer = _create_section_header(box, "Physics Shells")
+	_create_contact_slider(shells_box, "collision_sword_enabled", "Collision Constrained Sword 2 — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("BDOS collision authority: the authored hand position and blade angle become intent. Starting from the last resolved pose, checked steps keep the blade outside each enemy's actual body collision shape and opposing weapon, preserving permitted sliding motion. The hand and sword stay connected.", "OFF (0): retain the existing authored sword and whichever legacy contact switches you enabled.", "ON (1): contact reshapes the actual grip/blade movement; drawing, trails and hit detection consume the same resolved geometry.", "Needs HIT REACTION ON. Ships OFF and saves per combat preset. This version uses the full enemy body collider (the current shared enemy shape is a circle), not the reduced bone core. It replaces Bone Slide Constraint and legacy bite/glance/surface/shell pose offsets while active, without changing their saved settings. Terrain, mutual enemy-sword solving and hand absorption spring are not included. Bone Boundary Debug shows resolved geometry in green, intent in cyan and contact normals in yellow. This is collision-constrained BDOS, not rigid-body PX physics."))
 	# Blade Sink: the flesh-overlap slowdown and the hold that lingers after contact.
 	_create_contact_slider(sink_box, "blade_sink_enabled", "Blade Sink — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Slow the swing while the blade is within the outer flesh, recovering when contact ends.", "OFF: normal authored swing rate during flesh overlap.", "ON: use the strength below to slow the live overlap.", "The blade still completes its swing; inner-core resistance is controlled separately above."))
 	_create_contact_slider(sink_box, "blade_sink_strength", "Blade Sink Strength", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("Scale how much of the Sink Depth ceiling below the blade actually uses on flesh contact.", "Little or no slowdown on contact.", "At 100%, the full Sink Depth ceiling is used while the blade is in flesh.", "The bite eases in on contact and eases back out after separation, so the sword never snaps back to full speed or feels stuck on the enemy. Sink Depth sets the ceiling; this picks how much of it you feel."))
@@ -882,6 +1555,22 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	event_monitor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(event_monitor_label)
 
+	combat_form_option = OptionButton.new()
+	combat_form_option.name = "SwordFormSelector"
+	combat_form_option.focus_mode = Control.FOCUS_NONE
+	combat_form_option.tooltip_text = "Same four forms on every weapon. Z / X, or controller D-pad left / right."
+	for style: int in Player.STYLE_CYCLE_ORDER:
+		combat_form_option.add_item(Player.sword_form_name(style), style)
+	combat_form_option.item_selected.connect(func(index: int) -> void:
+		var live_player: Player = _player()
+		if live_player != null:
+			live_player.set_sword_form(combat_form_option.get_item_id(index))
+			_sync_combat_controls()
+	)
+	box.add_child(combat_form_option)
+	shared_form_status = Label.new()
+	shared_form_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	box.add_child(shared_form_status)
 	_build_combat_sword_selector(box)
 	_build_blade_shape_section(box)
 
@@ -904,9 +1593,15 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_hand_slider(core_section, "min", "Min Hand Range", 5.0, 140.0, 1.0, " px")
 	_create_hand_slider(core_section, "max", "Max Hand Range", 5.0, 200.0, 1.0, " px")
 	_create_hand_slider(core_section, "arc", "Arc Degrees", 5.0, 120.0, 1.0, "°")
-	_create_hand_slider(core_section, "frequency", "Swing Frequency", 0.2, 3.0, 0.05, " Hz", "Form II: one cycle includes all thrusts sweeping across the longitudinal arcs. Form III-VI: one cycle includes the figure-eight lobes. Form VII uses repeated thrusts.")
-	_create_hand_slider(core_section, "thrusts_per_cycle", "Form II — Thrusts per Sweep", 2.0, 15.0, 1.0, "", "Evenly spaced longitudinal thrust strokes across each half-cycle sweep, default 7. Thrusts bow out along meridian arcs converging at target X.")
-	_create_hand_slider(core_section, "moulinet_aim_smoothing", "Form V — Aim Direction Smoothing", 0.05, 30.0, 0.05, " /s", "Original direction restored: lower values are slower and heavier; higher values reverse faster. The 0.05 /s minimum supports very slow momentum changes.")
+	_create_hand_slider(core_section, "frequency", "Swing Frequency", 0.2, 3.0, 0.05, " Hz", "Shared form clock. Thrust keeps the metronome sweep: one stab per direction, two per full back-and-forth (unchanged).")
+	_create_hand_slider(core_section, "thrusts_per_cycle", "Legacy — Meridian Thrust Count", 2.0, 15.0, 1.0, "", "Parked legacy form only; not the current Thrust envelope.")
+	_create_hand_slider(core_section, "moulinet_aim_smoothing", "Form IV — Aim Direction Smoothing", 0.05, 30.0, 0.05, " /s", "Lower values reverse more slowly; higher values follow aim direction faster.")
+	thrust_form_section = _create_section_header(box, "THRUST — SHARED LONGSWORD MOTION (ALL WEAPONS)")
+	_create_hand_slider(thrust_form_section, "thrust_coil_px", "Wind-up Pullback", 0.0, 100.0, 1.0, " px", "Pull back along the blade before extending. Existing default: 10px.")
+	_create_hand_slider(thrust_form_section, "thrust_extension_px", "Stab Beyond Normal Reach", 0.0, 100.0, 1.0, " px", "Extension along the blade. Existing default: 20px. Tune here once; Dual Blade follows automatically.")
+	_create_hand_slider(thrust_form_section, "thrust_windup_end", "Wind-up End (Stroke Fraction)", 0.01, 0.97, 0.01, "", "Existing default 0.40. Timing values are ordered safely when evaluated.")
+	_create_hand_slider(thrust_form_section, "thrust_peak", "Stab Peak (Stroke Fraction)", 0.02, 0.98, 0.01, "", "Existing default 0.50: maximum extension at sweep midpoint.")
+	_create_hand_slider(thrust_form_section, "thrust_recover_end", "Recovery End (Stroke Fraction)", 0.03, 1.0, 0.01, "", "Existing default 0.80; the rest of the stroke rests at normal reach.")
 
 	var grapple_section: VBoxContainer = _create_section_header(box, "GRAPPLE V1 (Global)")
 	grapple_status_label = Label.new()
@@ -984,6 +1679,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 
 	# Slide is shared contact behavior, so its controls stay visible for every form.
 	var slide_section: VBoxContainer = _create_section_header(box, "SLIDE FEEL (Per Preset)")
+	_create_contact_slider(slide_section, "slide_debug_enabled", "Slide Debug Tool — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Shows the slide counter above the player for contact testing.", "OFF (0): hides the diagnostic counter.", "ON (1): displays the number of detected slides.", "Diagnostic only; this does not change slide mechanics."))
 	_create_contact_slider(slide_section, "slide_contact_tolerance", "Contact Tolerance", 2.0, 30.0, 1.0, " px", _form_three_feel_tip("Maximum blade-to-blade distance that may begin a parallel slide.", "Precise contact; slides are rarer and may miss under fast motion.", "Forgiving proximity; slides are easier, but near misses may count.", "This helps achieve a slide; Form III Bind Retention Tolerance controls keeping it."))
 	_create_contact_slider(slide_section, "slide_angle", "Angle Tolerance", 5.0, 90.0, 1.0, "°", _form_three_feel_tip("How close to parallel the blades must be for a slide instead of a crossing clash.", "Only nearly parallel blades slide; clear classification but harder entry.", "More diagonal contacts may slide; easier entry but fewer contacts read as clashes.", "Try 40–45° for a forgiving Form III profile without making every crossing a slide."))
 	_create_contact_slider(slide_section, "slide_cling", "Cling Duration", 0.0, 2.5, 0.02, " s", _form_three_feel_tip("How long slide friction and sword-speed drag remain available after slide entry.", "Brief scrape that quickly returns to free motion.", "Longer weighted contact that gives Form III more time to capture.", "This is entry assistance, not guaranteed physical contact. The range is extended for longer experiments."))
@@ -1259,7 +1955,7 @@ func _create_section_header(parent: VBoxContainer, title_text: String, starts_op
 func _build_combat_sword_selector(parent: VBoxContainer) -> void:
 	var live_player: Player = _player()
 	if live_player != null:
-		selected_combat_sword_id = live_player.equipped_sword_id
+		selected_combat_sword_id = live_player.active_combat_tuning_profile_id()
 	var row: HBoxContainer = HBoxContainer.new()
 	row.name = "CombatSwordSelector"
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1271,9 +1967,8 @@ func _build_combat_sword_selector(parent: VBoxContainer) -> void:
 	combat_sword_option = OptionButton.new()
 	combat_sword_option.name = "CombatSword"
 	combat_sword_option.focus_mode = Control.FOCUS_NONE
-	for raw_sword_id: Variant in Player.BLADE_PROFILES.keys():
-		var current_sword_id: String = str(raw_sword_id)
-		combat_sword_option.add_item(current_sword_id)
+	for current_sword_id: String in Player.combat_tuning_profile_ids():
+		combat_sword_option.add_item(str(COMBAT_SWORD_LABELS.get(current_sword_id, current_sword_id)))
 		combat_sword_option.set_item_metadata(combat_sword_option.item_count - 1, current_sword_id)
 	combat_sword_option.item_selected.connect(_combat_sword_selected)
 	row.add_child(combat_sword_option)
@@ -1613,6 +2308,14 @@ func _sync_combat_controls() -> void:
 	var player: Player = _player()
 	if player == null or combat_status == null: return
 	_sync_combat_sword_selector()
+	if combat_form_option != null:
+		combat_form_option.select(combat_form_option.get_item_index(int(player.sword_style)))
+	if shared_form_status != null:
+		shared_form_status.text = "Forms II–IV: motion tuning uses one Longsword profile for every weapon; blade shape stays weapon-specific." if player._is_shared_motion_form() else "Bind retains its current tuning. Z / X changes forms on every weapon."
+	if thrust_form_section != null:
+		thrust_form_section.visible = player.sword_style == Player.SwordStyle.WINDUP_THRUST
+	if hand_controls.has("thrusts_per_cycle"):
+		((hand_controls["thrusts_per_cycle"]["slider"] as HSlider).get_parent() as Control).visible = player.sword_style == Player.SwordStyle.THRUST
 
 	var p_desc: String = "Preset 1: Safe Baseline (Untouched fallback)"
 	if player.combat_contact_preset == 2:
@@ -1696,7 +2399,7 @@ func open() -> void:
 	# was equipped at boot instead of what the player is actually holding.
 	var live_player: Player = _player()
 	if live_player != null and combat_sword_option != null:
-		selected_combat_sword_id = live_player.equipped_sword_id
+		selected_combat_sword_id = live_player.active_combat_tuning_profile_id()
 		_sync_combat_sword_selector()
 		_sync_blade_shape_controls()
 	_sync_combat_controls()

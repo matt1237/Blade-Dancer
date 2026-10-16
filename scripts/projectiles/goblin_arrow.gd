@@ -19,3 +19,7 @@ func deflect() -> bool:
 func _physics_process(delta: float) -> void:
 	super._physics_process(delta)
 	rotation = direction.angle()
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	super.rewind_restore(d, o)
+	rotation = direction.angle()

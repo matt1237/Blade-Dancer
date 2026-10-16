@@ -1,0 +1,58 @@
+{
+	"animation_name": "casting_healing_spell_short_free_hand_gestures_green_and_purple_swirling_magic_rises_from_bottom_of_wooden_staff_spiraling_upward_to_blue_orb_then_flashes_at_completion_keep_whole_body_and_staff_visible",
+	"animation_style": "",
+	"animation_type": "casting healing spell short free hand gestures green and purple swirling magic rises from bottom of wooden staff spiraling upward to blue orb then flashes at completion keep whole body and staff visible",
+	"columns": 6,
+	"directions": [],
+	"frame_count": 6,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 192,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 192,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 384,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 576,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 768,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 960,
+			"y": 0
+		}
+	],
+	"frame_width": 192,
+	"name": "shaman_cast",
+	"prompt": "casting healing spell short free hand gestures green and purple swirling magic rises from bottom of wooden staff spiraling upward to blue orb then flashes at completion keep whole body and staff visible",
+	"rows": 1,
+	"source_image": "res://assets/generated/shaman_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/shaman_cast.png",
+	"spritesheet_width": 1152,
+	"type": "animation"
+}

@@ -27,7 +27,7 @@ signal cooking_bonus_selection_started
 signal cooking_bonus_applied
 signal tab_changed(tab: int)
 
-enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMORY, TUTORIAL }
+enum Tab { STATUS, CRAFTING, STORAGE, KITCHEN, OPTIONS, SETTINGS, DEV_WAVE, ARMORY, TUTORIAL, FORGE }
 
 @onready var previous_tab_button: Button = $TopBar/PreviousTab
 @onready var next_tab_button: Button = $TopBar/NextTab
@@ -102,6 +102,15 @@ var dev_wave_panel: Panel = null
 var dev_wave_input: LineEdit = null
 var dev_wave_status: Label = null
 var dev_unlock_all_button: Button = null
+var forge_page: Panel
+var forge_columns: BoxContainer
+var forge_slots: VBoxContainer
+var forge_recipes: VBoxContainer
+var forge_recipe_scroll: ScrollContainer
+var forge_materials: Label
+var forge_sword_button: Button
+var forge_status: Label
+var forge_craft_button: Button
 var armory_page: Panel = null
 var armory_lists: VBoxContainer = null
 var armory_tooltip_panel: Panel = null
@@ -385,7 +394,9 @@ func _create_armory_page() -> void:
 
 func _rebuild_armory_list() -> void:
 	if armory_lists == null or progression == null: return
-	for child: Node in armory_lists.get_children(): child.queue_free()
+	for child: Node in armory_lists.get_children():
+		armory_lists.remove_child(child)
+		child.queue_free()
 	for slot: String in ArmoryConfig.GEAR_SLOTS:
 		var header: Label = Label.new()
 		header.text = slot.to_upper()
@@ -402,7 +413,7 @@ func _rebuild_armory_list() -> void:
 		default_row.add_theme_color_override("font_color", Color("a9dfa4") if equipped_id.is_empty() else Color.WHITE)
 		default_row.pressed.connect(_on_armory_row_pressed.bind("", slot))
 		default_row.mouse_entered.connect(_show_armory_tooltip.bind({}, slot))
-		armory_lists.add_child(default_row)
+		_add_armory_row(default_row, equipped_id.is_empty() and slot != "Ring")
 		var items: Array[Dictionary] = progression.items_for_slot(slot)
 		items.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a.get("value", 0)) > int(b.get("value", 0)))
 		for item: Dictionary in items:
@@ -417,7 +428,22 @@ func _rebuild_armory_list() -> void:
 			row.add_theme_color_override("font_color", Color("a9dfa4") if is_equipped else Color.WHITE)
 			row.pressed.connect(_on_armory_row_pressed.bind(item_id, slot))
 			row.mouse_entered.connect(_show_armory_tooltip.bind(item, slot))
-			armory_lists.add_child(row)
+			_add_armory_row(row, is_equipped)
+
+func _add_armory_row(button: Button, is_equipped: bool) -> void:
+	var row: HBoxContainer = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(button)
+	var marker: Label = Label.new()
+	marker.name = "EquippedLabel"
+	marker.text = "Equipped"
+	marker.visible = is_equipped
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.add_theme_font_size_override("font_size", 14)
+	marker.add_theme_color_override("font_color", Color("a9dfa4"))
+	row.add_child(marker)
+	armory_lists.add_child(row)
 
 func _on_armory_row_pressed(item_id: String, slot: String) -> void:
 	if progression == null: return
@@ -456,6 +482,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_create_dev_wave_picker()
 	_create_armory_page()
+	_create_forge_page()
 	_create_time_of_day_indicator()
 	_create_quest_tracker()
 	_create_cooking_bonus_button()
@@ -637,7 +664,11 @@ func _request_tutorial() -> void:
 	tutorial_requested.emit()
 
 func show_tab(tab: Tab) -> void:
+	if tab == Tab.FORGE and (progression == null or not progression.is_forge_unlocked()): tab = Tab.CRAFTING
 	active_tab = tab
+	if forge_page != null:
+		forge_page.visible = tab == Tab.FORGE
+		if tab == Tab.FORGE: _refresh_forge_page()
 	if tab != Tab.STATUS: _close_food_list()
 	if tab != Tab.KITCHEN: _close_recipe_list()
 	status_page.visible = tab == Tab.STATUS
@@ -652,7 +683,7 @@ func show_tab(tab: Tab) -> void:
 	if armory_page != null:
 		armory_page.visible = tab == Tab.ARMORY
 		if tab == Tab.ARMORY: _rebuild_armory_list()
-	var crafting_active: bool = tab == Tab.CRAFTING or tab == Tab.STORAGE or tab == Tab.KITCHEN or tab == Tab.ARMORY
+	var crafting_active: bool = tab in [Tab.CRAFTING, Tab.STORAGE, Tab.KITCHEN, Tab.ARMORY, Tab.FORGE]
 	if status_tab != null: status_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if tab == Tab.STATUS else Color.WHITE
 	if crafting_tab != null: crafting_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if crafting_active else Color.WHITE
 	if options_tab != null: options_tab.modulate = Color(1.0, 0.86, 0.5, 1.0) if tab == Tab.OPTIONS else Color.WHITE
@@ -665,12 +696,12 @@ func _home_sections() -> Array[Tab]:
 
 func _show_previous_section() -> void:
 	var sections: Array[Tab] = _home_sections()
-	var current_section: int = 1 if active_tab == Tab.STORAGE or active_tab == Tab.KITCHEN or active_tab == Tab.ARMORY else sections.find(active_tab)
+	var current_section: int = 1 if active_tab in [Tab.STORAGE, Tab.KITCHEN, Tab.ARMORY, Tab.FORGE] else sections.find(active_tab)
 	show_tab(sections[posmod(current_section - 1, sections.size())])
 
 func _show_next_section() -> void:
 	var sections: Array[Tab] = _home_sections()
-	var current_section: int = 1 if active_tab == Tab.STORAGE or active_tab == Tab.KITCHEN or active_tab == Tab.ARMORY else sections.find(active_tab)
+	var current_section: int = 1 if active_tab in [Tab.STORAGE, Tab.KITCHEN, Tab.ARMORY, Tab.FORGE] else sections.find(active_tab)
 	show_tab(sections[posmod(current_section + 1, sections.size())])
 
 func _cooking_summary_bbcode() -> String:
@@ -720,6 +751,7 @@ func refresh(message: String = "") -> void:
 	if food_list_panel.visible: _rebuild_food_list()
 	if recipe_list_panel.visible: _rebuild_recipe_list()
 	if armory_page != null and armory_page.visible: _rebuild_armory_list()
+	if forge_page != null and forge_page.visible: _refresh_forge_page()
 
 func _open_food_list() -> void:
 	if progression == null: return
@@ -855,7 +887,137 @@ func _show_recipe_tooltip(recipe_id: String) -> void:
 
 func _open_forge() -> void:
 	if progression == null or not progression.is_forge_unlocked(): return
-	forge_requested.emit()
+	visible = true
+	show_tab(Tab.FORGE)
+
+func _forge_label(parent: Node, text: String, font_size: int = 18) -> Label:
+	var label: Label = Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", Color("d7eab5"))
+	parent.add_child(label)
+	return label
+
+func _forge_list(parent: Node, node_name: String) -> VBoxContainer:
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = node_name
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size.y = 100
+	parent.add_child(scroll)
+	var list: VBoxContainer = VBoxContainer.new()
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 12)
+	scroll.add_child(list)
+	return list
+
+func _create_forge_page() -> void:
+	forge_page = Panel.new()
+	forge_page.name = "ForgePage"
+	forge_page.position = kitchen_page.position
+	forge_page.size = kitchen_page.size
+	forge_page.hide()
+	add_child(forge_page)
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	for side: String in ["left", "right", "top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 16)
+	forge_page.add_child(margin)
+	var page_scroll: ScrollContainer = ScrollContainer.new()
+	page_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(page_scroll)
+	var outer: VBoxContainer = VBoxContainer.new()
+	outer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_theme_constant_override("separation", 12)
+	page_scroll.add_child(outer)
+	_forge_label(outer, "FORGE — WORKSHOP", 26)
+	var columns: BoxContainer = BoxContainer.new()
+	forge_columns = columns
+	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	columns.add_theme_constant_override("separation", 24)
+	outer.add_child(columns)
+	var left: VBoxContainer = VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(left)
+	_forge_label(left, "Crafting slots", 22)
+	forge_slots = _forge_list(left, "SlotScroll")
+	forge_sword_button = Button.new()
+	forge_sword_button.name = "ForgeSword"
+	forge_sword_button.text = "Forge Sword"
+	forge_sword_button.custom_minimum_size.y = 42
+	forge_sword_button.pressed.connect(_request_forge_sword)
+	left.add_child(forge_sword_button)
+	var right: VBoxContainer = VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(right)
+	forge_materials = _forge_label(right, "")
+	forge_recipes = _forge_list(right, "RecipeScroll")
+	forge_recipe_scroll = forge_recipes.get_parent() as ScrollContainer
+	forge_status = _forge_label(right, "Choose a slot to browse owned recipes.", 16)
+	forge_craft_button = Button.new()
+	forge_craft_button.text = "Craft — unavailable"
+	forge_craft_button.tooltip_text = "Crafting requirements not configured yet. Material costs and craft times await approval."
+	forge_craft_button.disabled = true
+	right.add_child(forge_craft_button)
+	var back: Button = Button.new()
+	back.text = "← Crafting"
+	back.pressed.connect(show_tab.bind(Tab.CRAFTING))
+	outer.add_child(back)
+	resized.connect(_fit_forge_page)
+	_fit_forge_page()
+
+func _fit_forge_page() -> void:
+	if forge_page == null: return
+	var dimensions: Vector2 = get_viewport_rect().size
+	forge_page.position = Vector2(164.0 if dimensions.x >= 1100.0 else 24.0, 218.0)
+	forge_page.size = Vector2(minf(952.0, dimensions.x - forge_page.position.x * 2.0), maxf(250.0, minf(434.0, dimensions.y - forge_page.position.y - 32.0)))
+	forge_columns.vertical = forge_page.size.x < 580.0
+	forge_columns.custom_minimum_size.y = 650.0 if forge_columns.vertical else 300.0
+
+func _request_forge_sword() -> void:
+	if progression != null and progression.is_forge_unlocked(): forge_requested.emit()
+
+func _refresh_forge_page() -> void:
+	if forge_page == null or progression == null: return
+	for child: Node in forge_slots.get_children():
+		forge_slots.remove_child(child)
+		child.queue_free()
+	for slot: int in range(1, 3):
+		if slot > progression.forge_slot_count:
+			var locked: Label = _forge_label(forge_slots, "Slot 2 — Locked\nBuy Second Forge Slot from Jimbo\n" + ArmoryConfig.forge_offer_cost_label(ArmoryConfig.SECOND_FORGE_SLOT_ID), 16)
+			locked.custom_minimum_size.y = 100
+		else:
+			var card: Button = Button.new()
+			card.text = "Slot %d — Empty\nChoose recipe" % slot
+			card.custom_minimum_size.y = 100
+			card.tooltip_text = "Buy permanent recipes from Jimbo in Town → Blacksmiths."
+			card.pressed.connect(_browse_forge_recipes)
+			forge_slots.add_child(card)
+	forge_materials.text = "MATERIALS\nCoins: %d   Stone: %d\nWood: %d   Iron Shard: %d" % [progression.material_count("Coins"), progression.material_count("Stone"), progression.material_count("Wood"), progression.material_count("Iron Shard")]
+	forge_sword_button.disabled = not progression.is_forge_unlocked()
+	_browse_forge_recipes(false)
+
+func _browse_forge_recipes(reveal: bool = true) -> void:
+	if reveal: forge_recipe_scroll.show()
+	for child: Node in forge_recipes.get_children():
+		forge_recipes.remove_child(child)
+		child.queue_free()
+	var count: int = 0
+	for id: String in ArmoryConfig.FORGE_RECIPES:
+		if not progression.owns_forge_offer(id): continue
+		count += 1
+		var recipe: Button = Button.new()
+		recipe.text = ArmoryConfig.FORGE_RECIPES[id]["name"]
+		recipe.custom_minimum_size.y = 38
+		recipe.pressed.connect(_select_forge_recipe.bind(id))
+		forge_recipes.add_child(recipe)
+	if count == 0: _forge_label(forge_recipes, "No recipes owned yet.\nVisit Jimbo → Blacksmiths → Buy.", 16)
+	forge_status.text = "Forged equipment is blank — no skills.\nCrafting requirements not configured yet."
+
+func _select_forge_recipe(id: String) -> void:
+	forge_status.text = "%s\nBlank equipment — no skills.\nCrafting requirements not configured yet." % ArmoryConfig.FORGE_RECIPES[id]["name"]
 
 func _update_forge_button() -> void:
 	if forge_button == null: return

@@ -1,0 +1,842 @@
+ERROR: Failed to open 'C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/~libziva_agent.windows.release.x86_64.dll'.
+   at: copy (core/io/dir_access.cpp:429)
+ERROR: Error copying library: C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/libziva_agent.windows.release.x86_64.dll
+   at: open_dynamic_library (platform/windows/os_windows.cpp:502)
+ERROR: Can't open GDExtension dynamic library: 'res://addons/ziva_agent/ziva_agent.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:811)
+ERROR: Error loading extension: 'res://addons/ziva_agent/ziva_agent.gdextension'.
+   at: load_extensions (core/extension/gdextension_manager.cpp:333)
+Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
+
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Started Project initialization (5 steps)[39m[0m
+[   0% ] [90m[1mfirst_scan_filesystem[22m | Scanning file structure...[39m[0m
+[  16% ] [90m[1mfirst_scan_filesystem[22m | Loading global class names...[39m[0m
+[  33% ] [90m[1mfirst_scan_filesystem[22m | Verifying GDExtensions...[39m[0m
+ERROR: Failed to open 'C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/~libziva_agent.windows.release.x86_64.dll'.
+   at: copy (core/io/dir_access.cpp:429)
+ERROR: Error copying library: C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/libziva_agent.windows.release.x86_64.dll
+   at: open_dynamic_library (platform/windows/os_windows.cpp:502)
+ERROR: Can't open GDExtension dynamic library: 'res://addons/ziva_agent/ziva_agent.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:811)
+[  50% ] [90m[1mfirst_scan_filesystem[22m | Creating autoload scripts...[39m[0m
+[  66% ] [90m[1mfirst_scan_filesystem[22m | Initializing plugins...[39m[0m
+[  83% ] [90m[1mfirst_scan_filesystem[22m | Starting file scan...[39m[0m
+[92m[ DONE ][39m [1mfirst_scan_filesystem[22m
+[0m
+[   0% ] [90m[1m_update_scan_actions[22m | Started Scanning actions... (3 steps)[39m[0m
+[   0% ] [90m[1m_update_scan_actions[22m | index.apple-touch-icon.png[39m[0m
+[  25% ] [90m[1m_update_scan_actions[22m | index.icon.png[39m[0m
+[  50% ] [90m[1m_update_scan_actions[22m | index.png[39m[0m
+[92m[ DONE ][39m [1m_update_scan_actions[22m
+[0m
+ERROR: Failed to open 'C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/~libziva_agent.windows.release.x86_64.dll'.
+   at: copy (core/io/dir_access.cpp:429)
+ERROR: Error copying library: C:/Dev/blade-dancer/addons/ziva_agent/bin/windows_x86_64/libziva_agent.windows.release.x86_64.dll
+   at: open_dynamic_library (platform/windows/os_windows.cpp:502)
+ERROR: Can't open GDExtension dynamic library: 'res://addons/ziva_agent/ziva_agent.gdextension'.
+   at: open_library (core/extension/gdextension.cpp:811)
+[   0% ] [90m[1mreimport[22m | Started (Re)Importing Assets (3 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  25% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[  50% ] [90m[1mreimport[22m | Preparing files to reimport...[39m[0m
+[   0% ] [90m[1mreimport[22m | Executing pre-reimport operations...[39m[0m
+[   0% ] [90m[1mreimport[22m | index.apple-touch-icon.png[39m[0m
+[  25% ] [90m[1mreimport[22m | index.icon.png[39m[0m
+[  50% ] [90m[1mreimport[22m | index.png[39m[0m
+[  75% ] [90m[1mreimport[22m | Finalizing Asset Import...[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1mreimport[22m | Started (Re)Importing Assets (3 steps)[39m[0m
+[   0% ] [90m[1mreimport[22m | Executing post-reimport operations...[39m[0m
+[92m[ DONE ][39m [1mreimport[22m
+[0m
+[   0% ] [90m[1msavepack[22m | Started Packing (102 steps)[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Blade Dancer Sword.png-6ae9ec5a86b1c5f97ee211c495e054d8.ctex[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://assets/Blade Dancer Sword.png.import[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Longsword Smithing Template.png-aade3cf77fdc3c7fd8f66e0d46c4f165.ctex[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://assets/Longsword Smithing Template.png.import[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bug_getting_splatter_#2-1790627400426.mp3-30b3f1f914d8b0df01b81dbcc029767a.mp3str[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Bugs/bug_getting_splatter_#2-1790627400426.mp3.import[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Ogre_Brute_gurgling_#4-1790628214636.mp3-f0198d090dd815c1066e300048d2ccb1.mp3str[39m[0m
+[   1% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/Ogre_Brute_gurgling_#4-1790628214636.mp3.import[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Ogre_Brute_gurgling_#4-1790628269409.mp3-2914666bbb7a7bcfa5c1e912caf8d1bd.mp3str[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/Ogre_Brute_gurgling_#4-1790628269409.mp3.import[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/goblin_dying_#3-1790627565063.mp3-ec2641cb11e95ac500f7fe9d49b05034.mp3str[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/goblin_dying_#3-1790627565063.mp3.import[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/goblin_gurgling_and__#1-1790627547230.mp3-98994513b1bf77fa1f46c64831ddf158.mp3str[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/goblin_gurgling_and__#1-1790627547230.mp3.import[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/goblin_gurgling_and__#3-1790627537748.mp3-9b5be5182b154b8b6370235eda88c1f3.mp3str[39m[0m
+[   2% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/goblin_gurgling_and__#3-1790627537748.mp3.import[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/goblin_shriek_+_deat_#2-1790627615780.mp3-2b6df45e0861f73bc07ea8befcfb1f71.mp3str[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Goblin Things/goblin_shriek_+_deat_#2-1790627615780.mp3.import[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Turkey_gobbling_#3-1790627030456.mp3-bb2d562705214a85aabe32194dc5b5c8.mp3str[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Turkey/Turkey_gobbling_#3-1790627030456.mp3.import[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Dog_yelping_#2-1790627159853.mp3-12758a7f1709f6917658c86b0c058c4c.mp3str[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Enemy SFX/Wolves/Dog_yelping_#2-1790627159853.mp3.import[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Moonlight Gemforge.mp3-b20c85cf9f72094d9e71ec7d65afc6ee.mp3str[39m[0m
+[   3% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Moonlight Gemforge.mp3.import[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Moonlit Gemforge (1).mp3-62a3ee8b20a785add91eb501b8d7e82b.mp3str[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Moonlit Gemforge (1).mp3.import[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Moonlit Gemforge (2).mp3-4fe4337e1a228219c5e3da5094fd7fd6.mp3str[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Moonlit Gemforge (2).mp3.import[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Moonlit Gemforge (3).mp3-4acf64050cebe2dd0e5d9a47b19e5a13.mp3str[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Moonlit Gemforge (3).mp3.import[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Moonlit Gemforge.mp3-b0db0cbe6f1f8ab41981ada09d704dda.mp3str[39m[0m
+[   4% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Moonlit Gemforge.mp3.import[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Resonance Cue.mp3-037d7410032f8b932b7e96b1f3101d24.mp3str[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Gem Jammer/Resonance Cue.mp3.import[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Forgewheel Pulse.mp3-acf8f6619c4aaf3789f02bd79a2f5494.mp3str[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Grindstone/Forgewheel Pulse.mp3.import[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Grindstone Waltz.mp3-ca880879b995a154545f121f22f4291b.mp3str[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Grindstone/Grindstone Waltz.mp3.import[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Metal Scraping Along Metal - Like The Sound Of Rubbbing Two Metal Knives Alon....mp3-d536f36576c2960ea77b3a778178762d.mp3str[39m[0m
+[   5% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Grindstone/Metal Scraping Along Metal - Like The Sound Of Rubbbing Two Metal Knives Alon....mp3.import[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/low health hit A.mp3-4a9023edc6d30b48b6f033e060be5a99.mp3str[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Low Player Health/low health hit A.mp3.import[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/low health hit B.mp3-403413621a87dcb23f80ca5d2e0e9457.mp3str[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Low Player Health/low health hit B.mp3.import[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Heavy_sword_swing_#1-1790219093887.mp3-3f3569ba1754ea922e27018862a163bd.mp3str[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#1-1790219093887.mp3.import[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Heavy_sword_swing_#2-1790219093888.mp3-2e808d49cdcfa89c1f989f534689b674.mp3str[39m[0m
+[   6% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#2-1790219093888.mp3.import[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Heavy_sword_swing_#3-1790219093889.mp3-bc17d7aa0d32d56b0425f433a374fc81.mp3str[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#3-1790219093889.mp3.import[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Heavy_sword_swing_#4-1790219093889.mp3-0fbf42b5177d0bb8ed799d9eedd31b3e.mp3str[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Parry+Clash/Heavy_sword_swing_#4-1790219093889.mp3.import[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_battlecry_so_#3-1790221453118.mp3-1ac0318e53967679102065b57608f181.mp3str[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_battlecry_so_#3-1790221453118.mp3.import[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_battlecry_so_#4-1790221453119.mp3-7656c6b8c71d80cc67e3dfa7a23ba7fb.mp3str[39m[0m
+[   7% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_battlecry_so_#4-1790221453119.mp3.import[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_light_attack_#1-1790219395783.mp3-548009775dd12e70c92a12eb9f3ec63b.mp3str[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#1-1790219395783.mp3.import[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_light_attack_#2-1790219395784.mp3-eb2e18cfd9148304718a53da5d6d1c89.mp3str[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#2-1790219395784.mp3.import[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_light_attack_#4-1790219458727.mp3-7934fa70258b9a999ee04f97b747634d.mp3str[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_light_attack_#4-1790219458727.mp3.import[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Warrior_yell_sound_e_#4-1790221425437.mp3-166f29f6fa8b92201f161b5e51d72619.mp3str[39m[0m
+[   8% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Player attack noises/Warrior_yell_sound_e_#4-1790221425437.mp3.import[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Loud_sword_swing_who_#2-1790219297893.mp3-a6d1a550a896613a52f82850cf271d6f.mp3str[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Sword Swings/Loud_sword_swing_who_#2-1790219297893.mp3.import[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Loud_sword_swing_who_#3-1790219293162.mp3-431e185a12d790083222b0b4dd3bfb17.mp3str[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://assets/audio/Player Combat SFX/Sword Swings/Loud_sword_swing_who_#3-1790219293162.mp3.import[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Horn of the Void.mp3-16846de97ce0a9a763a0bac46bbfdf33.mp3str[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Boss Combat/Horn of the Void.mp3.import[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Rift Combo Riot.mp3-aafeb005c65fcea7bfc6b6373cd063ec.mp3str[39m[0m
+[   9% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Boss Combat/Rift Combo Riot.mp3.import[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Bowl of Shadow (1).mp3-8296567c90f1a76b5063070174b80958.mp3str[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Combat/Bowl of Shadow (1).mp3.import[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Clash of the Highlands.mp3-499da779c45267373d668549117bfac6.mp3str[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Combat/Clash of the Highlands.mp3.import[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Misty Pass.mp3-29e3315c897af740c51cd32ee62e3f96.mp3str[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Combat/Misty Pass.mp3.import[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_combat_theme.mp3-6efa50651863f3b59d1bcd581748e962.mp3str[39m[0m
+[  10% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Combat/forest_combat_theme.mp3.import[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Bowl of Shadow (1).mp3-3895901bff1af94a50baf8c16e35a1e3.mp3str[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/Bowl of Shadow (1).mp3.import[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Clash of the Highlands.mp3-a8c019a226dd6094216e6eca0815a61d.mp3str[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/Clash of the Highlands.mp3.import[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Horn of the Void.mp3-53fe1c66a28387d9b8189e5e804ad7d0.mp3str[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/Horn of the Void.mp3.import[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Misty Pass.mp3-f81720607b64e177689c67cac80b0f0d.mp3str[39m[0m
+[  11% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/Misty Pass.mp3.import[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Rift Combo Riot.mp3-52f930134edcc4f542eb141063a247c4.mp3str[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/Rift Combo Riot.mp3.import[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_combat_theme.mp3-3bef464214ee8382a31af37e74ee3285.mp3str[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forest/forest_combat_theme.mp3.import[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Forge of Moss and Iron.mp3-9fedd62d778a607570c629284d6c81b9.mp3str[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forge/Forge of Moss and Iron.mp3.import[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Runes at the Forge.mp3-a9d7a987a473e07a7d5d6d4b2bce5cd4.mp3str[39m[0m
+[  12% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Forge/Runes at the Forge.mp3.import[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Happy Home.mp3-4346e89c8b60857257cd0844c04f8b89.mp3str[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/Happy Home.mp3.import[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Lanterns at Dusk.mp3-34539587ee5ac687c00959b3bc61cc71.mp3str[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/Lanterns at Dusk.mp3.import[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Morning Adventure.mp3-e9314a2d3d01c91ae5b918b4ccff0d8b.mp3str[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/Morning Adventure.mp3.import[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Mossy Hearth.mp3-4a4b4e5ee2b276cc057cd7360287233f.mp3str[39m[0m
+[  13% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/Mossy Hearth.mp3.import[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/River Catch Days (1).mp3-e3b8d04ebab5732ec27c1dacc0580e65.mp3str[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/River Catch Days (1).mp3.import[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/River Catch Days.mp3-d28e661f8652f93f1f7ff299809cbbc9.mp3str[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://assets/audio/music/Home & Crafting/River Catch Days.mp3.import[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Chasm Background.png-06f2ae322f73c603b4d14675316b89b1.ctex[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Chasm Background.png.import[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Chasm Sides.png-f44fdb0be36e597264ee5fd9e32f78a1.ctex[39m[0m
+[  14% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Chasm Sides.png.import[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/ChasmTest2.png-7f5ae1e118c85c3e2cba0092b807a128.ctex[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://assets/generated/ChasmTest2.png.import[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/ChasmTest3.png-7410729d5718638220e35d5c9c348f5b.ctex[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://assets/generated/ChasmTest3.png.import[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Glowing Enchanted Lotus Plant.png-0db2876e862ca97bf2193221d10a23d9.ctex[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Glowing Enchanted Lotus Plant.png.import[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Gnarled Windswept Tree Asset.png-74b1bb3971fe43892d4de115f9fc8d8f.ctex[39m[0m
+[  15% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Gnarled Windswept Tree Asset.png.import[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Magical Crimson Herb Bloom.png-9329aefbdf636bb7342164e77d0a0978.ctex[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Magical Crimson Herb Bloom.png.import[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Rusty Iron Ore Rock Cluster.png-a07bf35d9d47a70067b7ea329baf4579.ctex[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Rusty Iron Ore Rock Cluster.png.import[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/The Chasm Floor.png-5778bcd79191bb26f3bb8f039fc825dd.ctex[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://assets/generated/The Chasm Floor.png.import[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Tutorial Star.png-94b9dacfef59c71e42b63358c18f6b43.ctex[39m[0m
+[  16% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Tutorial Star.png.import[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Windswept Ancient Fantasy Tree.png-79f75fc65fc5ef584c3267df4b08f080.ctex[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://assets/generated/Windswept Ancient Fantasy Tree.png.import[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/basic_curved_sword_frame_0.png-6d2d7fd80ed64ccc7b944b300db6928b.ctex[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://assets/generated/basic_curved_sword_frame_0.png.import[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/blacksmith_dust_atlas_v1.png-b1ee4b8de20a743520bbd1ad3bd3a842.ctex[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://assets/generated/blacksmith_dust_atlas_v1.png.import[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/blacksmith_ember_atlas_v1.png-e9b98bac518ff3290aa8f5e2602411ca.ctex[39m[0m
+[  17% ] [90m[1msavepack[22m | Storing File: res://assets/generated/blacksmith_ember_atlas_v1.png.import[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/blacksmith_sign_cutout_v1_2.png-8ca11c59ad39847efeaff4e397ab34d3.ctex[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://assets/generated/blacksmith_sign_cutout_v1_2.png.import[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/blacksmith_sign_matte_v1.png-bad880e8b772bb047de11c2bee97c14b.ctex[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://assets/generated/blacksmith_sign_matte_v1.png.import[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bomber_burst.png-ada88a94632290957d4475ad5485d64c.ctex[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_burst.png.import[39m[0m
+[  18% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-96f9c896eed905dbccfed1e58ccbcf25-bomber_burst_frames.res[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bomber_fire.png-8aabd50a4615b386998b0a0180fc2a99.ctex[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_fire.png.import[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bomber_fuse.png-70ea0f8a6297e2596dbcd46d8aef2f20.ctex[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_fuse.png.import[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bomber_walk_padded.png-ca0955cb3aeaa85199f26677c28e7e7d.ctex[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_walk_padded.png.import[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/bomber_windup_throw.png-51ac511e20032e4beeb26c5132edb9a1.ctex[39m[0m
+[  19% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_windup_throw.png.import[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_angel_shield_frame_0.png-d29de79878af2524c56656a8b427124d.ctex[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_angel_shield_frame_0.png.import[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_bad_fruit_frame_0.png-79888103fe3a96c33423e205cbfcecd9.ctex[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_bad_fruit_frame_0.png.import[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_cauldron_frame_0.png-d1e181c098f318472914474d609fad00.ctex[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_cauldron_frame_0.png.import[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_clock_fast_frame_0.png-de93ed34a52284f6691b0ecaac7ca3e4.ctex[39m[0m
+[  20% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_clock_fast_frame_0.png.import[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_clock_slow_frame_0.png-2df6c765b035c7f091c9ceb0c1bdb1e0.ctex[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_clock_slow_frame_0.png.import[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_mushroom_frame_0.png-e17aabd1f6f5bb78dd27040c2c85d5d9.ctex[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_mushroom_frame_0.png.import[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/cauldron_catch_turkey_frame_0.png-407eaeaf5f2330c52bab6e1b0e771fa2.ctex[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://assets/generated/cauldron_catch_turkey_frame_0.png.import[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/day_cycle_icon_dusk_frame_0.png-13c3b6e9039df9adc91a2dc6da46c2bc.ctex[39m[0m
+[  21% ] [90m[1msavepack[22m | Storing File: res://assets/generated/day_cycle_icon_dusk_frame_0.png.import[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/day_cycle_icon_morning_frame_0.png-fc37a616234749fe46fbd38594b63253.ctex[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://assets/generated/day_cycle_icon_morning_frame_0.png.import[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/day_cycle_icon_night_frame_0.png-509482b58cc8ecd7e4622045cb360896.ctex[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://assets/generated/day_cycle_icon_night_frame_0.png.import[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/day_cycle_icon_noon_frame_0.png-41edd2e1cd683eda320da49123fe5e02.ctex[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://assets/generated/day_cycle_icon_noon_frame_0.png.import[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/flow_mote_spark_frame_0.png-a86d1cf4857880c369832841518eb91e.ctex[39m[0m
+[  22% ] [90m[1msavepack[22m | Storing File: res://assets/generated/flow_mote_spark_frame_0.png.import[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_bear_trap_hd_frame_0.png-b4ee7bb6c5418ded1f55e93381475e8d.ctex[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_bear_trap_hd_frame_0.png.import[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_border_shrub_cluster_alt_frame_0.png-ed379a7441c9b6a8a2fdb26765500e8a.ctex[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_border_shrub_cluster_alt_frame_0.png.import[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_border_shrub_cluster_frame_0.png-7089f917cfca69df197d86ad628a662e.ctex[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_border_shrub_cluster_frame_0.png.import[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_border_tree_cluster_alt_frame_0.png-72df788b4557741d70a09fbf99022dad.ctex[39m[0m
+[  23% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_border_tree_cluster_alt_frame_0.png.import[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_border_tree_cluster_frame_0.png-a60125206f99e50af8eeb1ef959876ee.ctex[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_border_tree_cluster_frame_0.png.import[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_bracken_cluster_frame_0.png-8c47bc641ba1d1f92725e724650fbd5e.ctex[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_bracken_cluster_frame_0.png.import[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_broken_stone_wall_horizontal_frame_0.png-615ef9fdc51c1901c8e208032e817d71.ctex[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_broken_stone_wall_horizontal_frame_0.png.import[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_broken_stone_wall_vertical_frame_0.png-8a9ad40b3327b4534950171edd12cfa0.ctex[39m[0m
+[  24% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_broken_stone_wall_vertical_frame_0.png.import[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_chest_closed_frame_0.png-c3cbddd3d9dd69419f59ba8939e55d48.ctex[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_chest_closed_frame_0.png.import[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_fallen_log_horizontal_frame_0.png-f51dcb844e1b045b6de5d1d610457875.ctex[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_fallen_log_horizontal_frame_0.png.import[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_floor_heroic_quiet_frame_0.png-50ec86c874ce5eaa92595ba1a561b793.ctex[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_floor_heroic_quiet_frame_0.png.import[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_floor_heroic_quiet_frame_1.png-21fc181dc089f2350818b18cafa2a588.ctex[39m[0m
+[  25% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_floor_heroic_quiet_frame_1.png.import[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_floor_heroic_quiet_frame_2.png-d35b48d1e44254f861ad8fbf36e0caab.ctex[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_floor_heroic_quiet_frame_2.png.import[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_floor_heroic_quiet_frame_3.png-b3fa4f10a47630a29fbd5b4a5b1f7435.ctex[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_floor_heroic_quiet_frame_3.png.import[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_floor_tile.png-238cefecea7b4d956905a9c2772c4c19.ctex[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_floor_tile.png.import[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_flower_patch_frame_0.png-2e2e3f63a46a1decca946c901ffc7ece.ctex[39m[0m
+[  26% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_flower_patch_frame_0.png.import[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_large_boulder_cluster_alt_frame_0.png-cf26ad35ca655d8f421470612cb432e6.ctex[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_large_boulder_cluster_alt_frame_0.png.import[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_moon_flower_frame_0.png-fbe9a6bfaa9651fb81a20542d8647c8e.ctex[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_moon_flower_frame_0.png.import[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_mud_patch_hd_frame_0.png-4ea7b61d74635e6bf8c29bfb4eb8aa5d.ctex[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_mud_patch_hd_frame_0.png.import[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_path_grass_transition_frame_0.png-71e1487cdbe3d6e60bd7727b4a1492f5.ctex[39m[0m
+[  27% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_path_grass_transition_frame_0.png.import[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_path_segment_a_frame_0.png-2813ee267dab80b646503dcb44600c74.ctex[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_path_segment_a_frame_0.png.import[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_path_segment_b_frame_0.png-adc79f95c80ec885f7cd6564406510c6.ctex[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_path_segment_b_frame_0.png.import[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_path_segment_c_frame_0.png-54d25e7d1f549edadf1de3c9955b5a77.ctex[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_path_segment_c_frame_0.png.import[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_rock_cluster_frame_0.png-8a8a5e5b08f74b6fbdd95b94eb171fe7.ctex[39m[0m
+[  28% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_rock_cluster_frame_0.png.import[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_standing_stone_frame_0.png-52299e372697530ad8ca9d6b56668c81.ctex[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_standing_stone_frame_0.png.import[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_torch_frame_0.png-7263f8138903095779a429a0a31f1692.ctex[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_torch_frame_0.png.import[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/forest_wildflower_grass_cluster_frame_0.png-a5cbbeb5cdaa63fc6a1e8c83d28e2d6b.ctex[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://assets/generated/forest_wildflower_grass_cluster_frame_0.png.import[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/grapple_spear_tip_pixel_frame_0.png-c146494f4e21185daf7ef6be6aeaef31.ctex[39m[0m
+[  29% ] [90m[1msavepack[22m | Storing File: res://assets/generated/grapple_spear_tip_pixel_frame_0.png.import[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/grim_pixel_knight_reference_pass_frame_0.png-0e5196cfd63ce36681d0d8aa41212860.ctex[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://assets/generated/grim_pixel_knight_reference_pass_frame_0.png.import[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/grim_pixel_knight_walk.png-498adea75d70e42450b15a351ff95bd9.ctex[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://assets/generated/grim_pixel_knight_walk.png.import[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/ground_pulse_aura.png-369cd6ab56519cf0e36e5d521bd072c9.ctex[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://assets/generated/ground_pulse_aura.png.import[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_archer_goblin_idle.png-9b172321ab4f6212b09af7d842e069e0.ctex[39m[0m
+[  30% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_archer_goblin_idle.png.import[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_archer_goblin_walk.png-21c6d104e50f6757b85f412e1ed849d6.ctex[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_archer_goblin_walk.png.import[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_charge.png-b8828b2a664047e88e08a57e2fc26e17.ctex[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_charge.png.import[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_charge_travel_smooth.png-3d16497ab6568438f93c605fbe463f61.ctex[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_charge_travel_smooth.png.import[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_charge_windup_smooth.png-cb4e613276bdb293a38df433985c861b.ctex[39m[0m
+[  31% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_charge_windup_smooth.png.import[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_executioner_sword.png-7db371d82d5e9510492236f5cd6eb289.ctex[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_executioner_sword.png.import[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_idle.png-f5f78eebec35e54841b0bc178692abdd.ctex[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_idle.png.import[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_jump.png-6436bdba1a660f7f52837daa0edf6d06.ctex[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_jump.png.import[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_stunned_smooth.png-8afd22cde984afdcbbfe281677cc8d14.ctex[39m[0m
+[  32% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_stunned_smooth.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_boss_zungar_walk.png-9a431508f05e280c9ad95ee89fae0401.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_boss_zungar_walk.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_blue_bug_fly.png-b49c57bfdd51a5cf156ec1092a9b48e1.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_blue_bug_fly.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_blue_bug_idle.png-730bb11fc107c6c35706376c0f824f02.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_blue_bug_idle.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_duelist_idle.png-c79f7807a12d3ba884471e59f144aab5.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_duelist_idle.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_duelist_walk.png-614ecf43a6cd914b7510d065fbd369cd.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_duelist_walk.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_elite_idle.png-0271a3c4e31449dee5855b3f35dc2570.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_elite_idle.png.import[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_elite_march.png-fab0284e10e9448bd3183931a9f51d29.ctex[39m[0m
+[  33% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_elite_march.png.import[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_turkey_idle.png-c96589230c06751bf8f20127687d9a03.ctex[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_turkey_idle.png.import[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_turkey_walk.png-13476a2d2d9a275a21458d389e54291e.ctex[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_turkey_walk.png.import[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_warg_charge.png-d51aaff9d54e37c8c1126e1772ec1d71.ctex[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_warg_charge.png.import[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_enemy_warg_idle.png-2bdab3c3ca2c51404be446e6b73d721d.ctex[39m[0m
+[  34% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_enemy_warg_idle.png.import[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_goblin_arrow.png-df8c30a15af2f2a69a7e827993e87ac7.ctex[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_goblin_arrow.png.import[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_resonance_claw_hook_frame_0.png-0bbe83df187f0decd934e7fc8c959fa6.ctex[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_resonance_claw_hook_frame_0.png.import[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_rusted_goblin_curved_sword.png-73206374d5dc3fbb0bb1c3d1b60c4082.ctex[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_rusted_goblin_curved_sword.png.import[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_sword_goblin_body_idle.png-73c1a0140b89151bc32fa887a01c0ea5.ctex[39m[0m
+[  35% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_sword_goblin_body_idle.png.import[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_sword_goblin_body_walk.png-bd2cfbda28a8d32f902631ff27a5c551.ctex[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_sword_goblin_body_walk.png.import[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_weapon_flame_symmetric_atlas.png-9f5afbf662eeac69d664852c6fbc96ee.ctex[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_weapon_flame_symmetric_atlas.png.import[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_zungar_bonfire_atlas.png-00441b2bcb2b41e1153a5212ce6f3a59.ctex[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_zungar_bonfire_atlas.png.import[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/hd_zungar_dirt_puff_atlas.png-c60d19caef0346dbeedb8a5fe9203045.ctex[39m[0m
+[  36% ] [90m[1msavepack[22m | Storing File: res://assets/generated/hd_zungar_dirt_puff_atlas.png.import[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/health_bar_cap_hd.png-c0f322a1cc381fbefdaa160610892bd2.ctex[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://assets/generated/health_bar_cap_hd.png.import[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/health_bar_fill.png-d27fb54a09b21b92d5d52c67f89c5d70.ctex[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://assets/generated/health_bar_fill.png.import[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/health_bar_flash.png-b050b4e67180fc707df9b0fcd8e57f75.ctex[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://assets/generated/health_bar_flash.png.import[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/health_bar_rail.png-abe304958444f019dfd6cad3d3d7d740.ctex[39m[0m
+[  37% ] [90m[1msavepack[22m | Storing File: res://assets/generated/health_bar_rail.png.import[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/health_bar_track.png-e1ccad1caabc36a4affe8d7711b6206a.ctex[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://assets/generated/health_bar_track.png.import[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_0_v1.png-32661e6974de614a76a2919fe2a1c48d.ctex[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_0_v1.png.import[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_1_v1.png-7cd91ed11a077e5d8bbe855d000f51db.ctex[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_1_v1.png.import[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_2_v1.png-fdf7e3cd44725079b58a2910d0220f71.ctex[39m[0m
+[  38% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_2_v1.png.import[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_3_v1.png-7b24ddf71a6d1f81acaeadd6a8c3fdc6.ctex[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_3_v1.png.import[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_4_v1.png-999e07a159568708280611d05df21c3a.ctex[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_4_v1.png.import[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_0_frame_5_v1.png-5c0f95eec2fa8ed395b16079e59d4369.ctex[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_0_frame_5_v1.png.import[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_0_v1.png-f3555ec06fbbb73dacd54a08b6f635f0.ctex[39m[0m
+[  39% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_0_v1.png.import[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_1_v1.png-fcb6163e729f195e8b62e48e349dfb2b.ctex[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_1_v1.png.import[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_2_v1.png-bd5ee03e4c8c398362a8f3ded289d0cd.ctex[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_2_v1.png.import[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_3_v1.png-f498b29b25371f293f2e02aa76e3e046.ctex[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_3_v1.png.import[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_4_v1.png-93a457a932f4e4f5c2a67caee1462c68.ctex[39m[0m
+[  40% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_4_v1.png.import[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_1_frame_5_v1.png-dbaebf47c35a13b05befeda74d4e5102.ctex[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_1_frame_5_v1.png.import[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_0_v1.png-5062b886d737c17ccc85f0abd2db99c0.ctex[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_0_v1.png.import[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_1_v1.png-0c235add5f013e16b599d1e543bb751f.ctex[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_1_v1.png.import[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_2_v1.png-9ba2b7f7776fc5420f165b79d036238e.ctex[39m[0m
+[  41% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_2_v1.png.import[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_3_v1.png-b990d030422f4b3199a85a6a1b318326.ctex[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_3_v1.png.import[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_4_v1.png-8fd1fcdf0234b027fdaeba6e7cf1d8ba.ctex[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_4_v1.png.import[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_bird_2_frame_5_v1.png-0d697ab1353b81bdd6c8e924c62cc426.ctex[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_bird_2_frame_5_v1.png.import[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/kaji_window_sun_matte_v1.png-f2ad39fe8aa3150569a88ed4a0859097.ctex[39m[0m
+[  42% ] [90m[1msavepack[22m | Storing File: res://assets/generated/kaji_window_sun_matte_v1.png.import[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/knight_armor_helm_idle_frame_0.png-48d3febe76d6b06a129eea930cc49ce8.ctex[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://assets/generated/knight_armor_helm_idle_frame_0.png.import[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/knight_armor_helm_walk_0_frame_0.png-2ca10e6c3ffab1816871f86112453b82.ctex[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://assets/generated/knight_armor_helm_walk_0_frame_0.png.import[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/knight_armor_helm_walk_1_frame_0.png-77d95bfe9ecba6bb497549ce39313782.ctex[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://assets/generated/knight_armor_helm_walk_1_frame_0.png.import[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/metronome_gold_corona.png-7cbd820b3eed51fdf8429f3cbd2a289f.ctex[39m[0m
+[  43% ] [90m[1msavepack[22m | Storing File: res://assets/generated/metronome_gold_corona.png.import[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/movement_dust_puff_frame_0.png-2ffc65d2926f3fb25cabce0b986be9d7.ctex[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://assets/generated/movement_dust_puff_frame_0.png.import[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/px_grass_field_64.png-ad58132bc5331c8f63483b364bc8153d.ctex[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://assets/generated/px_grass_field_64.png.import[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_bird_frame_0.png-7cf96bfcb6e35f4c40cba801e9e3d5b1.ctex[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_bird_frame_0.png.import[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_cloud_frame_0.png-0c5d2a0f2980641302c02e6f5f329c6b.ctex[39m[0m
+[  44% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_cloud_frame_0.png.import[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_grapple_point_frame_0.png-5a3d363d67b6438f3c998d541c5eec50.ctex[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_grapple_point_frame_0.png.import[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_ground_forest_frame_0.png-e5f529315b336c68a954838e7e4ee29b.ctex[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_ground_forest_frame_0.png.import[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_ground_mountains_frame_0.png-853d2400f369f98f2b47e81dc7a9d709.ctex[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_ground_mountains_frame_0.png.import[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_land_sail_frame_0.png-85c6b90d5273f60cc489e010ef0a79a9.ctex[39m[0m
+[  45% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_land_sail_frame_0.png.import[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/resonance_rush_land_sail_glider_frame_0.png-4d687a5caf889c58a238d89468d2cf72.ctex[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://assets/generated/resonance_rush_land_sail_glider_frame_0.png.import[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/shaman_cast.png-81eb442606c50564726a680147587956.ctex[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://assets/generated/shaman_cast.png.import[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/shaman_healing_orb.png-2e91e5b2122948da92892a5273b346e1.ctex[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://assets/generated/shaman_healing_orb.png.import[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/shaman_idle.png-643f63c7f8535d00f76bb3e9bb520d97.ctex[39m[0m
+[  46% ] [90m[1msavepack[22m | Storing File: res://assets/generated/shaman_idle.png.import[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/shaman_staff_spiral.png-790e5a65fae4e14575cf1b761bb55d93.ctex[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://assets/generated/shaman_staff_spiral.png.import[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/shaman_walk.png-a0350dde6bdc0760b147127cffcad55c.ctex[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://assets/generated/shaman_walk.png.import[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/steel_chakram_hd_frame_0.png-ed0809da6ffe8d5284d4562808afb4aa.ctex[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://assets/generated/steel_chakram_hd_frame_0.png.import[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/ui_heart_charge.png-2ecca7b6cf80e26d58f95e26bcbcc09d.ctex[39m[0m
+[  47% ] [90m[1msavepack[22m | Storing File: res://assets/generated/ui_heart_charge.png.import[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Blacksmith Store.png-0eb8bca6b1ae5f8f0f0451dc6362626b.ctex[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Blacksmith Store.png.import[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Good Resonance Entity.png-92a071f08c70b651c9509b562562f4a6.ctex[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Good Resonance Entity.png.import[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Grandma.png-b3965df484140877b6bc2f5a3c7b19ba.ctex[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Grandma.png.import[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Grandpa.png-81b5f7591b11af2e4a65169da097a2ff.ctex[39m[0m
+[  48% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Grandpa.png.import[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Jimbo.png-6aa4fb0ec3d1c1f57656b987902f42f3.ctex[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Jimbo.png.import[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Kaji's General Store.png-4f5693fbb92a3b1b50480ae37372aa4a.ctex[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Kaji's General Store.png.import[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/Kaji.png-6f11ecaf3834113fd5b5200a496d227d.ctex[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://assets/portraits/Kaji.png.import[39m[0m
+[  49% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-ff43cc42d3988a34e7800a6df60fed2f-px_game.scn[39m[0m
+[  50% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_game.gdc[39m[0m
+[  50% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/bdpx_global.gdc[39m[0m
+[  50% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_arena.gdc[39m[0m
+[  50% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_blade.gdc[39m[0m
+[  51% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_config.gdc[39m[0m
+[  51% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_hud.gdc[39m[0m
+[  51% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_inworld.gdc[39m[0m
+[  51% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_inworld_enemies.gdc[39m[0m
+[  52% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_test_dummy.gdc[39m[0m
+[  52% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_tuning_tools.gdc[39m[0m
+[  52% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/tools/px_sword_lab.gdc[39m[0m
+[  52% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-470df3193c3d5694ed8bdf1c83f90319-px_sword_lab.scn[39m[0m
+[  53% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex[39m[0m
+[  53% ] [90m[1msavepack[22m | Storing File: res://icon.svg.import[39m[0m
+[  53% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-244272ba417fcfd2a13e8134723cef3c-forest_terrain_config.res[39m[0m
+[  53% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/terrain_config.gdc[39m[0m
+[  53% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-cadb2cce2cd2f55f6cc590f823f7a999-arena_bounds.scn[39m[0m
+[  54% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-7484e20424a714445361babbe361a246-zungar.scn[39m[0m
+[  54% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar.gdc[39m[0m
+[  54% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/health_bar.gdc[39m[0m
+[  54% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_visual.gdc[39m[0m
+[  55% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-65cdb7c0e2636edaef3711a9ea6cb9dc-chakram.scn[39m[0m
+[  55% ] [90m[1msavepack[22m | Storing File: res://scripts/chakram.gdc[39m[0m
+[  55% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-fe71f9168f76e52e1d2c72eafa18e07d-chasm_stage.scn[39m[0m
+[  55% ] [90m[1msavepack[22m | Storing File: res://scripts/chasm_stage.gdc[39m[0m
+[  56% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_population.gdc[39m[0m
+[  56% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-2b221126bef2a197a8b608d70b6dca23-drop_pickup.scn[39m[0m
+[  56% ] [90m[1msavepack[22m | Storing File: res://scripts/drop_pickup.gdc[39m[0m
+[  56% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-52108bad7c30e7aeb63dc26c021136a9-archer_goblin.scn[39m[0m
+[  57% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/archer_goblin.gdc[39m[0m
+[  57% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-57dd1b188acb1b7f699d117406206ab2-bug.scn[39m[0m
+[  57% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-a930820ec0ab16db6719aff4daa500f9-enemy.scn[39m[0m
+[  57% ] [90m[1msavepack[22m | Storing File: res://scripts/enemy.gdc[39m[0m
+[  58% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/bug.gdc[39m[0m
+[  58% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-a6eb3e5743956950d6e445fa932ae6ab-goblin.scn[39m[0m
+[  58% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin.gdc[39m[0m
+[  58% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-cb03545b7ac23304424dc2fa9d6f0f98-goblin_bomber.scn[39m[0m
+[  59% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin_bomber.gdc[39m[0m
+[  59% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-367bee872bc839c412806bc52cf5907c-goblin_shaman.scn[39m[0m
+[  59% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin_shaman.gdc[39m[0m
+[  59% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-0269efee09257dbea95d3b401a5ce465-ogre.scn[39m[0m
+[  60% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/ogre.gdc[39m[0m
+[  60% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-31f174ac9ada7ecb50a69d2e4766a826-sword_goblin.scn[39m[0m
+[  60% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/sword_goblin.gdc[39m[0m
+[  60% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-9c6f80ff9a43dc42891401e1107af8d9-turkey.scn[39m[0m
+[  61% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/turkey.gdc[39m[0m
+[  61% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-382cf2fc0245531758f5e9ef73bc7c39-wolf.scn[39m[0m
+[  61% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/wolf.gdc[39m[0m
+[  61% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-19cbeda6ff33447f48725e9c067698f6-enemy_projectile.scn[39m[0m
+[  62% ] [90m[1msavepack[22m | Storing File: res://scripts/enemy_projectile.gdc[39m[0m
+[  62% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-f70452cfeb8bdc34b15996db8f2bc9af-gear_drop_pickup.scn[39m[0m
+[  62% ] [90m[1msavepack[22m | Storing File: res://scripts/gear_drop_pickup.gdc[39m[0m
+[  62% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-dfe88c5ee8796ed79af402db385eca7e-ground_pulse_aura.scn[39m[0m
+[  63% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-0742a65286a1a0a46ea1bd05101c7346-impact_fx.scn[39m[0m
+[  63% ] [90m[1msavepack[22m | Storing File: res://scripts/impact_fx.gdc[39m[0m
+[  63% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-3ad5c15c4f3250da0cc7c1af1770d85f-main.scn[39m[0m
+[  63% ] [90m[1msavepack[22m | Storing File: res://scripts/main.gdc[39m[0m
+[  64% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-234fb6894ec6226e856ab7f825500d3d-player.scn[39m[0m
+[  64% ] [90m[1msavepack[22m | Storing File: res://scripts/player.gdc[39m[0m
+[  64% ] [90m[1msavepack[22m | Storing File: res://scripts/grapple_controller.gdc[39m[0m
+[  64% ] [90m[1msavepack[22m | Storing File: res://scripts/wave_spawner.gdc[39m[0m
+[  65% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_floor.gdc[39m[0m
+[  65% ] [90m[1msavepack[22m | Storing File: res://scripts/combat_presentation_fx.gdc[39m[0m
+[  65% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-52ba16b64d3611d1fc0bf8522bc27e7b-arena_generator.scn[39m[0m
+[  65% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_generator.gdc[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-92871cb8c4a37b4f063b4c2daf24a068-forest_wall_i.scn[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/terrain_module.gdc[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-5fc47579e8f65b059bc922e4676136d8-forest_wall_l.scn[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-32e80227aa524454e23ef38f65fe943e-forest_wall_t.scn[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-0a6ccd54cd1866459b2712c7355bc537-forest_wall_hall.scn[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-64ffb8622856aa019bf7db6c50f99500-mud_patch.scn[39m[0m
+[  66% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/mud_patch.gdc[39m[0m
+[  67% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-8cd82d9d6be9dc0e9ae1f238d55a337e-bear_trap.scn[39m[0m
+[  67% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/bear_trap.gdc[39m[0m
+[  67% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-960b8e71636e3adfdf66cbb5710ee0df-arena_population.scn[39m[0m
+[  67% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_population.gdc[39m[0m
+[  68% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-d3b3d50642baca5e0ffc4cb0eb3bdb32-end_run_hub.scn[39m[0m
+[  68% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/end_run_hub.gdc[39m[0m
+[  68% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-339ab3f2ee98c59a1cf2c1762d2d7846-home_menu.scn[39m[0m
+[  68% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/home_menu.gdc[39m[0m
+[  69% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/metronome_top_bar.gdc[39m[0m
+[  69% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_road.gdc[39m[0m
+[  69% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_ambient_fx.gdc[39m[0m
+[  69% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-378a315f0412969bc660e4b15f95c274-mobile_controls.scn[39m[0m
+[  70% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/mobile_controls.gdc[39m[0m
+[  70% ] [90m[1msavepack[22m | Storing File: res://scripts/blood_decals.gdc[39m[0m
+[  70% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-1af7823c3ca7ee77c1274edd5a81fa45-cauldron_catch.scn[39m[0m
+[  70% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/cauldron_catch.gdc[39m[0m
+[  71% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-3bb9511b15fa8ab96e5be6e799972e69-gem_jam.scn[39m[0m
+[  71% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/gem_jam.gdc[39m[0m
+[  71% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/gem_jam_audio.gdc[39m[0m
+[  71% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-8d047abb29e69b2bf7a42feb1ed4a7f6-grindstone.scn[39m[0m
+[  72% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/grindstone.gdc[39m[0m
+[  72% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-e7c22a23d513567d94a1b91142b40434-rush_chunk_graybox.scn[39m[0m
+[  72% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_chunk.gdc[39m[0m
+[  72% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-973db7fa932c3c17314f7b1d42fab7d6-rush_grapple_point.scn[39m[0m
+[  73% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_grapple_point.gdc[39m[0m
+[  73% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-cbbb67afd5b5b6575530effef8d47421-track_forest_road_a.scn[39m[0m
+[  73% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-096541c6d1815f28204ea41e8c7f3fbb-track_forest_road_b.scn[39m[0m
+[  73% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-976f2a366f8c63b8e33a75238fecde77-track_loop.scn[39m[0m
+[  74% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-fe78c3c6faf7b8fdf1e16aff01d6e4cf-track_mountain_platform.scn[39m[0m
+[  74% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-e099c7ba8332f322622ea05420696b31-rush_chunk_graybox_playtest.scn[39m[0m
+[  74% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_chunk_playtest.gdc[39m[0m
+[  74% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_authored_terrain.gdc[39m[0m
+[  75% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_land_sail.gdc[39m[0m
+[  75% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-1cf3d724a1b4a74ed97e8f20a39a5b28-rush_track_world_proof.scn[39m[0m
+[  75% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_track_world.gdc[39m[0m
+[  75% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_clouds.gdc[39m[0m
+[  76% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_ambient.gdc[39m[0m
+[  76% ] [90m[1msavepack[22m | Storing File: res://shaders/resonance_rush_sky.gdshader[39m[0m
+[  76% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-9168481a83d3e9c035f2725ed5aae4e1-sword_smithing.scn[39m[0m
+[  76% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/sword_smithing.gdc[39m[0m
+[  77% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-69e6a49b38685c1cfee9da078b15de10-moon_slash.scn[39m[0m
+[  77% ] [90m[1msavepack[22m | Storing File: res://scripts/moon_slash.gdc[39m[0m
+[  77% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-e18534686a7932bf7d801605421ef1a0-bomber_bomb.scn[39m[0m
+[  77% ] [90m[1msavepack[22m | Storing File: res://scripts/bomber_bomb.gdc[39m[0m
+[  78% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-607634a39ed0ecaa8ad5cf6b8d934279-goblin_arrow.scn[39m[0m
+[  78% ] [90m[1msavepack[22m | Storing File: res://scripts/projectiles/goblin_arrow.gdc[39m[0m
+[  78% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-5ed2f153acbe4ecc41c732c064934dc2-shaman_heal_orb.scn[39m[0m
+[  78% ] [90m[1msavepack[22m | Storing File: res://scripts/shaman_heal_orb.gdc[39m[0m
+[  79% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-88d7386efb7c060e8ae8dda2cccd8e60-resonant_glyph.scn[39m[0m
+[  79% ] [90m[1msavepack[22m | Storing File: res://scripts/resonant_glyph.gdc[39m[0m
+[  79% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-1286c958116efa3c3f8fda4052238d13-spawn_warning.scn[39m[0m
+[  79% ] [90m[1msavepack[22m | Storing File: res://scripts/spawn_warning.gdc[39m[0m
+[  80% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-71a3f4bf464612abaed492ecb2a9005b-training_dummy.scn[39m[0m
+[  80% ] [90m[1msavepack[22m | Storing File: res://scripts/training_dummy.gdc[39m[0m
+[  80% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-fffe7a9fc312d368ea2344edb88040e7-void_well.scn[39m[0m
+[  80% ] [90m[1msavepack[22m | Storing File: res://scripts/void_well.gdc[39m[0m
+[  81% ] [90m[1msavepack[22m | Storing File: res://scripts/ai_test_tools.gdc[39m[0m
+[  81% ] [90m[1msavepack[22m | Storing File: res://scripts/audio/music_director.gdc[39m[0m
+[  81% ] [90m[1msavepack[22m | Storing File: res://scripts/audio_manager.gdc[39m[0m
+[  81% ] [90m[1msavepack[22m | Storing File: res://scripts/bdos_sword_solver.gdc[39m[0m
+[  82% ] [90m[1msavepack[22m | Storing File: res://scripts/bonus_config.gdc[39m[0m
+[  82% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_arena_border.gdc[39m[0m
+[  82% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_campfire.gdc[39m[0m
+[  82% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_cave_backdrop.gdc[39m[0m
+[  83% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/destructible_tree.gdc[39m[0m
+[  83% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_charge_fx.gdc[39m[0m
+[  83% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_config.gdc[39m[0m
+[  83% ] [90m[1msavepack[22m | Storing File: res://scripts/combat_settings_config.gdc[39m[0m
+[  84% ] [90m[1msavepack[22m | Storing File: res://scripts/experimental/chasm_parallax_overlay.gdc[39m[0m
+[  84% ] [90m[1msavepack[22m | Storing File: res://scripts/experimental/chasm_test_2_painting.gdc[39m[0m
+[  84% ] [90m[1msavepack[22m | Storing File: res://scripts/flow_color_utils.gdc[39m[0m
+[  84% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_atmosphere_layer.gdc[39m[0m
+[  85% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_night_lighting.gdc[39m[0m
+[  85% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_night_math.gdc[39m[0m
+[  85% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_visual_profile_library.gdc[39m[0m
+[  85% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_visual_settings.gdc[39m[0m
+[  86% ] [90m[1msavepack[22m | Storing File: res://scripts/gameplay_bounds.gdc[39m[0m
+[  86% ] [90m[1msavepack[22m | Storing File: res://scripts/global_preset_config.gdc[39m[0m
+[  86% ] [90m[1msavepack[22m | Storing File: res://scripts/hd_enemy_eye_anchors.gdc[39m[0m
+[  86% ] [90m[1msavepack[22m | Storing File: res://scripts/hd_enemy_eyes.gdc[39m[0m
+[  87% ] [90m[1msavepack[22m | Storing File: res://scripts/hit_reaction.gdc[39m[0m
+[  87% ] [90m[1msavepack[22m | Storing File: res://scripts/home/armory_config.gdc[39m[0m
+[  87% ] [90m[1msavepack[22m | Storing File: res://scripts/home/cooking_config.gdc[39m[0m
+[  87% ] [90m[1msavepack[22m | Storing File: res://scripts/home/home_progression.gdc[39m[0m
+[  88% ] [90m[1msavepack[22m | Storing File: res://scripts/home/item_config.gdc[39m[0m
+[  88% ] [90m[1msavepack[22m | Storing File: res://scripts/ice_patch.gdc[39m[0m
+[  88% ] [90m[1msavepack[22m | Storing File: res://scripts/loot/loot_config.gdc[39m[0m
+[  88% ] [90m[1msavepack[22m | Storing File: res://scripts/loot/run_loot_record.gdc[39m[0m
+[  89% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/cauldron_catch_particle.gdc[39m[0m
+[  89% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_game_base.gdc[39m[0m
+[  89% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_terrain.gdc[39m[0m
+[  89% ] [90m[1msavepack[22m | Storing File: res://scripts/parry_rules.gdc[39m[0m
+[  90% ] [90m[1msavepack[22m | Storing File: res://scripts/physics_shell.gdc[39m[0m
+[  90% ] [90m[1msavepack[22m | Storing File: res://scripts/player_flow_fx.gdc[39m[0m
+[  90% ] [90m[1msavepack[22m | Storing File: res://scripts/player_sword_visual.gdc[39m[0m
+[  90% ] [90m[1msavepack[22m | Storing File: res://scripts/sword_contact_data.gdc[39m[0m
+[  91% ] [90m[1msavepack[22m | Storing File: res://scripts/sword_interaction_resolver.gdc[39m[0m
+[  91% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_layout_validator.gdc[39m[0m
+[  91% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_object.gdc[39m[0m
+[  91% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_arena_object.gdc[39m[0m
+[  92% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_perimeter.gdc[39m[0m
+[  92% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/tree_canopy_overlay.gdc[39m[0m
+[  92% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/backyard_training_menu.gdc[39m[0m
+[  92% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/blacksmith_store.gdshader[39m[0m
+[  93% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/blacksmith_store_backdrop.gdc[39m[0m
+[  93% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/boss_dialogue_box.gdc[39m[0m
+[  93% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/combat_debug_tracker.gdc[39m[0m
+[  93% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/forest_visual_tuner.gdc[39m[0m
+[  94% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/home_tutorial_guide.gdc[39m[0m
+[  94% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/kaji_store.gdshader[39m[0m
+[  94% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/kaji_store_backdrop.gdc[39m[0m
+[  94% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/metronome_visualizer.gdc[39m[0m
+[  95% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/pause_menu.gdc[39m[0m
+[  95% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/pickup_feed.gdc[39m[0m
+[  95% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/red_heart_glow.gdc[39m[0m
+[  95% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/resonance_ripple_effect.gdc[39m[0m
+[  96% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/town_menu.gdc[39m[0m
+[  96% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/tutorial_button_glow.gdc[39m[0m
+[  96% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/tutorial_overlay.gdc[39m[0m
+[  96% ] [90m[1msavepack[22m | Storing File: res://shaders/forest_atmosphere.gdshader[39m[0m
+[  97% ] [90m[1msavepack[22m | Storing File: res://shaders/forest_ground_detail.gdshader[39m[0m
+[  97% ] [90m[1msavepack[22m | Storing File: res://shaders/forest_night.gdshader[39m[0m
+[  97% ] [90m[1msavepack[22m | Storing File: res://shaders/health_bar_flow.gdshader[39m[0m
+[  97% ] [90m[1msavepack[22m | Storing File: res://shaders/metronome_core.gdshader[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://shaders/metronome_visualizer.gdshader[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://shaders/silhouette_aura.gdshader[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://data/default_global_preset.json[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://assets/generated/bomber_burst_frames.tres.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scenes/px_game.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_game.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/bdpx_global.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_arena.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_blade.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_hud.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_inworld.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_inworld_enemies.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_test_dummy.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/scripts/px_tuning_tools.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/tools/px_sword_lab.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://blade_dancer_px/tools/px_sword_lab.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://resources/terrain/forest_terrain_config.tres.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/terrain_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/arena_bounds.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/boss/zungar.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/health_bar.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_visual.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/chakram.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/chakram.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/chasm/chasm_stage.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/chasm_stage.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_population.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/drop_pickup.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/drop_pickup.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/archer_goblin.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/archer_goblin.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/bug.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemy.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemy.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/bug.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/goblin.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/goblin_bomber.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin_bomber.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/goblin_shaman.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/goblin_shaman.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/ogre.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/ogre.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/sword_goblin.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/sword_goblin.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/turkey.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/turkey.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemies/wolf.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemies/wolf.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/enemy_projectile.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/enemy_projectile.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/gear_drop_pickup.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/gear_drop_pickup.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/ground_pulse_aura.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/impact_fx.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/impact_fx.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/main.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/main.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/player.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/player.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/grapple_controller.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/wave_spawner.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_floor.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/combat_presentation_fx.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/arena_generator.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_generator.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/forest_wall_i.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/terrain_module.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/forest_wall_l.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/forest_wall_t.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/forest_wall_hall.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/mud_patch.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/mud_patch.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/bear_trap.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/bear_trap.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/terrain/arena_population.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_population.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/ui/end_run_hub.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/end_run_hub.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/ui/home_menu.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/home_menu.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/metronome_top_bar.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_road.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_ambient_fx.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/ui/mobile_controls.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/mobile_controls.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/blood_decals.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/cauldron_catch.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/cauldron_catch.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/gem_jam.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/gem_jam.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/gem_jam_audio.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/grindstone.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/grindstone.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/chunks/rush_chunk_graybox.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_chunk.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/markers/rush_grapple_point.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_grapple_point.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/chunks/track_forest_road_a.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/chunks/track_forest_road_b.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/chunks/track_loop.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/chunks/track_mountain_platform.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/rush_chunk_graybox_playtest.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_chunk_playtest.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_authored_terrain.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_land_sail.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/resonance_rush/rush_track_world_proof.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_track_world.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_clouds.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_ambient.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/minigames/sword_smithing.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/sword_smithing.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/moon_slash.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/moon_slash.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/projectiles/bomber_bomb.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/bomber_bomb.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/projectiles/goblin_arrow.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/projectiles/goblin_arrow.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/projectiles/shaman_heal_orb.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/shaman_heal_orb.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/resonant_glyph.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/resonant_glyph.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/spawn_warning.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/spawn_warning.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/training_dummy.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/training_dummy.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scenes/void_well.tscn.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/void_well.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ai_test_tools.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/audio/music_director.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/audio_manager.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/bdos_sword_solver.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/bonus_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_arena_border.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_campfire.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/boss_cave_backdrop.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/destructible_tree.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_charge_fx.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/boss/zungar_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/combat_settings_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/experimental/chasm_parallax_overlay.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/experimental/chasm_test_2_painting.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/flow_color_utils.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_atmosphere_layer.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_night_lighting.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_night_math.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_visual_profile_library.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/forest_visual_settings.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/gameplay_bounds.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/global_preset_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/hd_enemy_eye_anchors.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/hd_enemy_eyes.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/hit_reaction.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/home/armory_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/home/cooking_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/home/home_progression.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/home/item_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ice_patch.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/loot/loot_config.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/loot/run_loot_record.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/cauldron_catch_particle.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_game_base.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/minigames/resonance_rush_terrain.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/parry_rules.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/physics_shell.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/player_flow_fx.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/player_sword_visual.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/sword_contact_data.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/sword_interaction_resolver.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_layout_validator.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/arena_object.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_arena_object.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/chasm_perimeter.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/terrain/tree_canopy_overlay.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/backyard_training_menu.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/blacksmith_store_backdrop.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/boss_dialogue_box.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/combat_debug_tracker.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/forest_visual_tuner.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/home_tutorial_guide.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/kaji_store_backdrop.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/metronome_visualizer.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/pause_menu.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/pickup_feed.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/red_heart_glow.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/resonance_ripple_effect.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/town_menu.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/tutorial_button_glow.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://scripts/ui/tutorial_overlay.gd.remap[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://.godot/global_script_class_cache.cfg[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://icon.svg[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://.godot/uid_cache.bin[39m[0m
+[  98% ] [90m[1msavepack[22m | Storing File: res://project.binary[39m[0m
+[92m[ DONE ][39m [1msavepack[22m
+[0m

@@ -115,7 +115,9 @@ func test_item_rarity_bags_and_alphabetical_storage() -> void:
 	screen.feedback_label = screen.get_node("FeedbackLabel") as Label
 	screen.configure(progression)
 	var previous_position: int = -1
-	for material_name: String in HomeProgression.MATERIAL_NAMES:
+	var expected_order: Array[String] = HomeProgression.MATERIAL_NAMES.duplicate()
+	expected_order.sort() # the storage screen sorts; the registry is not alphabetical
+	for material_name: String in expected_order:
 		var current_position: int = screen.storage_text.text.find("\n%s:" % material_name)
 		assert(current_position > previous_position, "Storage materials must appear in alphabetical order.")
 		previous_position = current_position

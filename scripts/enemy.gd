@@ -3,9 +3,19 @@ class_name Enemy extends CharacterBody2D
 enum GrappleWeight { LIGHT, MEDIUM, HEAVY }
 enum RangedCoverPhase { SEEK, HIDDEN, PEEK }
 const PROJECTILE_SCENE_PATH: String = "res://scenes/enemy_projectile.tscn"
+const SPEAR_SHAFT_EXTENSION: float = 14.0
+const SPEAR_HEAD_LENGTH: float = 12.0
+const SPEAR_SHAFT_WIDTH: float = 5.0
+const SPEAR_HEAD_HALF_WIDTH: float = 6.0
+const SWORD_WEAPON_HIT_RADIUS: float = 3.0
+const TURKEY_MOVE_SPEED: float = 138.0
 ## Chance that a defeated enemy plays its death cry. Deliberately below 1.0 so a
 ## pile-up of kills reads as a fight, not a wall of identical screams.
 const DEATH_SOUND_CHANCE: float = 0.85
+## BDOS Collision Constrained Sword 2: how strongly this body yields to the player's
+## geometric sword pressure along the contact normal. Divided by a resistance derived
+## from grapple_weight so heavier archetypes yield less.
+const COLLISION_SWORD_YIELD_GAIN: float = 0.5
 
 ## Whether a death cry should play for the given 0..1 roll. Separated out so the
 ## threshold can be unit-tested without depending on randomness.
@@ -73,6 +83,38 @@ var impact_deformation_direction: Vector2 = Vector2.RIGHT
 var impact_deformation_directional_hd: bool = false
 
 var health: float = 50.0
+## Recipient-owned single HoT slot; shaman lifetimes never own these ticks.
+signal health_restored(amount: float)
+var shaman_regen_ticks_left: int = 0
+var shaman_regen_tick_left: float = 1.0
+
+func receive_healing(amount: float) -> float:
+	if death_emitted or health <= 0.0 or is_queued_for_deletion(): return 0.0
+	var restored: float = minf(maxf(0.0, amount), maxf(0.0, max_health - health))
+	health += restored
+	if health_bar != null:
+		health_bar.value = health
+		health_bar.visible = health < max_health
+	if restored > 0.0: health_restored.emit(restored)
+	return restored
+
+func receive_shaman_heal() -> void:
+	if death_emitted or health <= 0.0 or is_queued_for_deletion(): return
+	receive_healing(10.0)
+	# Recasts from ANY shaman replace, never add another clock or tick stream.
+	shaman_regen_ticks_left = 10
+	shaman_regen_tick_left = 1.0
+
+func tick_shaman_regeneration(delta: float) -> void:
+	if death_emitted or health <= 0.0 or is_queued_for_deletion():
+		shaman_regen_ticks_left = 0
+		return
+	if shaman_regen_ticks_left <= 0: return
+	shaman_regen_tick_left -= maxf(0.0, delta)
+	while shaman_regen_ticks_left > 0 and shaman_regen_tick_left <= 0.000001:
+		shaman_regen_ticks_left -= 1
+		shaman_regen_tick_left += 1.0
+		receive_healing(1.0)
 
 ## RUNTIME TIMER NAMING
 ## Variables ending in `_left` are countdown bookkeeping: they contain the
@@ -125,7 +167,11 @@ var blade_angle: float = 0.0
 var blade_flash: float = 0.0
 var parry_flash: float = 0.0
 var sword_parry_cooldown_left: float = 0.0
-var stun_left: float = 0.0
+var stun_left: float = 0.0:
+	set(value):
+		# All stun writers (including player hilt bash) share the impulse gate.
+		# Discard, never defer: an immune hit must not stun after recovery starts.
+		stun_left = 0.0 if _is_knockback_immune() else value
 var blade_target_angle: float = 0.0
 var blade_length: float = 58.0
 var thrust_left: float = 0.0
@@ -262,8 +308,10 @@ var entrance_walk_speed: float = 95.0
 ## are enabled explicitly by armed concrete classes.
 
 @export_category("Elite Shield")
-## Half-angle of the forward cone where the shield can intercept attacks.
-@export var elite_shield_arc_degrees: float = 49.0
+## Half-angle of the forward cone where the shield can intercept attacks. 90 degrees means
+## the whole front half: any blade crossing the front of the shield parries, matching what
+## the player sees, instead of a narrow cone a clean frontal swing could slip past.
+@export var elite_shield_arc_degrees: float = 90.0
 ## Elite parry timing, tolerance, stagger, and forgiveness are centralized in ParryRules.
 ## Distance from the Elite's center to the middle of its shield.
 @export var elite_shield_distance: float = 24.0
@@ -297,6 +345,7 @@ func _ready() -> void:
 	health_bar.value = health
 	health_bar.visible = false
 	add_to_group("enemies")
+	add_to_group(WorldRewindRecorder.REWINDABLE_GROUP)
 	var players: Array[Node] = get_tree().get_nodes_in_group("player")
 	if not players.is_empty(): player_ref = players[0]
 	var engagement_nodes: Array[Node] = get_tree().get_nodes_in_group("melee_engagement_director")
@@ -476,7 +525,29 @@ func tick_moving_weapon_combat(delta: float) -> void:
 		slide_visual_time += delta
 	clash_cooldown_left = maxf(0.0, clash_cooldown_left - delta)
 
+## World Slow (WorldTime): enemy motion is integrated by move_and_slide with the engine's
+## physics delta, so the slowed scale is applied to the velocity only for the move itself
+## and then removed, keeping AI/velocity bookkeeping in unscaled units.
+func _world_move_and_slide() -> void:
+	var world_scale: float = WorldTime.enemy_scale()
+	if world_scale == 1.0:
+		move_and_slide()
+		return
+	velocity *= world_scale
+	move_and_slide()
+	velocity /= world_scale
+
 func _physics_process(delta: float) -> void:
+	if death_emitted or health <= 0.0:
+		return
+	# World Slow: every enemy clock below runs on the slowed world delta (applied once here;
+	# subclasses pass the raw engine delta to super).
+	delta *= WorldTime.enemy_scale()
+	if hd_enemy_sprite != null:
+		hd_enemy_sprite.speed_scale = WorldTime.enemy_scale()
+	# Clear stale/directly queued motion before the stun branch and AI clock.
+	_suppress_charge_interrupts()
+	tick_shaman_regeneration(delta)
 	_update_bone_core_shell()
 	if hit_visual_elapsed > 0.0:
 		hit_visual_elapsed += delta
@@ -521,13 +592,15 @@ func _physics_process(delta: float) -> void:
 	if burning_left > 0.0 and burning_tick <= 0.0:
 		burning_tick = burning_tick_interval
 		take_damage(burning_damage_per_tick, Vector2.ZERO, 0.0)
+	if death_emitted or health <= 0.0:
+		return
 	if stun_left > 0.0:
 		blade_angle = locked_blade_angle
 		blade_length = 76.0
 		velocity = knockback + grapple_slide_velocity
 		knockback = knockback.move_toward(Vector2.ZERO, delta * 600.0)
 		grapple_slide_velocity = grapple_slide_velocity.move_toward(Vector2.ZERO, delta * 180.0)
-		move_and_slide()
+		_world_move_and_slide()
 		queue_redraw()
 		return
 	if entrance_walk_active:
@@ -542,7 +615,7 @@ func _physics_process(delta: float) -> void:
 			velocity += knockback + grapple_slide_velocity
 			knockback = knockback.move_toward(Vector2.ZERO, delta * 600.0)
 			grapple_slide_velocity = grapple_slide_velocity.move_toward(Vector2.ZERO, delta * 180.0)
-			move_and_slide()
+			_world_move_and_slide()
 		queue_redraw()
 		return
 	terrain_navigation_override_active = false
@@ -560,10 +633,10 @@ func _physics_process(delta: float) -> void:
 	velocity += knockback + grapple_slide_velocity
 	knockback = knockback.move_toward(Vector2.ZERO, delta * 600.0)
 	grapple_slide_velocity = grapple_slide_velocity.move_toward(Vector2.ZERO, delta * 180.0)
-	move_and_slide()
+	_world_move_and_slide()
 	var main_scene: Node = get_tree().current_scene
 	var can_reach_player: bool = not main_scene.has_method("has_terrain_line_of_sight") or main_scene.has_terrain_line_of_sight(global_position, player_ref.global_position, 2.0)
-	if can_reach_player and contact_cooldown <= 0.0 and global_position.distance_to(player_ref.global_position) < 30.0:
+	if can_reach_player and contact_cooldown <= 0.0 and _has_player_damage_contact():
 		contact_cooldown = 0.55
 		player_ref.take_damage(contact_damage, global_position.direction_to(player_ref.global_position) * 260.0, self)
 		_on_player_contact()
@@ -571,6 +644,54 @@ func _physics_process(delta: float) -> void:
 
 func _run_concrete_ai(_delta: float) -> void:
 	velocity = Vector2.ZERO
+
+## Only opted-in concrete chargers protect red windup and moving charge.
+## Recovery remains vulnerable; damage/death and presentation bypass this gate.
+func _is_knockback_immune() -> bool:
+	return false
+
+func _charge_commitment_active() -> bool:
+	return windup > 0.0 or charge_distance_left > 0.0
+
+func _suppress_charge_interrupts() -> void:
+	if not _is_knockback_immune():
+		return
+	stun_left = 0.0
+	knockback = Vector2.ZERO
+	grapple_slide_velocity = Vector2.ZERO
+
+func _begin_charge_windup(duration: float) -> void:
+	windup = duration
+	_suppress_charge_interrupts()
+	velocity = Vector2.ZERO
+
+func _add_knockback(impulse: Vector2) -> void:
+	if not _is_knockback_immune():
+		knockback += impulse
+
+## BDOS Collision Constrained Sword 2, two-way contact. When the player's geometric
+## solver presses the blade into this body, the body yields along the contact normal
+## so the blade can keep sliding instead of sticking. This is an ask through the
+## existing knockback channel — no pose write, no orbit, no attach. The normal is the
+## push direction (away from the blade, into the body); `amount` is the per-frame
+## resisted depenetration pressure the solver accumulated. A charging/knockback-immune
+## enemy refuses, and heavier grapple weight yields less. Terrain is respected because
+## the engine integrates the resulting velocity in the normal move_and_slide path.
+func receive_collision_sword_push(normal: Vector2, amount: float) -> void:
+	if amount <= 0.0 or normal.length_squared() < 0.000001:
+		return
+	if _is_knockback_immune():
+		return
+	var resistance: float = 1.0
+	match grapple_weight:
+		GrappleWeight.MEDIUM: resistance = 2.0
+		GrappleWeight.HEAVY: resistance = 3.5
+	_add_knockback(normal.normalized() * (amount * COLLISION_SWORD_YIELD_GAIN / resistance))
+
+## One damage/cooldown/terrain path; concrete enemies may extend its contact
+## geometry without adding a second damage timer or bypassing player immunity.
+func _has_player_damage_contact() -> bool:
+	return global_position.distance_to(player_ref.global_position) < 30.0
 
 func _on_player_contact() -> void:
 	pass
@@ -716,7 +837,7 @@ func _chaser(_delta: float) -> void:
 		return
 	velocity = direction * move_speed
 
-func _duelist(delta: float) -> void:
+func _duelist(delta: float, animate_thrust: bool = true) -> void:
 	duelist_swing_time += delta
 	var distance: float = global_position.distance_to(player_ref.global_position)
 	var direction: Vector2 = global_position.direction_to(player_ref.global_position)
@@ -736,11 +857,14 @@ func _duelist(delta: float) -> void:
 		velocity = (direction * (1.0 if distance > duelist_combat_range else 0.0) + tangent * 0.35).normalized() * move_speed
 	else:
 		velocity = direction * move_speed if distance > 90.0 else Vector2.ZERO
-	thrust_left = maxf(0.0, thrust_left - delta)
-	if thrust_left <= 0.0 and thrust_cooldown <= 0.0 and distance < duelist_combat_range:
-		thrust_left = 0.32
-		thrust_cooldown = 1.15
-	blade_length = duelist_thrust_blade_length if thrust_left > 0.0 else duelist_blade_length
+	if animate_thrust:
+		thrust_left = maxf(0.0, thrust_left - delta)
+		if thrust_left <= 0.0 and thrust_cooldown <= 0.0 and distance < duelist_combat_range:
+			thrust_left = 0.32
+			thrust_cooldown = 1.15
+		blade_length = duelist_thrust_blade_length if thrust_left > 0.0 else duelist_blade_length
+	else:
+		blade_length = duelist_blade_length
 	blade_target_angle = direction.angle() + (PI * 0.55 if blade_flash > 0.0 else 0.0)
 	blade_angle = lerp_angle(blade_angle, blade_target_angle, clampf(_combat_setting("parry_rotation_speed", ParryRules.UNIVERSAL_BLADE_ROTATION_SPEED) * delta, 0.0, 1.0))
 
@@ -749,6 +873,7 @@ func _begin_predictive_charge(aim_lead: float, travel_distance: float, speed_mul
 	charge_direction = global_position.direction_to(predicted_target)
 	if charge_direction == Vector2.ZERO: charge_direction = global_position.direction_to(player_ref.global_position)
 	charge_distance_left = travel_distance
+	_suppress_charge_interrupts()
 	var charge_speed: float = maxf(1.0, move_speed * speed_multiplier)
 	charge_left = travel_distance / charge_speed
 	charge_cooldown = cooldown_duration
@@ -785,7 +910,7 @@ func _elite(delta: float) -> void:
 		return
 	if charge_cooldown <= 0.0 and distance >= elite_charge_min_distance and distance <= elite_charge_start_distance:
 		charge_direction = global_position.direction_to(player_ref.global_position + player_ref.velocity * elite_charge_aim_lead)
-		windup = elite_charge_windup_duration
+		_begin_charge_windup(elite_charge_windup_duration)
 		return
 	if shield_bash_left <= 0.0 and shield_bash_cooldown <= 0.0 and distance < 145.0:
 		shield_bash_left = 0.3
@@ -826,14 +951,14 @@ func shield_parry(incoming_velocity: Vector2 = Vector2.ZERO) -> void:
 	stun_left = ParryRules.ELITE_PARRY_STAGGER_DURATION
 	locked_blade_angle = shield_angle
 	clash_latched = true
-	if incoming_velocity.length_squared() > 0.01: knockback += incoming_velocity.normalized() * 55.0
+	if incoming_velocity.length_squared() > 0.01: _add_knockback(incoming_velocity.normalized() * 55.0)
 	queue_redraw()
 
 func chakram_hit_from_behind(force: Vector2) -> void:
 	if not shield_enabled: return
 	stun_left = 2.0
 	locked_blade_angle = shield_angle
-	knockback += force * 0.35
+	_add_knockback(force * 0.35)
 	parry_flash = 0.45
 	queue_redraw()
 
@@ -977,7 +1102,7 @@ func _charger(delta: float) -> void:
 		return
 	if charge_cooldown <= 0.0 and global_position.distance_to(player_ref.global_position) <= charge_start_distance:
 		charge_direction = global_position.direction_to(player_ref.global_position + player_ref.velocity * charger_aim_lead)
-		windup = charger_windup_duration
+		_begin_charge_windup(charger_windup_duration)
 		return
 	# Constant pursuit ensures the Charger repeatedly enters a valid attack range.
 	velocity = direction * move_speed
@@ -995,7 +1120,8 @@ func _core_setting(setting: String, fallback: float) -> float:
 func _enemy_weapon_segment() -> Dictionary:
 	var weapon_direction: Vector2 = Vector2.RIGHT.rotated(blade_angle)
 	var weapon_start: Vector2 = global_position + weapon_direction * weapon_origin_offset
-	var weapon_end: Vector2 = weapon_start + weapon_direction * blade_length
+	var visible_length: float = blade_length + (SPEAR_SHAFT_EXTENSION + SPEAR_HEAD_LENGTH if spear_visual_enabled else 0.0)
+	var weapon_end: Vector2 = weapon_start + weapon_direction * visible_length
 	return {"start": weapon_start, "end": weapon_end}
 
 func update_blade_contact(start: Vector2, end: Vector2) -> void:
@@ -1038,7 +1164,7 @@ func try_blade_slide(player_start: Vector2, player_end: Vector2, incoming_veloci
 	slide_travel_direction = signf(incoming_velocity.dot(enemy_direction)) if contact_preset >= 2 else (-1.0 if randf() < 0.5 else 1.0)
 	if slide_travel_direction == 0.0: slide_travel_direction = 1.0
 	clash_latched = true
-	if contact_preset == 1 and incoming_velocity.length_squared() > 0.01: knockback += incoming_velocity.normalized() * 28.0
+	if contact_preset == 1 and incoming_velocity.length_squared() > 0.01: _add_knockback(incoming_velocity.normalized() * 28.0)
 	queue_redraw()
 	return true
 
@@ -1068,9 +1194,9 @@ func weapon_clash(incoming_velocity: Vector2 = Vector2.ZERO, contact_preset: int
 	var active_stagger: float = _combat_setting("clash_stagger", ParryRules.CLASH_STAGGER_DURATION)
 	var active_recoil: float = _combat_setting("clash_enemy_recoil", ParryRules.CLASH_RECOIL_TO_ENEMY)
 	stun_left = maxf(stun_left, active_stagger)
-	knockback += player_ref.global_position.direction_to(global_position) * active_recoil
+	_add_knockback(player_ref.global_position.direction_to(global_position) * active_recoil)
 	if incoming_velocity.length_squared() > 0.01:
-		knockback += incoming_velocity.normalized() * (8.0 if contact_preset >= 2 else 18.0)
+		_add_knockback(incoming_velocity.normalized() * (8.0 if contact_preset >= 2 else 18.0))
 	queue_redraw()
 
 func receive_weapon_beat(incoming_velocity: Vector2, stagger_duration: float, recoil_strength: float) -> void:
@@ -1090,7 +1216,7 @@ func receive_weapon_beat(incoming_velocity: Vector2, stagger_duration: float, re
 		beat_side = 1.0
 	locked_blade_angle = blade_angle + beat_side * deg_to_rad(22.0)
 	blade_angle = locked_blade_angle
-	knockback += incoming_direction * maxf(0.0, recoil_strength)
+	_add_knockback(incoming_direction * maxf(0.0, recoil_strength))
 	queue_redraw()
 
 func is_blade_clashing(player_start: Vector2, player_end: Vector2) -> bool:
@@ -1133,9 +1259,9 @@ func parry_blade(player_start: Vector2, player_end: Vector2, incoming_velocity: 
 	locked_blade_angle = incoming_angle + side * PI * 0.5
 	blade_angle = locked_blade_angle
 	var parry_recoil: float = _combat_setting("parry_enemy_recoil", 180.0)
-	knockback += player_ref.global_position.direction_to(global_position) * parry_recoil
+	_add_knockback(player_ref.global_position.direction_to(global_position) * parry_recoil)
 	if incoming_velocity.length_squared() > 0.01:
-		knockback += incoming_velocity.normalized() * (20.0 if contact_preset >= 2 else 35.0)
+		_add_knockback(incoming_velocity.normalized() * (20.0 if contact_preset >= 2 else 35.0))
 
 func _segments_close(start_a: Vector2, end_a: Vector2, start_b: Vector2, end_b: Vector2, threshold: float) -> bool:
 	if _segments_intersect(start_a, end_a, start_b, end_b): return true
@@ -1212,10 +1338,12 @@ func take_damage(amount: float, force: Vector2 = Vector2.ZERO, stagger_duration:
 	if main_scene != null and main_scene.has_method("play_sfx"): main_scene.play_sfx("enemy_hit", 0.75)
 	health_bar.value = health
 	health_bar.visible = health < max_health
-	knockback += force
+	_add_knockback(force)
 	stun_left = maxf(stun_left, stagger_duration)
 	if health <= 0.0 and not death_emitted:
 		death_emitted = true
+		# Stop motion immediately; retain pose/timers for same-frame death FX.
+		velocity = Vector2.ZERO
 		defeated.emit(score_value)
 		# Death cry: one random clip from this archetype's pool, pitched for character,
 		# on most kills but not all (see DEATH_SOUND_CHANCE).
@@ -1223,8 +1351,91 @@ func take_damage(amount: float, force: Vector2 = Vector2.ZERO, stagger_duration:
 			main_scene.play_enemy_death(death_sound_category, death_sound_pitch)
 		if not bool(get_meta("training_no_drops", false)) and main_scene.has_method("try_spawn_drop"):
 			main_scene.try_spawn_drop(global_position, self)
-		queue_free()
+		_retire_or_free_on_death()
 	queue_redraw()
+
+## --- World rewind (stage 1) -------------------------------------------------
+## Death keeps the node "retired" (hidden, disabled, out of the gameplay groups) while a
+## world-rewind host is live, so a rewind can revive it; WorldRewindRecorder frees it once it
+## falls out of the window. Without a host this is the original queue_free().
+const REWIND_GAMEPLAY_GROUPS: Array[StringName] = [&"enemies", &"zungar_summons"]
+const REWIND_BASE_STRIDE: int = 42
+var rewind_retired: bool = false
+
+func _rewind_retire_on_death() -> bool:
+	return true
+
+func _retire_or_free_on_death() -> void:
+	if not _rewind_retire_on_death() or not WorldRewindRecorder.retire_enabled(self):
+		queue_free()
+		return
+	if bone_core_shell != null and is_instance_valid(bone_core_shell):
+		bone_core_shell.queue_free()
+	bone_core_shell = null
+	WorldRewindRecorder.retire(self, REWIND_GAMEPLAY_GROUPS)
+
+func rewind_stride() -> int:
+	return REWIND_BASE_STRIDE + _rewind_extra_stride()
+
+func _rewind_extra_stride() -> int:
+	return 0
+
+func rewind_capture(d: PackedFloat32Array, o: int) -> void:
+	d[o] = global_position.x; d[o + 1] = global_position.y
+	d[o + 2] = velocity.x; d[o + 3] = velocity.y
+	d[o + 4] = health; d[o + 5] = stun_left; d[o + 6] = windup
+	d[o + 7] = charge_left; d[o + 8] = charge_distance_left; d[o + 9] = charge_recovery_left
+	d[o + 10] = charge_direction.x; d[o + 11] = charge_direction.y
+	d[o + 12] = blade_angle; d[o + 13] = blade_target_angle; d[o + 14] = locked_blade_angle
+	d[o + 15] = thrust_left; d[o + 16] = thrust_cooldown; d[o + 17] = charge_cooldown
+	d[o + 18] = 1.0 if disarmed else 0.0; d[o + 19] = fire_timer
+	d[o + 20] = ranged_reposition_left; d[o + 21] = ranged_cover_mode_left; d[o + 22] = ranged_cover_cooldown_left
+	d[o + 23] = float(ranged_cover_phase); d[o + 24] = ranged_cover_phase_left; d[o + 25] = 1.0 if ranged_cover_has_fired else 0.0
+	d[o + 26] = float(duelist_state); d[o + 27] = duelist_state_left; d[o + 28] = duelist_swing_time
+	d[o + 29] = shield_angle; d[o + 30] = shield_bash_left; d[o + 31] = shield_bash_cooldown
+	d[o + 32] = chaser_attack_left; d[o + 33] = chaser_retreat_left
+	d[o + 34] = elite_surround_left; d[o + 35] = elite_surround_cooldown
+	d[o + 36] = contact_cooldown; d[o + 37] = clash_cooldown_left; d[o + 38] = sword_parry_cooldown_left
+	d[o + 39] = shield_parry_cooldown_left; d[o + 40] = disarm_weapon_angle; d[o + 41] = duelist_orbit_sign
+	_rewind_capture_extra(d, o + REWIND_BASE_STRIDE)
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	global_position = Vector2(d[o], d[o + 1])
+	velocity = Vector2(d[o + 2], d[o + 3])
+	health = clampf(d[o + 4], 0.0, max_health)
+	death_emitted = health <= 0.0
+	stun_left = d[o + 5]; windup = d[o + 6]
+	charge_left = d[o + 7]; charge_distance_left = d[o + 8]; charge_recovery_left = d[o + 9]
+	charge_direction = Vector2(d[o + 10], d[o + 11])
+	blade_angle = d[o + 12]; blade_target_angle = d[o + 13]; locked_blade_angle = d[o + 14]
+	thrust_left = d[o + 15]; thrust_cooldown = d[o + 16]; charge_cooldown = d[o + 17]
+	disarmed = d[o + 18] >= 0.5; fire_timer = d[o + 19]
+	ranged_reposition_left = d[o + 20]; ranged_cover_mode_left = d[o + 21]; ranged_cover_cooldown_left = d[o + 22]
+	ranged_cover_phase = int(d[o + 23]) as RangedCoverPhase; ranged_cover_phase_left = d[o + 24]; ranged_cover_has_fired = d[o + 25] >= 0.5
+	duelist_state = int(d[o + 26]); duelist_state_left = d[o + 27]; duelist_swing_time = d[o + 28]
+	shield_angle = d[o + 29]; shield_bash_left = d[o + 30]; shield_bash_cooldown = d[o + 31]
+	chaser_attack_left = d[o + 32]; chaser_retreat_left = d[o + 33]
+	elite_surround_left = d[o + 34]; elite_surround_cooldown = d[o + 35]
+	contact_cooldown = d[o + 36]; clash_cooldown_left = d[o + 37]; sword_parry_cooldown_left = d[o + 38]
+	shield_parry_cooldown_left = d[o + 39]; disarm_weapon_angle = d[o + 40]; duelist_orbit_sign = d[o + 41]
+	# Transient impulses/contacts are cleared, never restored.
+	knockback = Vector2.ZERO
+	grapple_slide_velocity = Vector2.ZERO
+	hit_visual_elapsed = 0.0
+	impact_deformation_left = 0.0
+	clash_latched = false
+	slide_flash_left = 0.0
+	if health_bar != null:
+		health_bar.value = health
+		health_bar.visible = health < max_health
+	_rewind_restore_extra(d, o + REWIND_BASE_STRIDE)
+	queue_redraw()
+
+func _rewind_capture_extra(_d: PackedFloat32Array, _o: int) -> void:
+	pass
+
+func _rewind_restore_extra(_d: PackedFloat32Array, _o: int) -> void:
+	pass
 
 func apply_voltage(rank_value: int) -> void:
 	electrified_left = maxf(electrified_left, BonusConfig.voltage_duration(rank_value))
@@ -1248,11 +1459,13 @@ func stun_for(duration: float) -> void:
 	queue_redraw()
 
 func apply_void_pull(direction: Vector2, amount: float) -> void:
-	knockback += direction * amount
+	_add_knockback(direction * amount)
 
 func apply_grapple_force(acceleration: Vector2, delta: float, speed_cap: float = INF, slide_fraction: float = 0.0) -> void:
 	# Grapple tension/yank composes with AI motion through the knockback channel.
 	var impulse: Vector2 = acceleration * maxf(delta, 0.0)
+	if _is_knockback_immune():
+		return
 	knockback += impulse
 	# A small slower-decaying tail makes a yank disturb footing without stunning.
 	grapple_slide_velocity += impulse * clampf(slide_fraction, 0.0, 0.25)
@@ -1533,11 +1746,12 @@ func _draw() -> void:
 	elif spear_visual_enabled and not disarmed:
 		var spear_direction: Vector2 = Vector2.RIGHT.rotated(blade_angle)
 		var spear_start: Vector2 = spear_direction * weapon_origin_offset
-		var spear_end: Vector2 = spear_start + spear_direction * (blade_length + 14.0)
-		draw_line(spear_start, spear_end, Color("3c2b2d"), 5.0, true)
+		var spear_segment: Dictionary = _enemy_weapon_segment()
+		var spear_tip: Vector2 = (spear_segment["end"] as Vector2) - global_position
+		var spear_end: Vector2 = spear_tip - spear_direction * SPEAR_HEAD_LENGTH
+		draw_line(spear_start, spear_end, Color("3c2b2d"), SPEAR_SHAFT_WIDTH, true)
 		draw_line(spear_start, spear_end, Color("9a6748"), 3.0, true)
-		var spear_tip: Vector2 = spear_end + spear_direction * 12.0
-		var spear_tangent: Vector2 = spear_direction.orthogonal() * 6.0
+		var spear_tangent: Vector2 = spear_direction.orthogonal() * SPEAR_HEAD_HALF_WIDTH
 		draw_colored_polygon(PackedVector2Array([spear_end + spear_tangent, spear_tip, spear_end - spear_tangent]), Color("dce8f2"))
 		draw_line(spear_end + spear_tangent, spear_tip, Color("7f9eb4"), 2.0, true)
 	if electrified_left > 0.0:

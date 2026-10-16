@@ -1,0 +1,46 @@
+{
+	"animation_name": "bomb_bursts_into_expanding_orange_yellow_explosion_then_fades_smoke",
+	"animation_style": "",
+	"animation_type": "bomb bursts into expanding orange yellow explosion then fades smoke",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 4,
+	"frame_height": 128,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 128,
+			"w": 128,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 128,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 256,
+			"y": 0
+		},
+		{
+			"h": 128,
+			"w": 128,
+			"x": 384,
+			"y": 0
+		}
+	],
+	"frame_width": 128,
+	"name": "bomber_explosion",
+	"prompt": "bomb bursts into expanding orange yellow explosion then fades smoke",
+	"rows": 1,
+	"source_image": "res://assets/generated/bomber_bomb_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 128,
+	"spritesheet_path": "res://assets/generated/bomber_burst.png",
+	"spritesheet_width": 512,
+	"type": "animation"
+}

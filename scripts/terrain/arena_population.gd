@@ -138,10 +138,44 @@ func _add_object(kind: ArenaObject.ObjectKind, object_position: Vector2, size: V
 
 func _clear() -> void:
 	for child: Node in get_children():
-		# Population can be cleared while sword/Chakram physics still holds a
-		# collider reference. Queue deletion for the safe end-of-frame boundary.
+		# Retire collision/query authority immediately, free safely at frame end.
+		var object: ArenaObject = child as ArenaObject
+		if object != null:
+			object.broken = true
+			object._remove_collision()
+			object.remove_from_group("arena_objects")
+			object.remove_from_group("chakram_obstructions")
+			object.remove_from_group("sword_farmables")
+		remove_child(child)
 		child.queue_free()
 	blocking_bounds.clear()
+
+## Shared procedural placement authority. Visual and base-foot extents are local
+## to the candidate root. Gaps preserve walking space without fixed sockets.
+func sample_open_position(rng: RandomNumberGenerator, floor_rect: Rect2, visual_extent: Rect2, footprint_extent: Rect2, occupied_visuals: Array[Rect2], occupied_feet: Array[Rect2], exclusions: Array[Rect2], entry_segments: Array[PackedVector2Array], wall_gap: float = 32.0, visual_gap: float = 24.0, walking_gap: float = 72.0) -> Vector2:
+	var extent: Rect2 = visual_extent.merge(footprint_extent)
+	var safe: Rect2 = floor_rect.grow(-wall_gap)
+	var minimum: Vector2 = safe.position - extent.position
+	var maximum: Vector2 = safe.end - extent.end
+	if minimum.x > maximum.x or minimum.y > maximum.y: return Vector2.INF
+	for attempt: int in range(512):
+		var point: Vector2 = Vector2(rng.randf_range(minimum.x, maximum.x), rng.randf_range(minimum.y, maximum.y))
+		var visual: Rect2 = Rect2(point + visual_extent.position, visual_extent.size)
+		var feet: Rect2 = Rect2(point + footprint_extent.position, footprint_extent.size)
+		var valid: bool = true
+		for prior: Rect2 in occupied_visuals:
+			if visual.grow(visual_gap).intersects(prior, true): valid = false; break
+		if not valid: continue
+		for prior: Rect2 in occupied_feet:
+			if feet.grow(walking_gap).intersects(prior, true): valid = false; break
+		if not valid: continue
+		for exclusion: Rect2 in exclusions:
+			if visual.merge(feet).intersects(exclusion, true): valid = false; break
+		if not valid: continue
+		for segment: PackedVector2Array in entry_segments:
+			if _segment_rect_entry(segment[0], segment[1], visual.merge(feet).grow(32.0)) != Vector2.INF: valid = false; break
+		if valid: return point
+	return Vector2.INF
 
 func get_blocking_bounds() -> Array[Rect2]:
 	var current_bounds: Array[Rect2] = []

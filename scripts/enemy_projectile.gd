@@ -23,10 +23,35 @@ var source_enemy: Node2D = null
 
 func _ready() -> void:
 	add_to_group("enemy_projectiles")
+	add_to_group(WorldRewindRecorder.REWINDABLE_GROUP)
 	var players: Array[Node] = get_tree().get_nodes_in_group("player")
 	if not players.is_empty():
 		player_ref = players[0] as Player
 	body_entered.connect(_on_body_entered)
+	queue_redraw()
+
+## --- World rewind (stage 1) ---
+const REWIND_GAMEPLAY_GROUPS: Array[StringName] = [&"enemy_projectiles"]
+var rewind_retired: bool = false
+
+## Every removal path: retired while a world-rewind host is live (revivable), else freed.
+func _expire() -> void:
+	WorldRewindRecorder.retire_or_free(self, REWIND_GAMEPLAY_GROUPS)
+
+func rewind_stride() -> int:
+	return 10
+
+func rewind_capture(d: PackedFloat32Array, o: int) -> void:
+	d[o] = global_position.x; d[o + 1] = global_position.y
+	d[o + 2] = direction.x; d[o + 3] = direction.y
+	d[o + 4] = speed; d[o + 5] = damage; d[o + 6] = 1.0 if deflected else 0.0
+	WorldRewindRecorder.write_id(d, o + 7, source_enemy)
+
+func rewind_restore(d: PackedFloat32Array, o: int) -> void:
+	global_position = Vector2(d[o], d[o + 1])
+	direction = Vector2(d[o + 2], d[o + 3])
+	speed = d[o + 4]; damage = d[o + 5]; deflected = d[o + 6] >= 0.5
+	source_enemy = WorldRewindRecorder.read_id(d, o + 7) as Node2D
 	queue_redraw()
 
 func launch(value: Vector2, owner_enemy: Node2D = null) -> void:
@@ -57,6 +82,12 @@ func deflect() -> bool:
 	return true
 
 func _physics_process(delta: float) -> void:
+	if rewind_retired:
+		return
+	# World Slow: enemy-owned shots run on the slowed world clock; a deflected shot is
+	# player-owned and stays full speed.
+	if not deflected:
+		delta *= WorldTime.enemy_scale()
 	# Once deflected, this is a player-owned attack and must not inherit enemy slowdown.
 	var speed_multiplier: float = player_ref.get_flow_enemy_speed_multiplier() if player_ref != null and not deflected else 1.0
 	var travel_start: Vector2 = global_position
@@ -68,7 +99,7 @@ func _physics_process(delta: float) -> void:
 			global_position = wall_hit["position"] as Vector2
 			if main_scene.has_method("spawn_impact_fx"):
 				main_scene.spawn_impact_fx(global_position, 0.35)
-			queue_free()
+			_expire()
 			return
 	global_position = travel_end
 	if deflected:
@@ -77,13 +108,13 @@ func _physics_process(delta: float) -> void:
 			if enemy != null and is_instance_valid(enemy) and global_position.distance_to(enemy.global_position) < 24.0:
 				if enemy.has_method("take_damage"):
 					enemy.take_damage(damage * 1.5, direction * 180.0)
-				queue_free()
+				_expire()
 				return
 	elif damages_boss_summons and _hit_boss_summon_along_segment(travel_start, travel_end):
 		return
 	var cleanup_rect: Rect2 = GameplayBounds.arena_rect(get_tree().current_scene).grow(160.0)
 	if not cleanup_rect.has_point(global_position):
-		queue_free()
+		_expire()
 
 func _hit_boss_summon_along_segment(start: Vector2, end: Vector2) -> bool:
 	for minion_node: Node in get_tree().get_nodes_in_group(BOSS_SUMMON_GROUP):
@@ -97,7 +128,7 @@ func _hit_boss_summon_along_segment(start: Vector2, end: Vector2) -> bool:
 			minion.take_damage(applied_damage, direction * 260.0)
 		if is_instance_valid(source_enemy) and source_enemy.has_method("on_friendly_fire_hit"):
 			source_enemy.on_friendly_fire_hit()
-		queue_free()
+		_expire()
 		return true
 	return false
 
@@ -126,19 +157,21 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _on_body_entered(body: Node2D) -> void:
+	if rewind_retired:
+		return
 	if deflected and body.is_in_group("enemies") and body.has_method("take_damage"):
 		body.take_damage(damage * 1.5, direction * 180.0)
-		queue_free()
+		_expire()
 	elif not deflected and body.is_in_group("player") and body.has_method("take_damage"):
 		# The firing enemy may have died while its projectile was still in flight.
 		# Never pass a freed Object into Player.take_damage's typed attacker argument.
 		var attacker: Node2D = source_enemy if is_instance_valid(source_enemy) else null
 		body.take_damage(damage, -direction * 220.0, attacker)
-		queue_free()
+		_expire()
 	elif not deflected and damages_boss_summons and body.is_in_group(BOSS_SUMMON_GROUP):
 		if body.has_method("take_damage"):
 			var applied_damage: float = boss_summon_damage if boss_summon_damage > 0.0 else damage
 			body.take_damage(applied_damage, direction * 260.0)
 		if is_instance_valid(source_enemy) and source_enemy.has_method("on_friendly_fire_hit"):
 			source_enemy.on_friendly_fire_hit()
-		queue_free()
+		_expire()

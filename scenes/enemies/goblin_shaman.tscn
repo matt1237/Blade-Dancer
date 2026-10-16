@@ -1,0 +1,19 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/goblin_shaman.gd" id="1_script"]
+[ext_resource type="Script" path="res://scripts/ui/health_bar.gd" id="2_health"]
+[sub_resource type="CircleShape2D" id="body"]
+radius = 18.0
+[node name="GoblinShaman" type="CharacterBody2D" groups=["enemies"]]
+collision_layer = 2
+collision_mask = 6
+script = ExtResource("1_script")
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("body")
+[node name="HealthBar" type="TextureProgressBar" parent="."]
+offset_left = -54.4
+offset_top = -48.0
+offset_right = 54.4
+offset_bottom = -24.0
+mouse_filter = 2
+script = ExtResource("2_health")

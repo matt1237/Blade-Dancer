@@ -11,6 +11,15 @@ const ARROW_SCENE: PackedScene = preload("res://scenes/projectiles/goblin_arrow.
 var draw_left: float = 0.0
 var shot_direction: Vector2 = Vector2.RIGHT
 
+func _rewind_extra_stride() -> int:
+	return 3
+
+func _rewind_capture_extra(d: PackedFloat32Array, o: int) -> void:
+	d[o] = draw_left; d[o + 1] = shot_direction.x; d[o + 2] = shot_direction.y
+
+func _rewind_restore_extra(d: PackedFloat32Array, o: int) -> void:
+	draw_left = d[o]; shot_direction = Vector2(d[o + 1], d[o + 2])
+
 func _configure_concrete_enemy() -> void:
 	spawn_identity = &"archer_goblin"
 	grapple_weight = GrappleWeight.LIGHT

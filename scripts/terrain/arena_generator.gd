@@ -16,6 +16,8 @@ var navigation_grid: AStarGrid2D = null
 var last_generation_seed: int = 0
 var trap_overlay: Node2D = null
 var population: ArenaPopulation = null
+## Zone-owned population participates in the same navigation/cover authority.
+var zone_population: ArenaPopulation = null
 var forest_content_enabled: bool = true
 ## True only for the span of a boss-wave arena. Set by prepare_boss_arena(),
 ## cleared by the next normal regenerate(). Boss waves are arena-clean: no
@@ -205,6 +207,11 @@ func refresh_population_navigation() -> void:
 		placed_bounds.append_array(population_bounds)
 		blocking_bounds.append_array(population_bounds)
 		wall_collision_bounds.append_array(population_bounds)
+	if is_instance_valid(zone_population) and zone_population.enabled:
+		var zone_bounds: Array[Rect2] = zone_population.get_blocking_bounds()
+		placed_bounds.append_array(zone_bounds)
+		blocking_bounds.append_array(zone_bounds)
+		wall_collision_bounds.append_array(zone_bounds)
 	for child: Node in get_children():
 		var module: Node2D = child as Node2D
 		if module == null or not module is TerrainModule: continue

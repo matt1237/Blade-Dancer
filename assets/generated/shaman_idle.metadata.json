@@ -1,0 +1,46 @@
+{
+	"animation_name": "idle_gently_breathing_holding_staff_upright",
+	"animation_style": "",
+	"animation_type": "idle gently breathing holding staff upright",
+	"columns": 4,
+	"directions": [],
+	"frame_count": 4,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 192,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 192,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 384,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 576,
+			"y": 0
+		}
+	],
+	"frame_width": 192,
+	"name": "shaman_idle",
+	"prompt": "idle gently breathing holding staff upright",
+	"rows": 1,
+	"source_image": "res://assets/generated/shaman_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/shaman_idle.png",
+	"spritesheet_width": 768,
+	"type": "animation"
+}

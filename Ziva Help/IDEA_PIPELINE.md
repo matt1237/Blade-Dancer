@@ -18,6 +18,20 @@ The player should regularly discover: **“Wait—I can do that?”**
 
 Our collaboration should leave a recognizable hallmark: ambitious human sparks translated into coherent, testable systems without sanding away their personality.
 
+## Goblin Bomber — Awaiting Resonance
+
+- **Approved expression:** hooded painted goblin carrying lit bombs; ranged spacing from wave 6 onward, warning locked to the player's position rather than chasing them. The readable ring makes leaving the danger zone the player's decision.
+- **Playable implementation:** 5s cooldown; 60px red ring for 1s → brief 0.45s visible arc → 1s sparkling fuse → 15-damage explosion → 2s spreading animated fire, 5 damage every 0.5s. Armed bombs survive their owner; no sword deflection. Canonical Player immunity/defense still applies.
+- **Evidence:** six focused bomber tests and two existing identity tests pass; production-Main bench screenshots show painted bomber, visible bomb and ground fire with real damage. Final extended owner-death live run stopped early without errors; ownership/timing remain covered by focused tests.
+- **Next feel check:** Matt's judgment of sprite readability, gentle ring pulse and escape window. Assets are prompt-only new files, not edits to uploaded visual guides. Bench: `tests/goblin_bomber_combat_rig.tscn`.
+
+## Goblin Shaman — Awaiting Resonance
+
+- **Approved fantasy:** purple tribal goblin with feathers, ragged tan/red robes, gold beads and cream-horned twisted staff holding a blue orb. Hangs behind allies and away from the player; green/purple magic climbs the staff during a short hand cast.
+- **Playable rules:** wave 7 onward and manual Enemies tab. One lowest-health-percentage injured spear/sword/archer/bomber goblin or ogre within 250px; no self, wildlife or boss healing. 0.6s cast interrupted by stun/death or invalid/out-of-range recipient; 5s cooldown begins at cast start. Completion heals 10 immediately plus ten 1HP/s ticks, capped at max HP; recipient owns the single refreshed (never stacked) regeneration stream even after caster death.
+- **Evidence:** six focused tests pass; real Main bench screenshots show orb casting flare and ogre HP 35→45→46 with synchronized completion frame 5 and regen traces, no runtime errors. Extended bench confirms recasting; real sword contact can also damage the bench ogre. Existing identity and scroll-menu tests pass.
+- **Next feel check:** Matt's judgment of back-line positioning, small painted character readability and casting timing. Prompt-only base/idle/walk/cast assets preserve uploaded guide; detached atlas scraps masked only on private copies. Bench: `tests/goblin_shaman_combat_rig.tscn`. No new tuning UI or live-save edits.
+
 ## Working Rhythm
 
 - Default to **low or medium reasoning** so iteration remains affordable and frequent.
@@ -42,6 +56,20 @@ Our collaboration should leave a recognizable hallmark: ambitious human sparks t
 ---
 
 # Active Pipeline
+
+## Shrine — Found Gear Becomes Permanent Skill Knowledge
+
+**Status:** Exchange / salvage mechanically working → Awaiting Resonance. Infusion blocked pending an approved Resonance price.
+
+**Approved fantasy:** unwanted skill-bearing expedition finds become lasting understanding rather than dead inventory. Destroying a Chakram +2 find teaches two Chakram knowledge; learning survives the item. Knowledge is never spent to apply a learned skill later. Coins become Resonance 1:1 to fund that future deliberate preparation.
+
+**Implemented safety rails:** only found/non-player-made gear; all per-skill gains visible before a focused irreversible confirmation. Equipped gear, forged purchases and any player-applied infusion are protected, preventing purchase/infuse/salvage knowledge loops. One canonical progression/save/atomic rollback authority; no combat-preset progression, parallel wallet, or changes to the supplied Shrine painting. Learned ranks derive from cumulative 20, 50, 90… with 10-point increments in the additional requirement; capped by canonical rank 7.
+
+**Evidence:** nine focused in-memory/atomic-writer/roundtrip/navigation tests, six Jimbo and thirteen Kaji regressions, real-hub button-driven exchange and salvage previews with writes=0 and no runtime errors. Original painting remains untouched; central altar stays visible. `tests/shrine_preview.tscn` is the safe hands-on doorway.
+
+**Next decision / milestone:** approve an infusion price, then apply selected learned skills to skill-free base equipment and mark every result with canonical player-infusion metadata. No cost table exists; 100 Coins/rank in ArmoryConfig is valuation only, not an approved Resonance price. Infuse currently displays the block and cannot mutate gear. Recommendation offered: 100 Resonance per applied rank, pending the user's answer.
+
+**Resonance question:** does sacrificing a surplus find feel like learning something permanent, with enough clarity and care that destruction never feels accidental?
 
 ## Guard Gestures — Directional Slash
 
@@ -380,7 +408,15 @@ Write down the original scarf inspiration/reference and define whether its prima
 
 ## 8. General Store — Gear Finds Become Economy
 
-**Status:** Spark / Partially Supported by Existing Home and Storage Systems
+**Status:** Kaji General implemented; awaiting live visual/play-feel review. Gear economy remains deferred to Blacksmiths.
+
+### Approved First Playable Scope (2026-10)
+
+Adventure → Town → General introduces Kaji using Matt's supplied portrait and “Welcome! Got anything to trade?” Sell spare plants, ingredients, raw meat and stored cooked meals directly from existing progression storage; no gear, smithing supplies or purchase stock. Stable low offers live in ItemConfig (cooked meals exceed their ingredients' total offers). Player gold is the existing Coins balance, never a second wallet. Kaji starts/caps at 500 gold, recovering continuously at 125/hour using saved local Unix time, including offline time, fractional balances and backward-clock protection. Sell 1 / stack pays only for affordable quantities; prepared servings stay reserved and active buffs remain untouched. Every sale atomically saves canonical progression or rolls back.
+
+**Evidence:** six focused merchant/navigation/portrait/save tests pass. Existing progression suite: nine pass, one legacy alphabetical-storage assertion fails (unchanged MATERIAL_NAMES iteration conflicts with sorted storage). Live Main screenshot blocked because Matt's game was already running; no real-save test trades, manual save edits, combat/PX tuning, or commits.
+
+**Next resonance question:** does Kaji make surplus gathering/cooking feel useful and welcoming? Blacksmiths honestly displays “Trading coming later”; the original gear-sale aspirations below are future work, not implemented claims.
 
 ### Provisional Resonance Key
 
@@ -420,6 +456,16 @@ The Forge should not simply unlock because a number increased. The player rescue
 - [x] Home communicates that the Blacksmith is rescued after Mine Wave 10.
 - [x] Forge access is progression-gated.
 - [x] Home already has a Forge destination/service flow.
+- [x] Forge destination now opens a Kitchen-like workshop with scrollable crafting slots, owned-recipe browsing and materials. **Forge Sword** preserves the existing swordsmithing minigame and returns to this workshop.
+- [x] Jimbo permanently sells **Iron Longsword**, **Iron Banded Chakram**, **Basic Leather Armor**, and **Iron Band** recipes for **200 Coins each**. Visible without discovery; one purchase → **Owned**, no replenishment, no inventory/trading of recipes.
+- [x] Jimbo's **Second Forge Slot** is an immediate permanent unlock for **5000 Coins + 100 Stone** (latest approved cost), deducted atomically through canonical Main trade/save rollback. Slots start at one, max two, saved in HomeProgression with owned recipe IDs.
+- [ ] Decide actual per-recipe material costs, craft times and output base identities. Until approved, Craft honestly reads **“Crafting requirements not configured yet”** and is disabled: no guessed times/costs, free production, or invented gear stats. Future forged gear is **blank, no skills**; Shrine remains the separate skill destination and its infusion price is still unapproved.
+
+### Current Playable Loop
+
+`expedition supplies/Coins → Jimbo permanent recipe knowledge + optional second slot → Home Forge → browse owned recipes`
+
+The slots make a future workshop legible without pretending production already works. Recipe names have stable IDs separate from the legacy Basic Longsword / Steel Chakram / Basic Leather Armor / Clear Quartz Ring base catalog; Iron Band is not silently mapped to quartz. Actual material crafting is deliberately gated on the next design decision, not implemented as a free placeholder. No change to rescue/access gates, Kitchen/Cauldron behavior, Shrine exchange/salvage or infusion pricing.
 
 ### Next Experiential Milestone
 
@@ -511,3 +557,11 @@ After meaningful work on an idea:
 5. Return to progression/place pipelines when the current physics experiments have a stable stopping point.
 
 This order is guidance, not a prison. New sparks belong here so they remain remembered without forcing every exciting thought into the current implementation session.
+
+
+## Dualblade normal-OS test — extraction foundation, not playable yet
+- **Resonance key:** one authored musical intention, two shorter real blades that can encounter different physical resistance. Never two independently timed metronomes or a decorative second sword over an invisible long hit blade.
+- **Approved constraints:** each blade 50% Longsword length, grip width 90%, offsets ±15 pixels perpendicular to shared aim. One Longsword tuning identity/current GP2, one swing window and enemy hit allowance; separate reaction/freeze, Bind/slide owner and resolved history/trails. Protected test-origin Armory item only, excluded from random loot and merchants.
+- **Implemented foundation:** shared-drive/response method extraction, enumerated scoped blade-state helper, backward-compatible multi-pose renderer API, 10 unit checks and actual-Main ordinary Longsword/Curved Sword read-only GP2 regression rig. See PROJECT_MAP dualblade subsection for exact seams and remaining coupling.
+- **Not complete:** no dualblade capability or item, approved geometry not wired, independent actual contacts/shared-hit geometry not verified, no two-blade screenshot. Do not grant or present as playable until those gates pass.
+- **Persistence gate:** live item may be added only after verification through inventory-only canonical atomic transaction preserving the rest of the full payload, external backup and inventory-only before/after comparison. No grant attempted; live save, GP2 library and combat config SHA-256 remained unchanged during this foundation pass. No PX edits or default rebake.

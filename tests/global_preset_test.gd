@@ -11,28 +11,18 @@ func test_web_launch_uses_baked_gp2_before_browser_saves_and_clock() -> void:
 	var comparable_saved: Dictionary = saved_gp2.duplicate(true)
 	for metadata_key: String in ["saved_at", "saved_at_unix"]:
 		comparable_saved.erase(metadata_key)
-	comparable_baked["forest_time_phase"] = comparable_saved.get("forest_time_phase", "")
-	comparable_baked["forest_values"] = (comparable_saved.get("forest_values", {}) as Dictionary).duplicate(true)
-	comparable_baked.erase("saved_at")
-	comparable_baked.erase("saved_at_unix")
-	var baked_contacts: Dictionary = comparable_baked.get("combat_contact_settings", {}) as Dictionary
+	# Release parity includes every nested tuner, new tools and all forest phases.
+	# Only save metadata and the established release bone-debug suppression differ.
+	assert(not baked.has("saved_at") and not baked.has("saved_at_unix"), "Personal save metadata must not ship.")
 	var saved_contacts: Dictionary = comparable_saved.get("combat_contact_settings", {}) as Dictionary
-	var new_reaction_keys: Array = HitReaction.DEFAULTS.keys()
-	var retired_drag_keys: Array[String] = ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]
 	for preset_key: String in ["1", "2", "3", "4"]:
-		var baked_values: Dictionary = baked_contacts.get(preset_key, {}) as Dictionary
 		var saved_values: Dictionary = saved_contacts.get(preset_key, {}) as Dictionary
-		for key: Variant in new_reaction_keys:
-			baked_values.erase(key)
+		for key: String in HitReaction.DEFAULTS:
+			if not saved_values.has(key): saved_values[key] = HitReaction.DEFAULTS[key]
+		for key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
 			saved_values.erase(key)
-		for key: String in retired_drag_keys:
-			baked_values.erase(key)
-			saved_values.erase(key)
-		baked_contacts[preset_key] = baked_values
-		saved_contacts[preset_key] = saved_values
-	comparable_baked["combat_contact_settings"] = baked_contacts
-	comparable_saved["combat_contact_settings"] = saved_contacts
-	assert(comparable_baked == comparable_saved, "Packaged GP2 must preserve local source data apart from the intentional Hit Reaction schema addition and retired Contact Drag cleanup.")
+		saved_values["blade_bone_debug_enabled"] = 0.0
+	assert(comparable_baked == comparable_saved, "Packaged defaults must match the explicitly selected live GP2, not active_slot or an older launch package.")
 	var hands: Dictionary = baked.get("combat_hand_settings", {}) as Dictionary
 	var bind: Dictionary = hands.get("2:9", {}) as Dictionary
 	for strength_key: String in CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS:
@@ -58,19 +48,53 @@ func test_hit_reaction_settings_and_removed_drag_migration_are_serialized_per_pr
 	var preset_two: Dictionary = contact_settings.get("2", {}) as Dictionary
 	for key: String in HitReaction.DEFAULTS.keys():
 		assert(preset_two.has(key), "The shipped GP2 needs its canonical Hit Reaction setting: %s." % key)
-	# The shipped default carries the deliberately authored bone-core sizes — the tuned
-	# 35% on the main GP2 preset and the 50% default on the others — and never ships the
-	# bone-debug overlay, whichever preset is inspected. That GP2 number tracks whatever
-	# the live authoring slot holds at bake time: the deep-equality assert above already
-	# requires the package to match the live slot, and the live slot is saved with the
-	# debug overlay ON while the core is being tuned, which the bake strips.
-	var expected_bone_core_size: Dictionary = {"1": 50.0, "2": 35.0, "3": 50.0, "4": 50.0}
+	# Bone size is authored tuning, not a hardcoded historical release value.
+	var live_gp2: Dictionary = (GlobalPresetConfig.load_raw_library().get("slots", {}) as Dictionary).get("2", {}) as Dictionary
+	var live_contacts: Dictionary = live_gp2.get("combat_contact_settings", {}) as Dictionary
 	for preset_key: String in ["1", "2", "3", "4"]:
 		var values: Dictionary = contact_settings.get(preset_key, {}) as Dictionary
-		assert(is_equal_approx(float(values.get("blade_bone_core_size_percent", -1.0)), float(expected_bone_core_size[preset_key])), "Shipped preset %s must carry its authored bone-core size." % preset_key)
+		assert(is_equal_approx(float(values.get("blade_bone_core_size_percent", -1.0)), float((live_contacts[preset_key] as Dictionary).get("blade_bone_core_size_percent", HitReaction.DEFAULT_INNER_BONE_SIZE_PERCENT))), "Shipped preset %s must carry its authored bone-core size." % preset_key)
 		assert(float(values.get("blade_bone_debug_enabled", 0.0)) == 0.0, "Shipped preset %s must not enable the bone-debug overlay." % preset_key)
 		for removed_key: String in ["flesh_contact_drag", "flesh_contact_drag_recovery", "hilt_contact_drag", "hilt_contact_drag_recovery", "farmable_contact_drag", "farmable_contact_drag_recovery", "kill_blood_splatter_chance"]:
 			assert(not values.has(removed_key), "Shipped GP2 must not contain retired settings: %s." % removed_key)
+
+func test_release_export_includes_defaults_and_desktop_preserves_saved_gp2() -> void:
+	var export_source: String = FileAccess.get_file_as_string("res://export_presets.cfg")
+	assert(export_source.count('include_filter="data/default_global_preset.json"') == 2, "Both release targets must include the non-resource defaults JSON.")
+	var source: String = FileAccess.get_file_as_string("res://scripts/main.gd")
+	var initialize: int = source.find("func _initialize_global_presets()")
+	var saved: int = source.find("GlobalPresetConfig.has_library() and _global_state_complete(GlobalPresetConfig.get_slot(2))", initialize)
+	var fallback: int = source.find("var baked_game_default: Dictionary = _load_baked_global_preset()", initialize)
+	assert(saved > initialize and fallback > saved, "Desktop existing GP2 must take precedence over shipped first-run defaults.")
+	assert(source.substr(saved, fallback - saved).contains("return"), "Existing saves must return before the packaged fallback.")
+	var defaults: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/default_global_preset.json")) as Dictionary
+	for key: String in ["home_progression", "gear_inventory", "materials", "bonus_ranks", "scoreboards", "save_metadata", "active_slot", "launch_slot"]:
+		assert(not defaults.has(key), "Release presets must not ship personal progression or library state: %s" % key)
+
+func test_release_bind_alias_and_weapon_profiles_match_live_in_memory() -> void:
+	# Never add Player to the tree: _ready loads/migrates personal saves.
+	var live: Dictionary = (GlobalPresetConfig.load_raw_library()["slots"] as Dictionary)["2"]
+	var baked: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/default_global_preset.json")) as Dictionary
+	var effective: Array[Dictionary] = []
+	for state: Dictionary in [live, baked]:
+		var player: Player = Player.new()
+		player.combat_hand_settings = state["combat_hand_settings"].duplicate(true)
+		player.combat_weapon_hand_settings = state["combat_weapon_hand_settings"].duplicate(true)
+		player.combat_contact_settings = state["combat_contact_settings"].duplicate(true)
+		player.combat_contact_preset = int(state["selected_combat_preset"])
+		player.ensure_experimental_form_initialized()
+		var resolved: Dictionary = {}
+		for weapon: String in ["Basic Curved Sword", "Basic Longsword"]:
+			player.equipped_sword_id = weapon
+			for key: String in Player.EXPERIMENTAL_BIND_SETTING_KEYS:
+				player.sword_style = Player.SwordStyle.METRONOME_BIND_B
+				var canonical: float = player.get_combat_hand_setting(key)
+				player.sword_style = Player.SwordStyle.METRONOME_BIND
+				assert(player.get_combat_hand_setting(key) == canonical, "Legacy ID 8 must resolve canonical ID 9.")
+				resolved[weapon + ":" + key] = canonical
+		effective.append(resolved)
+		player.free()
+	assert(effective[0] == effective[1], "The shipped effective Bind settings for both weapons must match live GP2 after the canonical runtime migration.")
 
 func test_global_library_has_three_complete_slots() -> void:
 	var library: Dictionary = GlobalPresetConfig.load_library()

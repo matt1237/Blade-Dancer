@@ -1,0 +1,103 @@
+[gd_scene format=3 uid="uid://dfhlwct63ttca"]
+
+[ext_resource type="SpriteFrames" path="res://assets/generated/bomber_burst_frames.tres" id="4_burst"]
+[ext_resource type="Script" uid="uid://bbe0oh1raq0b7" path="res://scripts/bomber_bomb.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://dl4ksc3q7bxlu" path="res://assets/generated/bomber_fuse.png" id="2_w780q"]
+[ext_resource type="Texture2D" uid="uid://dm83gpdyvpi21" path="res://assets/generated/bomber_fire.png" id="3_176uj"]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_176uj"]
+atlas = ExtResource("2_w780q")
+region = Rect2(0, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_y7v6j"]
+atlas = ExtResource("2_w780q")
+region = Rect2(128, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_f2wnu"]
+atlas = ExtResource("2_w780q")
+region = Rect2(256, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_8bieo"]
+atlas = ExtResource("2_w780q")
+region = Rect2(384, 0, 128, 128)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_r22qw"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_176uj")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_y7v6j")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_f2wnu")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_8bieo")
+}],
+"loop": 1,
+"name": &"fuse",
+"speed": 8.0
+}]
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_r22qw"]
+atlas = ExtResource("3_176uj")
+region = Rect2(0, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_mrony"]
+atlas = ExtResource("3_176uj")
+region = Rect2(128, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_cixfr"]
+atlas = ExtResource("3_176uj")
+region = Rect2(256, 0, 128, 128)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_xtrf6"]
+atlas = ExtResource("3_176uj")
+region = Rect2(384, 0, 128, 128)
+
+[sub_resource type="SpriteFrames" id="SpriteFrames_5232m"]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_r22qw")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_mrony")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_cixfr")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_xtrf6")
+}],
+"loop": 1,
+"name": &"fire",
+"speed": 8.0
+}]
+
+[node name="BomberBomb" type="Node2D" unique_id=818413533]
+z_index = 1
+script = ExtResource("1_script")
+
+[node name="Bomb" type="AnimatedSprite2D" parent="." unique_id=212444641]
+visible = false
+z_index = 3
+scale = Vector2(0.25, 0.25)
+sprite_frames = SubResource("SpriteFrames_r22qw")
+animation = &"fuse"
+autoplay = "fuse"
+
+[node name="Fire" type="AnimatedSprite2D" parent="." unique_id=503946620]
+visible = false
+sprite_frames = SubResource("SpriteFrames_5232m")
+animation = &"fire"
+autoplay = "fire"
+
+[node name="Explosion" type="AnimatedSprite2D" parent="." unique_id=1831340564]
+visible = false
+z_index = 3
+scale = Vector2(1.15, 1.15)
+sprite_frames = ExtResource("4_burst")
+animation = &"explosion"

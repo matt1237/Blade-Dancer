@@ -87,6 +87,29 @@ const DEFAULTS: Dictionary = {
 	## blade-angle authority, so the bone glance, the wall glance and the shell angle stand down
 	## rather than competing with it.
 	"blade_bone_constraint_enabled": 0.0,
+<<<<<<< Updated upstream
+=======
+	## BDOS geometric movement authority. Resolved hand/blade pose persists across
+	## ticks; actual enemy body and opposing-blade contact reject inward motion and permit slide.
+	## Supersedes legacy pose offsets and the blade shell while ON. No PX dependency.
+	"collision_sword_enabled": 0.0,
+	## --- Contact recoil delay: hold a hit's separation so the contact is actually felt. ---
+	## Surfaced as "Recoil Delay". OFF, a flesh hit separates on the same frame it lands -- the
+	## enemy's gameplay knockback and the player's own recoil push both fire at once, so the contact
+	## is over before it is felt. ON, both are held for Recoil Delay Time first, so the blade stays
+	## against the body for a beat before anything moves. Pure timing: damage, stagger, blood,
+	## hitstop and the sword's own kick all stay immediate. Independent of the shells.
+	"contact_recoil_delay_enabled": 0.0,
+	## Surfaced as "Recoil Delay Time". Seconds a flesh hit's separation is held before it fires.
+	## 0 restores the instant separation. Tuned in 0.01 s steps.
+	"contact_recoil_delay": 0.0,
+	## Surfaced as "Bone Clash". OFF, catching an enemy's bone core is weight only -- a soft slow and
+	## a halt, with no spectacle. ON, the catch also reads as a solid strike: a clash-weight halt, a
+	## screen shake and the clash clang. Presentation only -- no pose is written and the cut model is
+	## untouched -- and it adds only the lightest knockback, so hitting bone never punishes good aim.
+	## Needs the Hit Reaction master; independent of every other shell switch.
+	"bone_clash_enabled": 0.0,
+>>>>>>> Stashed changes
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
 	"blade_sink_depth_percent": 70.0,

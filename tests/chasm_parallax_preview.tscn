@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://tests/chasm_parallax_preview.gd" id="1"]
+[ext_resource type="PackedScene" path="res://tests/chasm_walk_safe_rig.tscn" id="2"]
+
+[node name="ChasmParallaxPreview" instance=ExtResource("2")]
+script = ExtResource("1")

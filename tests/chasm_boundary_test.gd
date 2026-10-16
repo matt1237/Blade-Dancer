@@ -1,25 +1,26 @@
 class_name ChasmBoundaryTest extends Node
 
 const CHASM_SCENE: PackedScene = preload("res://scenes/chasm/chasm_stage.tscn")
-const MAIN_SCENE: PackedScene = preload("res://scenes/main.tscn")
+# No Main/Player _ready: boundary tests must never initialize live saves.
 const GENERATOR_SCENE: PackedScene = preload("res://scenes/terrain/arena_generator.tscn")
 
 func test_saved_chasm_boundary_exposes_a_safe_center_and_rejects_outside_points() -> void:
 	var stage: ChasmStage = CHASM_SCENE.instantiate() as ChasmStage
 	add_child(stage)
 	var polygon: PackedVector2Array = stage.get_boundary_polygon()
-	assert(polygon.size() == 24, "The saved Chasm perimeter should be built from all 12 wall segments.")
+	assert(polygon.size() == 8, "The saved Chasm perimeter should be built from four Forest-sized wall segments.")
 	assert(stage.is_spawn_position_valid(Vector2(640.0, 360.0)), "The player start should be inside the saved Chasm perimeter.")
-	assert(not stage.is_spawn_position_valid(Vector2(640.0, 80.0)), "Spawns above the saved top wall must be rejected.")
-	assert(not stage.is_spawn_position_valid(Vector2(1100.0, 360.0)), "Spawns beyond the saved right wall must be rejected.")
-	assert(not stage.is_spawn_position_valid(Vector2(100.0, 360.0)), "Spawns beyond the saved left wall must be rejected.")
+	assert(not stage.is_spawn_position_valid(Vector2(640.0, 50.0)), "Spawns near the saved top wall must be rejected.")
+	assert(not stage.is_spawn_position_valid(Vector2(1260.0, 360.0)), "Spawns beyond the saved right wall must be rejected.")
+	assert(not stage.is_spawn_position_valid(Vector2(20.0, 360.0)), "Spawns beyond the saved left wall must be rejected.")
+	assert(stage.is_spawn_position_valid(Vector2(1100, 360)), "The old narrow room must no longer constrain Chasm.")
 	assert(not stage.is_spawn_position_valid(Vector2(640.0, 700.0)), "Spawns below the saved bottom wall must be rejected.")
 	stage.free()
 
 func test_spawn_clearance_rejects_wall_hugging_candidates() -> void:
 	var stage: ChasmStage = CHASM_SCENE.instantiate() as ChasmStage
 	add_child(stage)
-	assert(not stage.is_spawn_position_valid(Vector2(640.0, 220.0), 52.0), "Enemy centers must keep the configured clearance from the top wall.")
+	assert(not stage.is_spawn_position_valid(Vector2(640.0, 70.0), 52.0), "Enemy centers must keep the configured clearance from the top wall.")
 	stage.free()
 
 func test_boundary_queries_follow_saved_shape_edits() -> void:
@@ -34,12 +35,15 @@ func test_boundary_queries_follow_saved_shape_edits() -> void:
 	stage.free()
 
 func test_wave_spawner_rejects_chasm_outside_candidates() -> void:
-	var main: Main = MAIN_SCENE.instantiate() as Main
-	add_child(main)
-	var stage: ChasmStage = main.get_node("ChasmStage") as ChasmStage
-	var spawner: WaveSpawner = main.get_node("WaveSpawner") as WaveSpawner
-	var player: Player = main.get_node("Player") as Player
-	var generator: ArenaGenerator = main.get_node("ArenaGenerator") as ArenaGenerator
+	var stage: ChasmStage = CHASM_SCENE.instantiate() as ChasmStage
+	add_child(stage)
+	stage.population.population_seed = 42
+	stage.regenerate()
+	var spawner: WaveSpawner = WaveSpawner.new()
+	# Never attach Player to the tree: its production startup persists settings.
+	var player: Player = Player.new()
+	var generator: ArenaGenerator = ArenaGenerator.new()
+	generator.config = preload("res://resources/terrain/forest_terrain_config.tres")
 	spawner.player_ref = player
 	spawner.terrain_generator = generator
 	spawner.set_chasm_stage(stage)
@@ -48,7 +52,10 @@ func test_wave_spawner_rejects_chasm_outside_candidates() -> void:
 		var spawn_position: Vector2 = spawner._random_position()
 		assert(spawn_position.x >= 0.0, "Chasm must always provide an enemy spawn point.")
 		assert(stage.is_spawn_position_valid(spawn_position, spawner.chasm_spawn_clearance), "Every Chasm wave candidate must pass the saved perimeter query.")
-	main.free()
+	spawner.free()
+	player.free()
+	generator.free()
+	stage.free()
 
 func test_disabled_forest_generation_clears_all_generated_bounds() -> void:
 	var generator: ArenaGenerator = GENERATOR_SCENE.instantiate() as ArenaGenerator

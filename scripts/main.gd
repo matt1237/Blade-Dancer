@@ -77,7 +77,7 @@ var remaining_enemies_label: Label = null
 @onready var status_label: Label = $CanvasLayer/StatusLabel
 @onready var style_label: Label = $CanvasLayer/StyleLabel
 @onready var flow_bar: ProgressBar = $CanvasLayer/FlowBar
-@onready var flow_fill: ColorRect = $CanvasLayer/FlowFill
+@onready var flow_fill: TextureRect = $CanvasLayer/FlowFill
 @onready var flow_label: Label = $CanvasLayer/FlowLabel
 @onready var flow_sparkle: Label = $CanvasLayer/FlowSparkle
 @onready var dash_bar: ProgressBar = $CanvasLayer/DashBar
@@ -156,6 +156,13 @@ var visual_style: String = "classic"
 ## Active Adventure destination. Forest and Backyard share the established world;
 ## Chasm swaps in its illustrated stage and traced invisible boundaries.
 var active_adventure_zone: String = "forest"
+# Distinct presentation-only walking experiment, not a second Chasm gameplay preset.
+const CHASM_TEST_OVERLAY = preload("res://scripts/experimental/chasm_parallax_overlay.gd")
+const CHASM_TEST_2_PAINTING = preload("res://scripts/experimental/chasm_test_2_painting.gd")
+var chasm_test_style: String = ""
+var chasm_test_active: bool = false
+var chasm_test_vista: Node2D = null
+
 var cauldron_catch_high_score: int = 0
 var cauldron_catch_instance: CauldronCatchGame = null
 var sword_smithing_instance: SwordSmithingGame = null
@@ -169,6 +176,7 @@ var run_damage_received: float = 0.0
 var run_damage_healed: float = 0.0
 var run_damage_mitigated: float = 0.0
 var run_bonus_history: Array[String] = []
+var run_loot: RunLootRecord = RunLootRecord.new()
 var last_run_summary: Dictionary = {}
 ## Run-scoped pity-timer chest chance. +20% each wave without a chest,
 ## resets to the 20% base value once one spawns. Wave five is guaranteed.
@@ -209,6 +217,14 @@ var active_global_day_phases: Dictionary = {}
 ## minigame closed -- see _advance_forest_time_phase() and _on_wave_started().
 const DAY_CYCLE_ORDER: Array[String] = ["Morning", "Noon", "Dusk", "Night"]
 
+func _clear_chasm_test() -> void:
+	if is_instance_valid(chasm_test_vista):
+		chasm_test_vista.restore_perimeter()
+		chasm_test_vista.free()
+	chasm_test_vista = null
+	chasm_test_active = false
+	chasm_test_style = ""
+
 func get_forest_visual_settings() -> ForestVisualSettings:
 	return forest_visual_settings
 
@@ -243,7 +259,13 @@ func get_gameplay_arena_rect() -> Rect2:
 	return DEFAULT_GAMEPLAY_ARENA_RECT
 
 func get_presentation_rect() -> Rect2:
-	var arena_rect: Rect2 = get_gameplay_arena_rect()
+	if chasm_test_style == "chasm_test_2":
+		return CHASM_TEST_2_PAINTING.presentation_rect(get_gameplay_arena_rect(), chasm_stage.get_playable_rect())
+	if chasm_test_active:
+		return CHASM_TEST_OVERLAY.walking_presentation_rect(get_gameplay_arena_rect())
+	return presentation_rect_for_arena(get_gameplay_arena_rect())
+
+static func presentation_rect_for_arena(arena_rect: Rect2) -> Rect2:
 	return Rect2(arena_rect.position - PRESENTATION_MARGIN, arena_rect.size + PRESENTATION_MARGIN * 2.0)
 
 func _ready() -> void:
@@ -283,6 +305,8 @@ func _ready() -> void:
 	spawner.enemy_defeated_with_identity.connect(_on_enemy_defeated_with_identity)
 	player.health_changed.connect(_on_health_changed)
 	player.flow_changed.connect(_on_flow_changed)
+	player.rewind_charge_changed.connect(_on_rewind_charge_changed)
+	player.slow_charge_changed.connect(_on_slow_charge_changed)
 	player.style_changed.connect(_on_style_changed)
 	player.player_died.connect(_on_player_died)
 	mobile_controls.movement_changed.connect(player.set_mobile_move_input)
@@ -294,7 +318,7 @@ func _ready() -> void:
 	_on_health_changed(player.health, player.max_health)
 	_on_flow_changed(player.flow, 100.0)
 	score_label.text = "Score: 0"
-	_on_style_changed("Metronome")
+	_on_style_changed(player._style_name())
 	for index: int in range(bonus_buttons.size()):
 		bonus_buttons[index].pressed.connect(_on_bonus_selected.bind(index))
 		bonus_help_buttons[index].mouse_entered.connect(_show_bonus_tooltip.bind(index))
@@ -304,6 +328,7 @@ func _ready() -> void:
 	reroll_bonuses_button.pressed.connect(_on_reroll_bonuses)
 	next_wave_button.pressed.connect(_on_start_next_wave)
 	end_run_button.pressed.connect(_on_end_run)
+	end_run_hub.configure_town(home_progression, _sell_general_goods, _buy_general_goods, _sell_blacksmith_goods, _buy_blacksmith_goods, _exchange_shrine_coins, _salvage_shrine_gear)
 	end_run_hub.connect("travel_home_requested", Callable(self, "_travel_home"))
 	end_run_hub.connect("adventure_zone_requested", Callable(self, "_on_adventure_zone_requested"))
 	end_run_hub.connect("resonance_rush_requested", Callable(self, "_on_resonance_rush_requested"))
@@ -429,6 +454,11 @@ func _set_world_visible(world_visible: bool) -> void:
 	dash_label.visible = world_visible
 	deflect_label.visible = world_visible
 	grapple_label.visible = world_visible
+	var rewind_icon: CanvasItem = get_node_or_null("CanvasLayer/RewindIcon") as CanvasItem
+	if rewind_icon != null: rewind_icon.visible = false # parked; rendered in AbilityBar now
+	var slow_icon: CanvasItem = get_node_or_null("CanvasLayer/SlowIcon") as CanvasItem
+	if slow_icon != null: slow_icon.visible = false
+	$CanvasLayer/AbilityBar.visible = world_visible
 	score_label.visible = world_visible
 	metronome_top_bar.visible = world_visible
 	if is_instance_valid(mobile_controls):
@@ -437,7 +467,10 @@ func _set_world_visible(world_visible: bool) -> void:
 		player.set_mobile_controls_enabled(mobile_controls.is_mobile_input_active())
 	if is_instance_valid(boss_cave_backdrop): boss_cave_backdrop.visible = world_visible
 	if is_instance_valid(boss_campfire): boss_campfire.visible = world_visible
-	if is_instance_valid(boss_arena_border): boss_arena_border.visible = world_visible
+	if is_instance_valid(boss_arena_border):
+		boss_arena_border.visible = forest_world_visible
+		var perimeter: StaticBody2D = boss_arena_border.get_node_or_null("BossArenaPerimeterCollision") as StaticBody2D
+		if perimeter != null: perimeter.collision_layer = 4 if forest_world_visible else 0
 	if is_instance_valid(zungar_boss): zungar_boss.visible = world_visible
 	_update_presentation_camera()
 	_update_presentation_environment()
@@ -697,7 +730,7 @@ func get_terrain_wall_collision(start: Vector2, end: Vector2, radius: float = 0.
 	return {} if arena_generator == null else arena_generator.segment_wall_collision(start, end, radius)
 
 func get_terrain_obstruction_hit(start: Vector2, end: Vector2, radius: float = 0.0) -> Dictionary:
-	var population: ArenaPopulation = get_node_or_null("ArenaPopulation") as ArenaPopulation
+	var population: ArenaPopulation = chasm_stage.population if active_adventure_zone == "chasm" else get_arena_population()
 	return {} if population == null else population.get_obstruction_hit(start, end, radius)
 
 func get_arena_population() -> ArenaPopulation:
@@ -823,6 +856,8 @@ func spawn_impact_fx(point: Vector2, intensity: float = 1.0, impact_type: int = 
 
 func _process(_delta: float) -> void:
 	_update_presentation_camera_follow(_delta)
+	if is_instance_valid(chasm_test_vista):
+		chasm_test_vista.update_camera(presentation_camera.position)
 	_update_screen_shake(_delta)
 	if not run_over:
 		run_elapsed_seconds += _delta
@@ -836,7 +871,10 @@ func _process(_delta: float) -> void:
 	var grapple_status: String = "Grapple: READY x%d" % player.grapple_charges if player.grapple_cooldown_left <= 0.0 else "Grapple: %.1fs x%d" % [player.grapple_cooldown_left, player.grapple_charges]
 	grapple_label.text = grapple_status
 	status_label.text = chakram_status if food_status.is_empty() else "%s | %s" % [chakram_status, food_status]
-	if spawner.boss_active or boss_arena_active:
+	if chasm_test_active:
+		wave_label.text = "%s — no waves / no loot | Esc → Home" % ("Chasm Test 2" if chasm_test_style == "chasm_test_2" else "Chasm test")
+		wave_timer_label.text = ""
+	elif spawner.boss_active or boss_arena_active:
 		wave_label.text = "WAVE %d" % ZungarConfig.BOSS_WAVE
 		wave_timer_label.text = "ZUNGAR BOSS"
 	elif spawner.wave_active:
@@ -845,16 +883,13 @@ func _process(_delta: float) -> void:
 	elif not spawner.awaiting_next_wave:
 		wave_label.text = "Wave: %d" % (spawner.current_wave + 1)
 		wave_timer_label.text = "STARTING: %.0f" % maxf(0.0, spawner.wave_timer)
-	var flow_ratio: float = clampf(player.flow / 100.0, 0.0, 1.0)
-	var flow_color: Color = Color.WHITE.lerp(Color(1.0, 0.72, 0.08), flow_ratio)
-	flow_bar.modulate = flow_color
-	flow_fill.color = flow_color
-	flow_fill.offset_right = 20.0 + 220.0 * flow_ratio
-	var sparkle_ratio: float = clampf((flow_ratio - 0.75) / 0.25, 0.0, 1.0)
-	flow_sparkle.modulate = Color(1.0, 0.9, 0.35, sparkle_ratio * (0.35 + 0.65 * (0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.012))))
+	_update_flow_fill()
 	queue_redraw()
 
 func _draw() -> void:
+	# Experiments supply their full vista below the floor; the opaque debug backing
+	# would otherwise cover it. Normal zones keep the existing backing/grid.
+	if chasm_test_active: return
 	var presentation_rect: Rect2 = get_presentation_rect()
 	draw_rect(presentation_rect, Color("171923"))
 	if boss_arena_active and active_adventure_zone != "chasm":
@@ -866,6 +901,9 @@ func _draw() -> void:
 	for y: int in range(floori(presentation_rect.position.y), ceili(presentation_rect.end.y), 32): draw_line(Vector2(presentation_rect.position.x, y), Vector2(presentation_rect.end.x, y), Color(0.2, 0.22, 0.28, 0.16), 1.0)
 
 func _on_boss_wave_started(number: int) -> void:
+	_mark_world_rewind_barrier()
+	player.refill_rewind_charge()
+	player.refill_slow_charge()
 	boss_arena_active = true
 	wave_label.text = "WAVE %d" % number
 	wave_timer_label.text = "ZUNGAR BOSS"
@@ -892,8 +930,10 @@ func _on_boss_wave_started(number: int) -> void:
 	_reset_presentation_camera_effects()
 	get_tree().paused = true
 	player.set_physics_process(false)
+	var intro_boss: Zungar = zungar_boss
 	await _play_zungar_intro()
-	if not is_instance_valid(zungar_boss): return
+	# The intro may complete after the player has left or begun another run.
+	if run_over or not boss_arena_active or intro_boss != zungar_boss or not is_instance_valid(intro_boss) or intro_boss.is_queued_for_deletion(): return
 	player.set_physics_process(true)
 	# The boss theme starts the instant Zungar stops talking, not before.
 	music_director.call("enter_boss")
@@ -1099,6 +1139,7 @@ func _on_zungar_defeated(points: int) -> void:
 		status_label.text = "The Blacksmith is trapped in the Mines. Rescue him to unlock the Forge."
 
 func _on_boss_wave_cleared(_number: int) -> void:
+	_mark_world_rewind_barrier()
 	home_progression.mines_unlocked = true
 	save_game()
 
@@ -1123,7 +1164,21 @@ func _create_remaining_enemies_label() -> void:
 func _on_wave_cleanup_started(_remaining_enemies: int) -> void:
 	if remaining_enemies_label != null: remaining_enemies_label.visible = true
 
+## Rewind HUD icon: opaque while this wave's charge is unused, faded once spent.
+const REWIND_ICON_USED_ALPHA: float = 0.35
+func _on_rewind_charge_changed(available: bool) -> void:
+	var rewind_icon: CanvasItem = get_node_or_null("CanvasLayer/RewindIcon") as CanvasItem
+	if rewind_icon != null: rewind_icon.modulate.a = 1.0 if available else REWIND_ICON_USED_ALPHA
+
+## World Slow HUD icon (right of RewindIcon): same opaque/faded contract, its own charge.
+func _on_slow_charge_changed(available: bool) -> void:
+	var slow_icon: CanvasItem = get_node_or_null("CanvasLayer/SlowIcon") as CanvasItem
+	if slow_icon != null: slow_icon.modulate.a = 1.0 if available else REWIND_ICON_USED_ALPHA
+
 func _on_wave_started(number: int) -> void:
+	_mark_world_rewind_barrier()
+	player.refill_rewind_charge()
+	player.refill_slow_charge()
 	if remaining_enemies_label != null: remaining_enemies_label.visible = false
 	wave_label.text = "Wave: %d" % number
 	wave_timer_label.text = "TIME: %.0f" % spawner.wave_duration
@@ -1175,6 +1230,7 @@ func _random_open_arena_position(clearance: float) -> Vector2:
 	return Vector2(-1.0, -1.0)
 
 func spawn_chest_loot(drop_position: Vector2) -> void:
+	if chasm_test_active: return
 	var roll_count: int = 2 if randf() < ArmoryConfig.DOUBLE_ROLL_CHANCE else 1
 	for roll_index: int in range(roll_count):
 		var item: Dictionary = ArmoryConfig.roll_item(spawner.current_wave, home_progression.generate_gear_id())
@@ -1184,8 +1240,24 @@ func spawn_chest_loot(drop_position: Vector2) -> void:
 		gear_drop.setup(item)
 
 func collect_gear_drop(item: Dictionary) -> void:
+	if chasm_test_active: return
 	home_progression.add_gear_item(item)
+	if not run_over: run_loot.record_gear(item)
 	pickup_feed.show_pickup(ArmoryConfig.display_label(item), 1, ItemConfig.Rarity.VERY_RARE)
+	if is_instance_valid(home_menu): home_menu.call("refresh")
+	save_game()
+
+## World rewind undid this gear pickup (the bag is back on the ground). Remove exactly that
+## unique id; never touch an equipped or pre-existing item. Saved immediately, like the
+## pickup was, so a saved file can never hold both the bag and the item.
+func uncollect_gear_drop(item: Dictionary) -> void:
+	if chasm_test_active: return
+	var item_id: String = str(item.get("id", ""))
+	if item_id.is_empty(): return
+	var owned: Dictionary = home_progression.gear_item_by_id(item_id)
+	if owned.is_empty() or home_progression.equipped_gear_ids.values().has(item_id): return
+	home_progression.gear_inventory.erase(owned)
+	run_loot.unrecord_gear(item_id)
 	if is_instance_valid(home_menu): home_menu.call("refresh")
 	save_game()
 
@@ -1204,6 +1276,7 @@ func _apply_equipped_gear_to_player() -> void:
 	var armor_base_name: String = str(armor_item.get("base_name", "Basic Leather Armor")) if not armor_item.is_empty() else "Basic Leather Armor"
 	player.set_equipped_armor(armor_base_name)
 func _on_wave_cleared(number: int) -> void:
+	_mark_world_rewind_barrier()
 	if remaining_enemies_label != null: remaining_enemies_label.visible = false
 	clear_resonant_glyphs()
 	player.reset_resonant_glyph_timer()
@@ -1330,7 +1403,8 @@ func _clear_boss_arena() -> void:
 
 func _clear_runtime_entities() -> void:
 	player.clear_active_chakrams(true)
-	for group_name: String in ["enemies", "enemy_projectiles", "spawn_warnings"]:
+	player.world_rewind_recorder.clear()
+	for group_name: String in ["enemies", "enemy_projectiles", "spawn_warnings", WorldRewindRecorder.RETIRED_GROUP]:
 		for node: Node in get_tree().get_nodes_in_group(group_name):
 			if is_instance_valid(node): node.queue_free()
 	for node: Node in get_children():
@@ -1346,7 +1420,11 @@ func _walk_player_to_next_map() -> void:
 	var exit_position: Vector2 = Vector2(arena_rect.end.x + TRANSITION_OFFSCREEN_MARGIN, walk_y)
 	await _walk_player_to(exit_position, TRANSITION_EXIT_DURATION)
 	await _fade_zone_transition(1.0, TRANSITION_FADE_DURATION)
-	arena_generator.regenerate()
+	if active_adventure_zone == "chasm":
+		chasm_stage.regenerate(Vector2(arena_rect.position.x - TRANSITION_OFFSCREEN_MARGIN, walk_y))
+		refresh_population_navigation()
+	else:
+		arena_generator.regenerate()
 	player.global_position = Vector2(arena_rect.position.x - TRANSITION_OFFSCREEN_MARGIN, walk_y)
 	player.prepare_for_map_transition()
 	_update_presentation_camera()
@@ -1380,10 +1458,20 @@ func _walk_player_to(destination: Vector2, duration: float) -> void:
 func _on_end_run() -> void:
 	_finish_run(false)
 
-func _on_health_changed(current: float, maximum: float) -> void: health_label.text = "HP: %.0f / %.0f" % [current, maximum]
-func _on_flow_changed(current: float, _maximum: float) -> void:
+# HUD shows no numeric HP; the label stays (empty) because other HUD code gates on its visibility.
+func _on_health_changed(_current: float, _maximum: float) -> void: health_label.text = ""
+func _update_flow_fill() -> void:
+	# Player owns continuous Flow; the existing signal supplies its maximum.
+	# Read Player directly so Range step rounding cannot quantise the visual fill.
+	var ratio: float = clampf(player.flow / flow_bar.max_value, 0.0, 1.0) if flow_bar.max_value > 0.0 else 0.0
+	flow_fill.offset_right = flow_fill.offset_left + flow_bar.size.x * ratio
+	flow_fill.visible = flow_bar.visible and ratio > 0.0
+
+func _on_flow_changed(current: float, maximum: float) -> void:
+	flow_bar.max_value = maxf(maximum, 0.001)
 	flow_bar.value = current
-	flow_label.text = "Flow: %.0f%%" % player.flow
+	flow_label.text = "" # No numeric Flow readout; the bar is the display.
+	_update_flow_fill()
 	dash_bar.max_value = float(player.max_dash_charges)
 	dash_bar.value = float(player.dash_charges)
 	dash_label.text = "Dash: %d / %d" % [player.dash_charges, player.max_dash_charges]
@@ -1404,6 +1492,37 @@ func _on_enemy_defeated(points: int) -> void:
 	score += int(roundi(float(points) * multiplier))
 	score_label.text = "Score: %d" % score
 
+## --- World rewind (stage 2): run counters are a persistent rewind track -------------------
+## Score and the run damage totals return to the rewound instant, so undone kills give back
+## their points. Never retired or freed. (Grandpa's defeat ledger is saved progression and is
+## intentionally not rewound.)
+func rewind_stride() -> int:
+	return 5
+
+func rewind_capture(data: PackedFloat32Array, offset: int) -> void:
+	data[offset] = float(score)
+	data[offset + 1] = run_damage_dealt
+	data[offset + 2] = run_damage_received
+	data[offset + 3] = run_damage_healed
+	data[offset + 4] = run_damage_mitigated
+
+func rewind_restore(data: PackedFloat32Array, offset: int) -> void:
+	score = int(roundi(data[offset]))
+	run_damage_dealt = data[offset + 1]
+	run_damage_received = data[offset + 2]
+	run_damage_healed = data[offset + 3]
+	run_damage_mitigated = data[offset + 4]
+	score_label.text = "Score: %d" % score
+
+## Wave/boss start and clear: the world rewind may not cross this instant.
+func _mark_world_rewind_barrier() -> void:
+	if is_instance_valid(player) and player.world_rewind_recorder != null:
+		player.world_rewind_recorder.mark_barrier(player.rewind_buffer)
+
+func _init() -> void:
+	# Persistent world-rewind track (also for safe rigs that replace _ready).
+	add_to_group(WorldRewindRecorder.PERSISTENT_GROUP)
+
 func _on_style_changed(_style_name: String) -> void:
 	# Sword form is an internal development identity, not player-facing HUD.
 	style_label.text = ""
@@ -1412,6 +1531,21 @@ func _on_player_died() -> void:
 	_finish_run(true)
 
 func _finish_run(player_was_defeated: bool) -> void:
+	if chasm_test_active:
+		# Walking is not a scored expedition: no summary, rewards, food consumption or save.
+		run_over = true
+		player.prepare_for_map_transition()
+		player.set_physics_process(false)
+		spawner.set_process(false)
+		_clear_runtime_entities()
+		_clear_chasm_test()
+		bonus_panel.visible = false
+		if is_instance_valid(pause_menu): pause_menu.visible = false
+		_set_world_visible(false)
+		get_tree().paused = true
+		_travel_home()
+		return
+	if run_over: return
 	_record_and_reset_run()
 	bonus_panel.visible = false
 	if player_was_defeated: wave_label.text = "GAME OVER"
@@ -1433,6 +1567,8 @@ func _finish_run(player_was_defeated: bool) -> void:
 	_set_world_visible(false)
 
 func _record_and_reset_run() -> void:
+	if run_over: return
+	run_over = true
 	last_run_summary = {
 		"wave": spawner.current_wave,
 		"score": score,
@@ -1443,7 +1579,8 @@ func _record_and_reset_run() -> void:
 		"damage_received": run_damage_received,
 		"damage_healed": run_damage_healed,
 		"damage_mitigated": run_damage_mitigated,
-		"bonuses": run_bonus_history.duplicate()
+		"bonuses": run_bonus_history.duplicate(),
+		"loot": run_loot.snapshot()
 	}
 	var zone_scores: Array = scoreboards.get("The Forest", [])
 	zone_scores.append(last_run_summary.duplicate(true))
@@ -1465,6 +1602,7 @@ func _format_run_time(seconds: float) -> String:
 	return "%02d:%02d" % [minutes, remaining_seconds]
 
 func _show_run_summary() -> void:
+	music_director.enter_home()
 	home_menu.visible = false
 	var summary_text: String = _run_review_bbcode()
 	end_run_hub.call("open_to_run_review", summary_text, _scoreboard_text())
@@ -1480,6 +1618,7 @@ func _run_review_bbcode() -> String:
 	summary_text += "[font_size=22]Score: [color=#ffd94d]%d[/color]    Wave Reached: %d    Run Time: %s\nFlow at 75%%+: [color=#ffe77a]%s[/color][/font_size]\n\n" % [int(last_run_summary.get("score", 0)), int(last_run_summary.get("wave", 0)), _format_run_time(float(last_run_summary.get("duration", 0.0))), _format_run_time(float(last_run_summary.get("flow_75_duration", 0.0)))]
 	summary_text += "[font_size=22][color=#ff9f72]COMBAT STATISTICS[/color][/font_size]\nDamage Dealt: %.0f    Damage Received: %.0f\nDamage Healed: %.0f    Damage Mitigated: %.0f\n\n" % [float(last_run_summary.get("damage_dealt", 0.0)), float(last_run_summary.get("damage_received", 0.0)), float(last_run_summary.get("damage_healed", 0.0)), float(last_run_summary.get("damage_mitigated", 0.0))]
 	summary_text += "[font_size=22][color=#8fdcff]BONUSES ACQUIRED[/color][/font_size]\n%s" % bonus_text
+	summary_text += "\n\n" + RunLootRecord.review_bbcode(last_run_summary)
 	return summary_text
 
 func _scoreboard_text() -> String:
@@ -1530,7 +1669,12 @@ func _materialize_combat_settings() -> Dictionary:
 	var hand_keys: Array[String] = ["windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end", "mouse_drag", "rotation", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "radial_response", "scale", "min", "max", "arc", "frequency", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks", "bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug"]
 	hand_keys.append_array(CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS)
 	hand_keys.append_array(CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS)
+<<<<<<< Updated upstream
 	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "farmable_hitstop", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
+=======
+	hand_keys.append_array(CombatSettingsConfig.THRUST_HAND_TUNING_KEYS)
+	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "blade_roll_cooldown", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "farmable_hitstop", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
+>>>>>>> Stashed changes
 	for hit_reaction_key: String in HitReaction.DEFAULTS.keys():
 		contact_keys.append(hit_reaction_key)
 	contact_keys.append_array(CombatSettingsConfig.CHARGED_GUARD_TUNING_KEYS)
@@ -1723,7 +1867,10 @@ func _global_state_complete(state: Dictionary) -> bool:
 	var weapon_hand_settings: Dictionary = state.get("combat_weapon_hand_settings", {}) as Dictionary
 	var forest_values: Dictionary = state.get("forest_values", {}) as Dictionary
 	var grapple: Dictionary = state.get("grapple", {}) as Dictionary
-	return int(state.get("schema", 0)) == GlobalPresetConfig.VERSION and hand_settings.size() >= Player.SwordStyle.size() * 4 and contact_settings.size() >= 4 and weapon_hand_settings.has("Basic Longsword") and weapon_hand_settings.has("Basic Curved Sword") and forest_values.size() >= ForestVisualSettings.SPECS.size() and grapple.size() >= 10 and state.has("forest_day_presets") and state.has("forest_bypass_all")
+	# Combat forms evolve independently of the saved world package. Missing newer
+	# form entries use Player's read-only fallbacks; they must never trigger a
+	# whole-package migration that rebuilds the user's forest/day-cycle settings.
+	return int(state.get("schema", 0)) == GlobalPresetConfig.VERSION and not hand_settings.is_empty() and contact_settings.size() >= 4 and weapon_hand_settings.has("Basic Longsword") and weapon_hand_settings.has("Basic Curved Sword") and forest_values.size() >= ForestVisualSettings.SPECS.size() and grapple.size() >= 10 and state.has("forest_day_presets") and state.has("forest_bypass_all")
 
 ## A phase bundle is coherent when a "day" phase is not actually night and a
 ## "night" phase actually is. The old four-store writers scrambled these across
@@ -1993,17 +2140,144 @@ func set_global_preset_launch_slot(slot: int) -> bool:
 func get_main_game_preset() -> int:
 	return main_game_preset
 
-func save_game() -> void:
+func _sell_general_goods(item_id: String, requested: int) -> int:
+	return _trade_general_goods(item_id, requested, false)
+
+func _buy_general_goods(item_id: String, requested: int) -> int:
+	return _trade_general_goods(item_id, requested, true)
+
+func _sell_blacksmith_goods(item_id: String, requested: int) -> int:
+	return _trade_general_goods(item_id, requested, false, true)
+
+func _buy_blacksmith_goods(item_id: String, requested: int) -> int:
+	return _trade_general_goods(item_id, requested, true, true)
+
+func _exchange_shrine_coins(requested: int) -> int:
+	return _trade_general_goods("", requested, false, false, "exchange")
+
+func _salvage_shrine_gear(item_id: String) -> int:
+	return _trade_general_goods(item_id, 1, false, false, "salvage")
+
+func _trade_general_goods(item_id: String, requested: int, buying: bool, smith: bool = false, shrine_action: String = "") -> int:
+	# Snapshot only trade-owned fields: do not reload progression (that ends buffs).
+	var permanent_offer: bool = smith and ArmoryConfig.FORGE_PERMANENT_OFFERS.has(item_id)
+	if smith and not permanent_offer and (item_id.begins_with("forge_recipe:") or item_id.begins_with("forge_upgrade:")): return 0
+	if permanent_offer and (not buying or requested != 1 or not home_progression.can_buy_forge_offer(item_id)): return 0
+	if shrine_action.is_empty() and not permanent_offer:
+		home_progression.update_kaji()
+		if smith: home_progression.update_jimbo()
+	var old_smith: Dictionary = {"jimbo_gold": home_progression.jimbo_gold, "jimbo_updated_at_unix": home_progression.jimbo_updated_at_unix, "jimbo_stock": home_progression.jimbo_stock.duplicate(true), "jimbo_stock_elapsed": home_progression.jimbo_stock_elapsed.duplicate(true), "jimbo_gear_offers": home_progression.jimbo_gear_offers.duplicate(true), "next_gear_item_id": home_progression.next_gear_item_id}
+	old_smith.merge({"resonance": home_progression.resonance, "skill_knowledge": home_progression.skill_knowledge.duplicate(true), "discovered_items": home_progression.discovered_items.duplicate(true), "equipment": home_progression.equipment.duplicate(true), "equipped_gear_ids": home_progression.equipped_gear_ids.duplicate(true)})
+	old_smith.merge({"owned_forge_recipes": home_progression.owned_forge_recipes.duplicate(true), "forge_slot_count": home_progression.forge_slot_count})
+	var old_gear: Array[Dictionary] = home_progression.gear_inventory.duplicate(true)
+	var old_materials: Dictionary = home_progression.materials.duplicate(true)
+	var old_food: Dictionary = home_progression.food_inventory.duplicate(true)
+	var old_stock: Dictionary = home_progression.kaji_stock.duplicate(true)
+	var old_stock_elapsed: Dictionary = home_progression.kaji_stock_elapsed.duplicate(true)
+	var old_gold: float = home_progression.kaji_gold
+	var old_timestamp: float = home_progression.kaji_updated_at_unix
+	var traded: int = 0
+	match shrine_action:
+		"exchange": traded = home_progression.exchange_shrine_coins(requested)
+		"salvage": traded = home_progression.salvage_shrine_gear(item_id)
+		"": traded = home_progression.trade_with_jimbo(item_id, requested, buying) if smith else (home_progression.buy_from_kaji(item_id, requested) if buying else home_progression.sell_to_kaji(item_id, requested))
+	if traded <= 0: return 0
+	if not save_game():
+		for key: String in old_smith: home_progression.set(key, old_smith[key])
+		home_progression.gear_inventory = old_gear
+		home_progression.materials = old_materials
+		home_progression.food_inventory = old_food
+		home_progression.kaji_stock = old_stock
+		home_progression.kaji_stock_elapsed = old_stock_elapsed
+		home_progression.kaji_gold = old_gold
+		home_progression.kaji_updated_at_unix = old_timestamp
+		return -1
+	if is_instance_valid(home_menu): home_menu.refresh()
+	return traded
+
+func save_game(path: String = SAVE_PATH) -> bool:
+	var previous_saved_at: float = last_saved_at_unix
 	last_saved_at_unix = Time.get_unix_time_from_system()
+	home_progression.update_kaji(last_saved_at_unix)
+	home_progression.update_jimbo(last_saved_at_unix)
 	var save_data: Dictionary = {"home_progression": home_progression.to_save_data(), "scoreboards": scoreboards, "settings": {"input_mode": input_mode, "metronome_visualizer_mode": metronome_visualizer_mode, "beat_pulse_percent": beat_pulse_percent, "visualizer_counts": visualizer_counts, "beat_visualizer_size": beat_visualizer_size, "training_camera_zoom": training_camera_zoom, "visual_style": visual_style, "music_volume": music_volume, "sfx_volume": sfx_volume, "metronome_color": metronome_visualizer_palette}, "minigames": {"cauldron_catch_high_score": cauldron_catch_high_score}, "save_metadata": {"last_saved_at_unix": last_saved_at_unix, "note": save_note}}
-	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if file != null: file.store_string(JSON.stringify(save_data))
+	if not _write_save_payload_atomic(path, save_data):
+		last_saved_at_unix = previous_saved_at
+		return false
+	return true
+
+## Common canonical atomic writer. Inventory-only approved test transactions pass
+## a full disk snapshot here, without running merchant clocks or save metadata.
+static func _write_save_payload_atomic(path: String, save_data: Dictionary) -> bool:
+	var temporary_path: String = path + ".tmp"
+	var file: FileAccess = FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(JSON.stringify(save_data))
+	file.flush()
+	var write_error: Error = file.get_error()
+	file.close()
+	if write_error != OK or DirAccess.rename_absolute(temporary_path, path) != OK:
+		return false
+	return true
+
+## Explicit user-approved inventory-only grant. Never called by startup or tests.
+## The live gate rejects headless processes; the real save-disabled bench exposes
+## it only on explicit G. Does not equip, migrate progression, update merchants,
+## alter GP2, touch combat settings, or stamp save metadata.
+func grant_approved_dualblade_inventory() -> bool:
+	return _grant_approved_test_inventory(ArmoryConfig.dualblade_test_item())
+
+func grant_approved_double_ended_inventory() -> bool:
+	return _grant_approved_test_inventory(ArmoryConfig.double_ended_test_item())
+
+func grant_approved_greatsword_inventory() -> bool:
+	return _grant_approved_test_inventory(ArmoryConfig.greatsword_test_item())
+
+## Shared canonical inventory-only grant for approved_test items (one authority).
+func _grant_approved_test_inventory(grant_item: Dictionary) -> bool:
+	if DisplayServer.get_name() == "headless": return false
+	var grant_id: String = str(grant_item["id"])
+	var before: String = FileAccess.get_file_as_string(SAVE_PATH)
+	var payload: Variant = JSON.parse_string(before)
+	if not payload is Dictionary or not payload.get("home_progression") is Dictionary: return false
+	var inventory: Array = payload["home_progression"].get("gear_inventory", []).duplicate(true)
+	for item: Variant in inventory:
+		if item is Dictionary and str(item.get("id", "")) == grant_id:
+			return item == grant_item or (str(item.get("base_name", "")) == str(grant_item["base_name"]) and str(item.get("origin", "")) == "approved_test")
+	inventory.append(grant_item.duplicate(true))
+	var backup_dir: String = OS.get_user_data_dir().path_join("../Blade Dancer backups").simplify_path()
+	if DirAccess.make_dir_recursive_absolute(backup_dir) != OK: return false
+	var backup: String = backup_dir.path_join("before-%s-%d.json" % [grant_id.replace("approved_test_", "approved-"), Time.get_unix_time_from_system()])
+	if not _write_inventory_snapshot_transaction(SAVE_PATH, before, inventory, backup): return false
+	# Keep the running inventory coherent, without applying/equipping anything.
+	if home_progression.gear_item_by_id(grant_id).is_empty():
+		home_progression.add_gear_item(grant_item.duplicate(true))
+	print("[APPROVED GRANT] ", grant_id, " inventory-only canonical atomic transaction verified; external backup=", backup)
+	return true
+
+static func _write_inventory_snapshot_transaction(path: String, expected_text: String, inventory: Array, backup_path: String) -> bool:
+	if FileAccess.get_file_as_string(path) != expected_text: return false
+	var before: Variant = JSON.parse_string(expected_text)
+	if not before is Dictionary or not before.get("home_progression") is Dictionary: return false
+	var after: Dictionary = before.duplicate(true)
+	after["home_progression"]["gear_inventory"] = inventory.duplicate(true)
+	# Backup bytes BEFORE any write, outside the project for the live grant.
+	if DirAccess.copy_absolute(path, backup_path) != OK: return false
+	if FileAccess.get_file_as_string(backup_path) != expected_text: return false
+	if FileAccess.get_file_as_string(path) != expected_text: return false
+	if not _write_save_payload_atomic(path, after): return false
+	var actual: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return actual is Dictionary and actual == JSON.parse_string(JSON.stringify(after))
 
 func load_game() -> void:
-	if not FileAccess.file_exists(SAVE_PATH): return
+	if not FileAccess.file_exists(SAVE_PATH):
+		save_game()
+		return
 	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
 	if file == null: return
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
 	if not parsed is Dictionary: return
 	var data: Dictionary = parsed as Dictionary
 	if data.has("home_progression") and data["home_progression"] is Dictionary:
@@ -2040,7 +2314,10 @@ func load_game() -> void:
 		save_note = str(metadata.get("note", ""))
 	var offline_completed_recipe: String = home_progression.update_crafting()
 	if is_instance_valid(home_menu): home_menu.call("configure", home_progression)
-	if not offline_completed_recipe.is_empty(): save_game()
+	home_progression.update_kaji()
+	home_progression.update_jimbo()
+	var progression_data: Dictionary = data.get("home_progression", {}) as Dictionary
+	if not offline_completed_recipe.is_empty() or not progression_data.has("kaji_gold") or not progression_data.has("discovered_items") or not progression_data.has("kaji_stock_elapsed") or not progression_data.has("jimbo_stock"): save_game()
 
 func spawn_boss_projectile(origin: Vector2, direction: Vector2, damage: float, source_enemy: Node2D = null, damages_summons: bool = false) -> void:
 	var projectile_scene: PackedScene = load("res://scenes/enemy_projectile.tscn") as PackedScene
@@ -2072,6 +2349,7 @@ func try_spawn_drop(drop_position: Vector2, enemy: Enemy) -> void:
 		_spawn_drop_pickup(drop_position + Vector2(12.0, 0.0), item_name, randi_range(1, 2) + mini(2, int(floor(float(spawner.current_wave) / 3.0))))
 
 func _spawn_drop_pickup(drop_position: Vector2, item_name: String, quantity: int) -> void:
+	if chasm_test_active: return
 	var drop: DropPickup = DROP_SCENE.instantiate() as DropPickup
 	add_child(drop)
 	drop.global_position = drop_position
@@ -2081,11 +2359,22 @@ func spawn_terrain_drop(drop_position: Vector2, item_name: String, quantity: int
 	_spawn_drop_pickup(drop_position, item_name, quantity)
 
 func collect_drop(item_name: String, quantity: int) -> void:
+	if chasm_test_active: return
 	home_progression.add_material(item_name, quantity)
+	if not run_over: run_loot.record_item(item_name, quantity)
 	if is_instance_valid(home_menu): home_menu.call("refresh")
 	pickup_feed.show_pickup(item_name, quantity, ItemConfig.rarity(item_name))
 	if tutorial_overlay != null and is_instance_valid(tutorial_overlay):
 		tutorial_overlay.register_material(item_name, quantity)
+	save_game()
+
+## World rewind undid this material pickup (the bag is back on the ground): take the same
+## amount back out. Saved immediately, mirroring collect_drop, so no duplicate is ever saved.
+func uncollect_drop(item_name: String, quantity: int) -> void:
+	if chasm_test_active or quantity <= 0: return
+	home_progression.materials[item_name] = maxi(0, home_progression.material_count(item_name) - quantity)
+	run_loot.unrecord_item(item_name, quantity)
+	if is_instance_valid(home_menu): home_menu.call("refresh")
 	save_game()
 
 func _on_home_progression_changed(_message: String) -> void:
@@ -2123,14 +2412,14 @@ func _on_input_mode_changed(mode: String) -> void:
 	save_game()
 
 func _apply_metronome_visualizer_mode() -> void:
-	player.show_metronome_indicator = metronome_visualizer_mode == "player"
+	player.show_metronome_indicator = false # HUD owns the visualizer above the action bar layout
 	player.set_metronome_visualizer_counts(visualizer_counts)
 	player.set_metronome_visualizer_beat_percent(beat_pulse_percent)
 	player.metronome_visualizer_palette = metronome_visualizer_palette
 	player.set_metronome_visualizer_palette(metronome_visualizer_palette)
 	if player.metronome_visualizer != null:
 		player.metronome_visualizer.set_display_enabled(player.show_metronome_indicator)
-	metronome_top_bar.configure(player, metronome_visualizer_mode, beat_pulse_percent, beat_visualizer_size, visualizer_counts)
+	metronome_top_bar.configure(player, "off" if metronome_visualizer_mode == "off" else "top_bar", beat_pulse_percent, beat_visualizer_size, visualizer_counts)
 	metronome_top_bar.set_visualizer_palette(metronome_visualizer_palette)
 	player.queue_redraw()
 
@@ -2197,14 +2486,13 @@ func _update_presentation_camera() -> void:
 		presentation_camera.force_update_scroll()
 
 func _clamp_presentation_camera_center(center: Vector2) -> Vector2:
-	# The illustrated Chasm plate is exactly one viewport wide and tall. Keep its
-	# camera centered so movement never reveals the hidden Forest fallback beyond
-	# the plate edges; Forest retains its larger presentation margin and camera travel.
-	var bounds: Rect2 = get_gameplay_arena_rect() if active_adventure_zone == "chasm" else get_presentation_rect()
+	return clamp_presentation_center(center, get_presentation_rect(), get_viewport_rect().size, presentation_camera.zoom)
+
+static func clamp_presentation_center(center: Vector2, bounds: Rect2, viewport_size: Vector2, zoom: Vector2) -> Vector2:
 	# Use the visible world footprint, reserving the normal-zoom footprint during
 	# micro zoom so the boundary cannot breathe or leak as an impact decays.
-	var bounds_zoom: Vector2 = presentation_camera.zoom.min(Vector2.ONE).max(Vector2(0.001, 0.001))
-	var half_view: Vector2 = get_viewport_rect().size / bounds_zoom * 0.5
+	var bounds_zoom: Vector2 = zoom.min(Vector2.ONE).max(Vector2(0.001, 0.001))
+	var half_view: Vector2 = viewport_size / bounds_zoom * 0.5
 	var travel: Vector2 = (bounds.size * 0.5 - half_view).max(Vector2.ZERO)
 	# Oversized viewports lock only the oversized axis to the presentation center.
 	return center.clamp(bounds.get_center() - travel, bounds.get_center() + travel)
@@ -2217,15 +2505,12 @@ func _update_presentation_camera_follow(delta: float, snap: bool = false) -> voi
 	var target: Vector2 = player.position + lookahead
 	if experimental_bind_focus_active and not snap:
 		target = target.lerp(experimental_bind_focus_point, experimental_bind_focus_bias)
+	if chasm_test_style == "chasm_test":
+		target = CHASM_TEST_OVERLAY.walking_camera_target(target, get_gameplay_arena_rect())
 	target = _clamp_presentation_camera_center(target)
 	var follow_rate: float = experimental_bind_focus_response if experimental_bind_focus_active else 7.0
 	var follow_delta: float = delta / maxf(Engine.time_scale, 0.001) if experimental_bind_focus_active else delta
 	var center: Vector2 = target if snap else presentation_camera.position.lerp(target, 1.0 - exp(-follow_rate * follow_delta))
-	if active_adventure_zone == "chasm":
-		# Chasm is a single full-viewport illustration, so do not pan away from
-		# its 1280x720 plate while the player moves around the arena.
-		presentation_camera.position = get_gameplay_arena_rect().get_center()
-		return
 	presentation_camera.position = _clamp_presentation_camera_center(center)
 	# Shake stays exclusively in Camera2D.offset; zoom is owned by combat FX.
 
@@ -2292,7 +2577,7 @@ func _on_forge_closed() -> void:
 	music_director.call("enter_home")
 	_advance_forest_time_phase()
 	home_menu.call("configure", home_progression)
-	home_menu.call("open_home")
+	home_menu._open_forge()
 
 func _on_grindstone_requested() -> void:
 	if is_instance_valid(grindstone_instance): return
@@ -2355,11 +2640,82 @@ func _on_resonance_rush_requested() -> void:
 func _on_resonance_rush_closed() -> void:
 	if is_instance_valid(resonance_rush_instance): resonance_rush_instance.queue_free()
 	resonance_rush_instance = null
-	music_director.call("enter_adventure")
+	music_director.enter_home()
 	_advance_forest_time_phase()
 	end_run_hub.visible = true
 	end_run_hub.call("show_tab", 3)
 
+<<<<<<< Updated upstream
+=======
+func _on_px_mode_requested() -> void:
+	if is_instance_valid(px_mode_instance): return
+	end_run_hub.visible = false
+	music_director.call("enter_silence")
+	# The hub pauses the tree, and a paused tree does not step the physics
+	# server — a RigidBody2D would freeze mid-swing. The lab needs a real
+	# simulation, so lift the pause for its lifetime and restore it on close.
+	# Both hub entry paths leave the world dormant (player/spawner off,
+	# entities cleared, world hidden), so this wakes nothing harmful.
+	px_mode_restore_pause = get_tree().paused
+	get_tree().paused = false
+	px_mode_instance = PX_MODE_SCENE.instantiate() as Node2D
+	# Same reasoning as Resonance Rush: the hub pauses the tree, so the lab
+	# must ignore that pause or it would freeze on launch.
+	px_mode_instance.process_mode = Node.PROCESS_MODE_ALWAYS
+	# Parented under the SceneTree root (a sibling of Main), not under Main,
+	# so Main's leftover screen-shake transform can never offset the lab.
+	get_tree().root.add_child(px_mode_instance)
+	px_mode_instance.closed.connect(_on_px_mode_closed)
+
+func _on_px_mode_closed() -> void:
+	if is_instance_valid(px_mode_instance): px_mode_instance.queue_free()
+	px_mode_instance = null
+	get_tree().paused = px_mode_restore_pause
+	music_director.enter_home()
+	_advance_forest_time_phase()
+	end_run_hub.visible = true
+	end_run_hub.call("show_tab", 3)
+
+func _on_px_proto_requested() -> void:
+	if is_instance_valid(px_proto_instance): return
+	end_run_hub.visible = false
+	music_director.call("enter_silence")
+	# Same reasoning as PX mode: the hub's pause would freeze a rigid-body sim.
+	px_proto_restore_pause = get_tree().paused
+	get_tree().paused = false
+	# PX needs its own 2D world: the dormant main-game StaticBody2Ds
+	# otherwise collide with its player and rigid sword through the overlay.
+	var overlay: CanvasLayer = CanvasLayer.new()
+	overlay.layer = 100
+	get_tree().root.add_child(overlay)
+	px_proto_container = SubViewportContainer.new()
+	var layout_size: Vector2 = get_viewport().get_visible_rect().size
+	var render_size: Vector2i = get_window().size
+	px_proto_container.size = Vector2(render_size)
+	px_proto_container.scale = layout_size / Vector2(render_size)
+	overlay.add_child(px_proto_container)
+	var px_viewport: SubViewport = SubViewport.new()
+	px_viewport.world_2d = World2D.new()
+	px_viewport.size = render_size
+	px_viewport.size_2d_override = Vector2i(layout_size)
+	px_viewport.size_2d_override_stretch = true
+	px_proto_container.add_child(px_viewport)
+	px_proto_instance = PX_PROTO_SCENE.instantiate() as Node2D
+	px_proto_instance.process_mode = Node.PROCESS_MODE_ALWAYS
+	px_viewport.add_child(px_proto_instance)
+	px_proto_instance.closed.connect(_on_px_proto_closed)
+
+func _on_px_proto_closed() -> void:
+	if is_instance_valid(px_proto_container): px_proto_container.get_parent().queue_free()
+	px_proto_container = null
+	px_proto_instance = null
+	get_tree().paused = px_proto_restore_pause
+	music_director.enter_home()
+	_advance_forest_time_phase()
+	end_run_hub.visible = true
+	end_run_hub.call("show_tab", 3)
+
+>>>>>>> Stashed changes
 func _on_cauldron_catch_requested() -> void:
 	if is_instance_valid(cauldron_catch_instance): return
 	if is_instance_valid(home_menu):
@@ -2509,13 +2865,14 @@ func _return_to_adventure_from_home() -> void:
 	end_run_hub.call("show_tab", 3)
 	if home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
 		home_menu.home_tutorial_guide.on_adventure_opened(end_run_hub)
-	music_director.enter_adventure()
+	music_director.enter_home()
 
 func _on_adventure_zone_requested(zone_id: String) -> void:
 	if is_instance_valid(home_menu) and home_menu.home_tutorial_guide != null and is_instance_valid(home_menu.home_tutorial_guide):
 		home_menu.home_tutorial_guide.on_run_started()
 	if zone_id == "forest": _start_forest_run()
 	elif zone_id == "chasm": _start_chasm_run()
+	elif zone_id in ["chasm_test", "chasm_test_2"]: _start_arena_run(zone_id)
 	elif zone_id == "backyard": _start_backyard_run()
 
 func _start_forest_run() -> void:
@@ -2525,8 +2882,13 @@ func _start_chasm_run() -> void:
 	_start_arena_run("chasm")
 
 func _start_arena_run(zone_id: String) -> void:
+	_clear_chasm_test()
+	chasm_test_active = zone_id in ["chasm_test", "chasm_test_2"]
+	chasm_test_style = zone_id if chasm_test_active else ""
 	backyard_training_layout = "forest"
-	active_adventure_zone = "chasm" if zone_id == "chasm" else "forest"
+	active_adventure_zone = "chasm" if zone_id in ["chasm", "chasm_test", "chasm_test_2"] else "forest"
+	player.refill_rewind_charge() # each run / test area starts with its rewind ready
+	player.refill_slow_charge()
 	spawner.set_chasm_stage(chasm_stage if active_adventure_zone == "chasm" else null)
 	arena_generator.set_forest_content_enabled(active_adventure_zone != "chasm")
 	# A run must always leave menus, hit-stop, and pause state behind.
@@ -2558,17 +2920,23 @@ func _start_arena_run(zone_id: String) -> void:
 	run_damage_healed = 0.0
 	run_damage_mitigated = 0.0
 	run_bonus_history.clear()
+	run_loot.reset()
 	bonus_reroll_charges = 0
 	rerolled_bonus_exclusions.clear()
 	chest_spawn_chance = CHEST_BASE_SPAWN_CHANCE
 	player.global_position = Vector2(640.0, 360.0)
-	if active_adventure_zone != "chasm":
+	if active_adventure_zone == "chasm":
+		chasm_stage.regenerate()
+		arena_generator.zone_population = chasm_stage.population
+		refresh_population_navigation()
+	else:
+		arena_generator.zone_population = null
 		arena_generator.regenerate()
-	# Re-apply visibility after Forest regeneration; Chasm deliberately skips
-	# regeneration because its only live world content should be enemies.
+	# Re-apply visibility after regeneration for the selected zone.
 	_set_world_visible(true)
 	_update_presentation_camera()
-	_begin_prepared_expedition()
+	if not chasm_test_active:
+		_begin_prepared_expedition()
 	player.reset_run_bonuses()
 	player.health = player.max_health
 	player.flow = 0.0
@@ -2576,6 +2944,23 @@ func _start_arena_run(zone_id: String) -> void:
 	player.flow_changed.emit(player.flow, 100.0)
 	_apply_equipped_gear_to_player()
 	player.set_physics_process(true)
+	if chasm_test_active:
+		# Same player, stage, procedural objects and collision; no wave/food/save economy.
+		spawner.normal_spawning_suspended = true
+		spawner.wave_active = false
+		spawner.awaiting_next_wave = false
+		spawner.enemies_to_spawn = 0
+		spawner.enemies_alive = 0
+		spawner.set_process(false)
+		if chasm_test_style == "chasm_test_2":
+			chasm_test_vista = CHASM_TEST_2_PAINTING.new()
+		else:
+			chasm_test_vista = CHASM_TEST_OVERLAY.new()
+		chasm_test_vista.name = "ExperimentalChasmPainting2" if chasm_test_style == "chasm_test_2" else "ExperimentalChasmVista"
+		chasm_stage.add_child(chasm_test_vista)
+		chasm_test_vista.build(chasm_stage, get_viewport_rect().size, presentation_camera.zoom, true)
+		chasm_test_vista.update_camera(presentation_camera.position)
+		return
 	var requested_start_wave: int = clampi(dev_start_wave, 1, 100)
 	if requested_start_wave <= 1:
 		spawner.current_wave = 1
@@ -2697,8 +3082,12 @@ func _spawn_training_enemy_at(spawn_position: Vector2, enemy_scene: PackedScene)
 	add_child(enemy)
 
 func _start_backyard_run() -> void:
+	_clear_chasm_test()
 	backyard_training_layout = "forest"
 	active_adventure_zone = "backyard"
+	player.refill_rewind_charge() # backyard starts with its rewind ready; refills on each training wave
+	player.refill_slow_charge()
+	music_director.call("set_adventure_zone", active_adventure_zone)
 	spawner.set_chasm_stage(null)
 	arena_generator.set_forest_content_enabled(true)
 	# Keep a previous paused/hit-stop state from carrying into a new run.
@@ -2724,6 +3113,7 @@ func _start_backyard_run() -> void:
 	run_damage_healed = 0.0
 	run_damage_mitigated = 0.0
 	run_bonus_history.clear()
+	run_loot.reset()
 	bonus_reroll_charges = 0
 	chest_spawn_chance = CHEST_BASE_SPAWN_CHANCE
 	score = 0

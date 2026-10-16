@@ -1,0 +1,33 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/bomber_footprint_presentation.gd" id="1"]
+
+[node name="BomberFootprintPresentation" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Title" type="Label" parent="."]
+offset_left = 50.0
+offset_top = 40.0
+offset_right = 1100.0
+offset_bottom = 95.0
+text = "Bomber footprint: warning and fire share the 138px ground circle\nOriginal raised flame art is grounded by its base, not its canvas center."
+
+[node name="WarningLabel" type="Label" parent="."]
+offset_left = 80.0
+offset_top = 390.0
+text = "Red warning"
+
+[node name="InitialLabel" type="Label" parent="."]
+offset_left = 315.0
+offset_top = 390.0
+text = "Fire at detonation\n(burst hidden)"
+
+[node name="MatureLabel" type="Label" parent="."]
+offset_left = 555.0
+offset_top = 390.0
+text = "Fire +0.6 seconds\nSame full-size footprint"
+
+[node name="LiveLabel" type="Label" parent="."]
+offset_left = 795.0
+offset_top = 390.0
+text = "Live complete attack\nWith burst / animation"

@@ -1,0 +1,58 @@
+{
+	"animation_name": "walking_slowly_facing_right_staff_held_upright_short_alternating_steps",
+	"animation_style": "",
+	"animation_type": "walking slowly facing right staff held upright short alternating steps",
+	"columns": 6,
+	"directions": [],
+	"frame_count": 6,
+	"frame_height": 256,
+	"frame_paths": [],
+	"frame_regions": [
+		{
+			"h": 256,
+			"w": 192,
+			"x": 0,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 192,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 384,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 576,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 768,
+			"y": 0
+		},
+		{
+			"h": 256,
+			"w": 192,
+			"x": 960,
+			"y": 0
+		}
+	],
+	"frame_width": 192,
+	"name": "shaman_walk",
+	"prompt": "walking slowly facing right staff held upright short alternating steps",
+	"rows": 1,
+	"source_image": "res://assets/generated/shaman_base.png",
+	"source_tool": "animate_sprite",
+	"spritesheet_height": 256,
+	"spritesheet_path": "res://assets/generated/shaman_walk.png",
+	"spritesheet_width": 1152,
+	"type": "animation"
+}

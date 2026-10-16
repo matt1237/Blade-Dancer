@@ -155,7 +155,7 @@ func _sound_index(sound_name: String) -> int:
 		"player_hit": return 3
 		"heartbeat": return 3
 		"flesh_hit": return 4
-		"sword_clash": return 5
+		"clash", "sword_clash": return 5
 		"parry": return 6
 		"slide": return 7
 		"chakram_bat": return 8

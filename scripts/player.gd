@@ -4,7 +4,7 @@ signal combat_debug_event(event_type: String, details: Dictionary)
 signal tutorial_action(event_type: String, target: Node)
 
 # New values are appended so persisted integer IDs for every existing form remain stable.
-enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B }
+enum SwordStyle { METRONOME, THRUST, MOULINET, MOULINET_2, MOULINET_3, MOULINET_4, THRUST_METRONOME, METRONOME_WINDUP, METRONOME_BIND, METRONOME_BIND_B, WINDUP_THRUST }
 enum AuthoredMetronomeState { INACTIVE, READY, ACTIVE, RETURNING, SHEATHED }
 ## The one ability a Charged Guard gesture can discharge into. NONE means the gesture
 ## layer is idle and the guard owns the pose; THRUST means the lunging thrust owns the
@@ -14,9 +14,8 @@ const EXPERIMENTAL_BIND_STYLES: Array[int] = [SwordStyle.METRONOME_BIND, SwordSt
 ## Bind A (persisted ID 8) remains load-compatible but is retired from selection.
 ## Bind B's ID 9 is the one visible, canonical Bind Form.
 ## Public presentation order is intentionally independent from persisted enum IDs.
-## Canonical Bind (ID 9) is Form I; the original Metronome (ID 0) now occupies
-## Bind's former third public slot without moving either form's saved profile.
-const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.METRONOME_BIND_B, SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME, SwordStyle.THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_2, SwordStyle.MOULINET_3, SwordStyle.MOULINET_4, SwordStyle.THRUST_METRONOME]
+## Four public forms for every weapon. Legacy IDs/profiles remain untouched.
+const STYLE_CYCLE_ORDER: Array[int] = [SwordStyle.METRONOME_BIND_B, SwordStyle.WINDUP_THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_3]
 const LEGACY_BIND_SLIDE_SETTING_KEYS: Array[String] = ["bind_slide_contact_tolerance", "bind_slide_angle", "bind_slide_cling", "bind_slide_friction", "bind_slide_speed", "bind_slide_duration"]
 ## Event types printed to the Godot console (gated by debug_print_sword_events)
 ## so bind/wind/beat/release activity can be read from a text log, not just a
@@ -143,6 +142,70 @@ const CHARGED_GUARD_GESTURE_V_MIN_ARM: float = 65.0
 const CHARGED_GUARD_GESTURE_V_MIN_DEPTH: float = 40.0
 const CHARGED_GUARD_GESTURE_V_MIN_STRAIGHTNESS: float = 0.72
 const CHARGED_GUARD_GESTURE_V_WINDOW: float = 2.0
+## --- Gesture master gate -------------------------------------------------------
+## Code-level gate that wins over every saved per-gesture switch. While false, the
+## Guard directional strokes (thrust line, V/>/^/< arc slash, whirlwind circle) and the
+## G/Z Guard-entry strokes are never read, whatever charged_guard_gestures_enabled /
+## charged_guard_entry_g_enabled / charged_guard_entry_z_enabled say in a save. The
+## time-rewind circle is the only live gesture. Set to true to restore them all (the
+## per-gesture switches then apply again). Pommel / dual-click Guard entry is unaffected.
+const GESTURES_EXCEPT_REWIND_ENABLED: bool = false
+## Runtime mirror of the flag (tests only flip it to keep the dormant gestures covered).
+static var gestures_except_rewind_gate: bool = GESTURES_EXCEPT_REWIND_ENABLED
+## --- Rewind gesture (player-only rewind) -----------------------------------------
+## A counter-clockwise circle (screen space) started at its top, drawn with the mouse
+## while holding the blue Charged Guard. Uses the one rewind charge per wave (no Flow cost) and plays the PLAYER ONLY back up to
+## REWIND_DURATION seconds while the world is tree-paused.
+const REWIND_DURATION: float = 10.0
+const REWIND_SAMPLE_INTERVAL: float = 1.0 / 30.0
+## 10 s at 30 Hz plus two slots so a full buffer spans the whole duration.
+const REWIND_BUFFER_SLOTS: int = 302
+## Real-time length of the visible backward playback: half the rewound span
+## (a full 10 s rewind plays back over 5 s; a shorter buffer plays proportionally).
+const REWIND_PLAYBACK_RATIO: float = 0.5
+const REWIND_PLAYBACK_TIME: float = REWIND_DURATION * REWIND_PLAYBACK_RATIO
+const REWIND_GESTURE_WINDOW: float = 3.0
+const REWIND_GESTURE_MIN_HEIGHT: float = 100.0
+## Circle bars (shared by the CCW rewind and CW slow circles), loosened for hand-drawn strokes:
+## overshoot up to 1.6 turns, wider aspect/radius tolerance, start anywhere in the upper part,
+## and no closure check (the full-turn sweep already proves the loop; closure rejected most
+## real circles that overshoot or stop short of the start point).
+const REWIND_CIRCLE_MIN_SWEEP: float = TAU * 0.8
+const REWIND_CIRCLE_MAX_SWEEP: float = TAU * 1.6
+const REWIND_CIRCLE_MIN_DIAMETER: float = 110.0
+const REWIND_CIRCLE_MAX_CLOSURE: float = 0.3 # retained for reference; no longer enforced
+const REWIND_CIRCLE_MAX_RADIUS_SPREAD: float = 0.7
+const REWIND_CIRCLE_MAX_ASPECT: float = 2.0
+## Start sector: within the top 40 % of the bounds and 45 % of the width from the centre line.
+const REWIND_CIRCLE_START_TOP_FRACTION: float = 0.4
+const REWIND_CIRCLE_START_SIDE_FRACTION: float = 0.45
+const REWIND_CIRCLE_MIN_SAMPLES: int = 16
+## Flow is clamped to 0..FLOW_MAX by gain_flow (canonical max). Rewind needs >= 70 %.
+const FLOW_MAX: float = 100.0
+const REWIND_FLOW_REQUIRED_RATIO: float = 0.7
+## A stroke pause longer than this restarts the ▽ capture, so a deliberate shape begins clean.
+const REWIND_GESTURE_STILL_RESET: float = 0.15
+const REWIND_GHOST_COUNT: int = 7
+## --- World rewind (stage 1): counter-clockwise INWARD spiral in blue Guard ------------------
+## Same once-per-wave charge as the circle. Screen y-down, CCW = negative atan2 sweep around the
+## bounds centre. Any start angle. See gesture_world_rewind_spiral_qualified().
+const WORLD_REWIND_SPIRAL_WINDOW: float = 3.5
+## Loosened for hand-drawn spirals (was 1.5 turns / 55 %): real strokes rarely tighten that much.
+const WORLD_REWIND_SPIRAL_MIN_SWEEP: float = TAU * 1.25
+const WORLD_REWIND_SPIRAL_MIN_DIAMETER: float = 140.0
+const WORLD_REWIND_SPIRAL_MAX_FINAL_RATIO: float = 0.75
+const WORLD_REWIND_SPIRAL_MIN_SAMPLES: int = 24
+## A brief slowdown near the spiral's tight end must not wipe it (the circle keeps 0.15 s).
+const WORLD_REWIND_SPIRAL_STILL_RESET: float = 0.4
+## The circle only fires once the stroke settles, so a spiral's first turn can't steal the charge.
+const REWIND_CIRCLE_SETTLE_TIME: float = 0.12
+const WORLD_REWIND_SPIRAL_WINDOWS: int = 6
+## A window may grow at most this much over the previous one, and only once (hand wobble).
+const WORLD_REWIND_SPIRAL_WINDOW_GROWTH: float = 1.08
+## The circle must hold a roughly constant size: its last across-diameter (chord to the point
+## half a turn later) must stay at least this fraction of its first, so a tightening spiral never
+## reads as the circle.
+const REWIND_CIRCLE_MIN_RADIUS_TREND: float = 0.8
 const CHARGED_GUARD_ARC_SLASH_WINDUP: float = 0.07
 const CHARGED_GUARD_ARC_SLASH_SWEEP: float = 0.30
 const CHARGED_GUARD_ARC_SLASH_RECOVER: float = 0.20
@@ -184,6 +247,11 @@ const CHARGED_GUARD_WHIRLWIND_LEAD_MAX: float = 0.44
 ## than the hand itself -- the hand stops at its minimum radius, the cursor does not -- so without
 ## a ceiling the divisor approaches zero and every movement would read as a break.
 const CHARGED_GUARD_BREAK_GEARING_MAX: float = 4.0
+## Code gate for the sideways-flick guard break. Off: a flick never breaks Guard; the deliberate
+## exit is the LMB+RMB pair (see _update_charged_guard_dual_click_from_state). The flick code and
+## its speed setting are kept intact so the break can be restored by flipping this gate.
+const CHARGED_GUARD_FLICK_BREAK_ENABLED: bool = false
+static var charged_guard_flick_break_gate: bool = CHARGED_GUARD_FLICK_BREAK_ENABLED
 ## The hold limit's own bounds, so a slider can never be set to something that means "never",
 ## which would put the guard back in the state where nothing guarantees a way out of it.
 const CHARGED_GUARD_HOLD_LIMIT_MIN: float = 1.0
@@ -544,8 +612,10 @@ static func charged_guard_thrust_damage_multiplier(sword_damage_multiplier: floa
 ## Health-damage scale across the blue cutting zone: blade base to visible tip.
 @export_range(0.1, 1.0, 0.05) var cutting_zone_base_damage_multiplier: float = 0.70
 @export_range(1.0, 1.5, 0.05) var cutting_zone_tip_damage_multiplier: float = 1.15
-## Shows a live count above the player and prints every detected sword slide.
-@export var debug_show_slide_counter: bool = true
+## Slides tab owns this diagnostic through the active contact preset; default OFF.
+var debug_show_slide_counter: bool:
+	get:
+		return get_combat_contact_setting("slide_debug_enabled") >= 0.5
 ## Shows the most recent sword interaction reason above the player.
 @export var debug_show_sword_events: bool = true
 ## Prints PARRY/CLASH events to the Godot debugger output.
@@ -686,6 +756,10 @@ const CHARGED_GUARD_DUAL_CLICK_JOIN_WINDOW: float = 0.08
 var charged_guard_dual_click_join_left: float = 0.0
 ## Previous-frame right-button state, so the join window only starts on a genuine press edge.
 var charged_guard_dual_click_right_was_down: bool = false
+## Anti-bounce latch for the LMB+RMB toggle. Set whenever the pair enters or exits Guard; the
+## pair cannot act again until both buttons have been released, so one held pair can never
+## enter and then immediately exit (or exit and then re-enter) Guard.
+var charged_guard_dual_click_needs_release: bool = false
 var charged_guard_gesture_stroke_time: float = 0.0
 var charged_guard_gesture_still: float = 0.0
 var charged_guard_gesture_active: bool = false
@@ -723,6 +797,35 @@ var charged_guard_gesture_spin_lead: float = 0.0
 var charged_guard_gesture_hand_offset: Vector2 = Vector2.ZERO
 var charged_guard_gesture_lunge_armed: bool = false
 var charged_guard_gesture_lunge_left: float = 0.0
+## ▽ Rewind state. The ring is preallocated once; recording only overwrites slots.
+var rewind_buffer: PlayerRewindBuffer = PlayerRewindBuffer.new(REWIND_BUFFER_SLOTS)
+var rewind_record_clock: float = 0.0
+var rewind_record_accumulator: float = 0.0
+var rewind_active: bool = false
+var rewind_playback_elapsed: float = 0.0
+var rewind_target_age: int = 0
+## Real-time length of THIS playback: REWIND_PLAYBACK_RATIO × the span actually rewound.
+var rewind_playback_duration: float = REWIND_PLAYBACK_TIME
+var rewind_previous_process_mode: Node.ProcessMode = Node.PROCESS_MODE_INHERIT
+var rewind_previous_tree_paused: bool = false
+var rewind_tint_layer: CanvasLayer = null
+var rewind_gesture_path: PackedVector2Array = PackedVector2Array()
+var rewind_gesture_stroke_time: float = 0.0
+var rewind_gesture_still: float = 0.0
+var rewind_gesture_has_cursor: bool = false
+var rewind_gesture_previous_cursor: Vector2 = Vector2.ZERO
+var world_rewind_recorder: WorldRewindRecorder = WorldRewindRecorder.new(REWIND_BUFFER_SLOTS, REWIND_DURATION)
+## True while the current playback is a WORLD rewind (spiral), false for the player-only circle.
+var rewind_world_active: bool = false
+## Early stop needs both buttons to be newly pressed during playback (anti-bounce).
+var rewind_early_stop_needs_release: bool = false
+var world_rewind_spiral_path: PackedVector2Array = PackedVector2Array()
+var world_rewind_spiral_time: float = 0.0
+var world_rewind_spiral_still: float = 0.0
+## A circle that has qualified waits here until the stroke settles (see REWIND_CIRCLE_SETTLE_TIME).
+var rewind_circle_pending: bool = false
+## Clockwise mirror of rewind_circle_pending (World Slow), same settle rule.
+var world_slow_circle_pending: bool = false
 var sword_fire_left: float = 0.0
 var chakram_aim_trail_left: float = 0.0
 var chakram_aim_trail_start: Vector2 = Vector2.ZERO
@@ -755,7 +858,76 @@ var player_sword_visual: Node2D = null
 ## and the hit-capsule widening table above. Set by main.gd at run start
 ## from HomeProgression.equipped_gear_item(); armory_config.gd owns the
 ## list of valid base names.
+var dual_blade_states: Array[SwordBladeState] = []
+var active_blade_index: int = -1
+var dual_response_aim_offset: float = 0.0
+var dual_response_rate: float = 1.0
+var dual_committed_pose: Dictionary = {}
+var dualblade_equipped: bool = false
+## Shared half-stroke ownership: left (0), right (1), repeating. Not blade-local.
+var twin_stab_cycle: int = 0
+var twin_stab_cycle_started: bool = false
+var moulinet_full8_reverse_cycle: bool = false
+## Temporary twin-blade motion experiment. False restores the metronome sweep.
+const TWIN_STABS_ONLY = false
+## Temporary legacy Metronome Thrusts trial; false restores the pulse experiment.
+const TWIN_FORM7_TRIAL = false
+## Temporary original Form II thrust trial; uses the existing thrust-count tuning.
+const TWIN_FORM2_TRIAL = false
+## Double-Ended Iron Sword (Test): reuses the two-response dual foundation, but the
+## two "blades" are the two ENDS of one rigid weapon whose grip centre sits on the
+## hand point, axis perpendicular to aim. Each end's segment runs from the grip
+## centre outward; its inner handle span classifies through the existing Hilt Bash path.
+var double_ended_equipped: bool = false
+## Measured from res://assets/generated/Double-Ended Iron Sword.png (1024x1536):
+## centre y=766, guard outer faces y=426/1066 (avg 320px from centre), tips y=27/1506
+## (avg 740px). Rendered at 0.1 px/px -> 32px handle + 42px blade per end.
+const DOUBLE_ENDED_TEXTURE: Texture2D = preload("res://assets/generated/Double-Ended Iron Sword.png")
+const DOUBLE_ENDED_ART_SCALE: float = 0.1
+const DOUBLE_ENDED_ART_CENTER_Y: float = 766.0
+const DOUBLE_ENDED_HANDLE_HALF: float = 32.0
+const DOUBLE_ENDED_END_LENGTH: float = 74.0
+## Iron Greatsword (Test): single blade with its own art and a TRACED spine +
+## per-point half-width (variable radius) shape that replaces the 3-point
+## slider polyline for this weapon only. Geometry identity stays Basic Longsword
+## (equipped_sword_id) for edge side/roll; length/shape/radius/texture branch here.
+var greatsword_equipped: bool = false
+const GREATSWORD_TEXTURE: Texture2D = preload("res://assets/generated/Iron Greatsword.png")
+## 1.2x Basic Longsword BLADE_LENGTH (84 -> 100.8 px).
+const GREATSWORD_LENGTH_RATIO: float = 1.2
+## Fixed weapon property (not a slider): multiplies dealt sword damage.
+const WEAPON_DAMAGE_MULTIPLIERS: Dictionary = {ArmoryConfig.GREATSWORD_NAME: 1.2}
+## Traced from res://assets/generated/Iron Greatsword.png (1024x1536, real alpha).
+## Method (execute_script Image scan, alpha > 0.5): guard lower face y=399
+## (first row below the crossguard narrower than 160px), blade tip y=1448 (last
+## opaque row) -> 1049 art-px blade; hilt axis x=512.5 (grip row centres, y=150..330);
+## grip centre y~230 (pommel ~70..120, guard 340..399). For each t the row
+## y = lerp(399,1448,t) was scanned for its leftmost/rightmost opaque pixel:
+## centre=(l+r)/2, half_width=(r-l+1)/2. Offsets are art-px of the centre from
+## the hilt axis (+ = art +x), t=0 pinned to 0 so the hilt sits on the axis.
+const GREATSWORD_ART_BLADE_PX: float = 1049.0
+const GREATSWORD_ART_GUARD: Vector2 = Vector2(512.5, 399.0)
+const GREATSWORD_ART_GRIP_CENTER_Y: float = 230.0
+const GREATSWORD_TRACE: Array = [
+	{"t": 0.0, "offset": 0.0, "half_width": 57.5},
+	{"t": 0.1, "offset": 1.5, "half_width": 67.5},
+	{"t": 0.25, "offset": 1.5, "half_width": 69.5},
+	{"t": 0.4, "offset": 1.0, "half_width": 71.0},
+	{"t": 0.55, "offset": 1.5, "half_width": 72.5},
+	{"t": 0.7, "offset": 1.5, "half_width": 74.5},
+	{"t": 0.8, "offset": 9.5, "half_width": 67.5},
+	{"t": 0.88, "offset": 27.5, "half_width": 50.5},
+	{"t": 0.94, "offset": 48.5, "half_width": 31.5},
+	{"t": 1.0, "offset": 80.0, "half_width": 1.0},
+]
 var equipped_sword_id: String = "Basic Longsword"
+## Normal-combat hand-tuning profile for the equipped test capability. The
+## twin/double-ended weapons keep Longsword geometry/texture (equipped_sword_id)
+## but read their own combat_weapon_hand_settings entry keyed by item base name.
+var combat_tuning_profile_id: String = "Basic Longsword"
+## Test weapons whose hand-tuning profile is seeded once from Basic Longsword.
+const LONGSWORD_SEEDED_TUNING_PROFILES: Array[String] = [ArmoryConfig.DUALBLADE_NAME, ArmoryConfig.DOUBLE_ENDED_NAME, ArmoryConfig.GREATSWORD_NAME]
+const TUNING_PROFILE_SEED_SOURCE: String = "Basic Longsword"
 var equipped_armor_id: String = "Basic Leather Armor"
 var hd_part_time: float = 0.0
 ## Elbow joint angle — trails aim_angle at elbow_joint_speed, forming the second
@@ -784,6 +956,34 @@ var previous_blade_end: Vector2 = Vector2.ZERO
 var current_blade_samples: PackedVector2Array = PackedVector2Array()
 var previous_blade_samples: PackedVector2Array = PackedVector2Array()
 var blade_velocity: Vector2 = Vector2.ZERO
+<<<<<<< Updated upstream
+=======
+## PX Mode stow. Set ONLY by PX Mode. When ON the authored sword is fully inert —
+## its blade samples clear and no contact can fire — so the physics sword is the
+## only sword in the world. Default false: the game is completely untouched unless
+## PX Mode turns it on.
+var sword_stowed: bool = false
+## PX Mode borrowing the primary fire button: while true the game's chakram (and the
+## dual-click Guard combo) stay dark so PX can use LMB for its own "Coil & Whip"
+## charge. Default false — the game is completely untouched unless PX Mode claims the
+## button, and PX always gives it back on shutdown.
+var primary_fire_owned_by_px: bool = false
+## BDOS-only persistent collision authority. No shell body and no PX dependency.
+var collision_sword_solver: BDOSSwordSolver = null
+var collision_sword_pose: Dictionary = {}
+var collision_sword_roll: float = 1.0
+var collision_sword_previous_priority: int = 0
+var collision_sword_late_tick: bool = false
+var collision_sword_unsupported_shape_warned: bool = false
+## Lightweight solver-cost instrumentation. OFF unless blade_bone_debug_enabled is on
+## or the live test bench flips collision_sword_perf_debug. Never unconditional.
+var collision_sword_perf_debug: bool = false
+var collision_sword_solve_calls: int = 0
+var collision_sword_solve_usec_total: int = 0
+var collision_sword_solve_usec_max: int = 0
+## Per-frame cap on the depenetration pressure handed to a yielding enemy body.
+const COLLISION_SWORD_PUSH_PRESSURE_CAP: float = 30.0
+>>>>>>> Stashed changes
 var blade_trail_points: Array[Vector2] = []
 var hilt_trail_points: Array[Vector2] = []
 var moulinet_aim_direction_sign: float = 1.0
@@ -804,6 +1004,23 @@ var blade_sink_contact_left: float = 0.0
 ## metronome clock keep running independently.
 var blade_bone_stop_left: float = 0.0
 var blade_bone_stop_cooldown_left: float = 0.0
+<<<<<<< Updated upstream
+=======
+## Bone Clash. Catching the inner core reads as a solid strike -- a clash-weight halt, a shake and
+## the clash clang -- as presentation only, with the lightest knockback. Its own cooldown makes it punctuation, so a blade held on a core clangs once rather than every
+## frame.
+const BONE_CLASH_HITSTOP: float = 0.05
+const BONE_CLASH_KNOCKBACK: float = 55.0
+const BONE_CLASH_SHAKE_STRENGTH: float = 3.0
+const BONE_CLASH_SHAKE_DURATION: float = 0.10
+const BONE_CLASH_COOLDOWN: float = 0.6
+## Shield Clash. The Ogre's shield knocks the player back and briefly stuns them; the sword is not
+## explicitly frozen or pinned beyond the ordinary brief player-stun update pause.
+const SHIELD_CLASH_STUN_DURATION: float = 0.2
+const SHIELD_CLASH_KNOCKBACK: float = 420.0
+const SHIELD_CLASH_HITSTOP: float = 0.09
+var bone_clash_cooldown_left: float = 0.0
+>>>>>>> Stashed changes
 var blade_glance_angle: float = 0.0
 ## Wall Block's turn-aside, deliberately kept apart from the bone glance above so the two can
 ## never fight over one value: a wall has its own bounded angle and its own ease back to zero,
@@ -1118,8 +1335,15 @@ signal health_changed(current: float, maximum: float)
 signal style_changed(style_name: String)
 signal player_died()
 signal flow_changed(current: float, maximum: float)
+signal rewind_finished(restored_position: Vector2)
+## One rewind charge per wave; Main refills it at each wave start and drives the HUD icon.
+signal rewind_charge_changed(available: bool)
+## One World Slow charge per wave (separate from rewind); Main refills it and drives SlowIcon.
+signal slow_charge_changed(available: bool)
 
 func _ready() -> void:
+	add_to_group(WorldRewindRecorder.HOST_GROUP)
+	add_to_group(WorldRewindRecorder.PERSISTENT_GROUP)
 	z_as_relative = false
 	z_index = 2
 	health = max_health
@@ -1233,7 +1457,35 @@ func ensure_experimental_form_initialized() -> bool:
 				if not values.is_empty():
 					weapon_values[key] = values
 		combat_weapon_hand_settings[sword_id] = weapon_values
+	# Seeding is in-memory only (not reported as a change) so loading never
+	# writes the user's preset file; the next explicit SAVE persists it.
+	ensure_weapon_tuning_profiles_seeded()
 	return changed
+
+## Every selectable normal-combat tuning profile, in selector order.
+static func combat_tuning_profile_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for raw_id: Variant in BLADE_PROFILES.keys():
+		ids.append(str(raw_id))
+	ids.append_array(LONGSWORD_SEEDED_TUNING_PROFILES)
+	return ids
+
+## One-time seed: a missing test-weapon profile becomes a deep copy of the
+## current Basic Longsword overrides, so behavior is unchanged until tuned.
+## Existing profiles are never overwritten.
+func ensure_weapon_tuning_profiles_seeded() -> bool:
+	var changed: bool = false
+	var source: Dictionary = combat_weapon_hand_settings.get(TUNING_PROFILE_SEED_SOURCE, {}) as Dictionary
+	for profile_id: String in LONGSWORD_SEEDED_TUNING_PROFILES:
+		if not combat_weapon_hand_settings.has(profile_id):
+			combat_weapon_hand_settings[profile_id] = source.duplicate(true)
+			changed = true
+	return changed
+
+func active_combat_tuning_profile_id() -> String:
+	if (dualblade_equipped or greatsword_equipped) and combat_tuning_profile_id in LONGSWORD_SEEDED_TUNING_PROFILES:
+		return combat_tuning_profile_id
+	return equipped_sword_id
 
 
 func _synchronize_rank_zero_bonus_state() -> void:
@@ -1264,9 +1516,21 @@ func set_training_menu_input_locked(locked: bool) -> void:
 	style_next_was_down = _controller_button_pressed(CONTROLLER_STYLE_NEXT_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_X)
 	if grapple_controller != null: grapple_controller.cancel_and_latch(_grapple_button_pressed())
 
+func _ability_ui_blocks_mouse_combat() -> bool:
+	if not is_inside_tree():
+		return false
+	var any_down: bool = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	if not any_down:
+		ability_ui_mouse_capture = false
+	var bar: Node = get_node_or_null("../CanvasLayer/AbilityBar")
+	var pointer_over: bool = bar != null and bool(bar.call("is_pointer_over_bar"))
+	if pointer_over and any_down:
+		ability_ui_mouse_capture = true
+	return pointer_over or ability_ui_mouse_capture
+
 func _grapple_button_pressed() -> bool:
-	# RMB remains valid even if a controller profile was previously selected.
-	return Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	# RMB remains the core combat binding; HUD clicks never fire a tether.
+	return Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and not _ability_ui_blocks_mouse_combat()
 
 func reset_resonant_glyph_timer() -> void:
 	resonant_glyph_spawn_left = BonusConfig.resonant_glyph_cooldown(resonant_glyph_rank)
@@ -1332,7 +1596,7 @@ func get_grapple_hand_position() -> Vector2:
 	var sword_data: Dictionary = _sword_transform()
 	var sword_angle: float = float(sword_data["angle"])
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(sword_angle)
-	return (sword_data["start"] as Vector2) - blade_direction * BLADE_HILT_INSET
+	return (sword_data["start"] as Vector2) - blade_direction * _blade_hilt_inset()
 
 func get_mobile_grapple_aim_point() -> Vector2:
 	var aim_direction: Vector2 = mobile_grapple_aim_direction if mobile_input_enabled else _current_aim_direction()
@@ -1342,7 +1606,7 @@ func get_mobile_grapple_aim_point() -> Vector2:
 func _input(event: InputEvent) -> void:
 	if not event is InputEventMouseMotion:
 		return
-	if training_menu_input_locked or hit_stagger_left > 0.0:
+	if rewind_active or training_menu_input_locked or hit_stagger_left > 0.0:
 		charged_guard_mouse_motion_delta = Vector2.ZERO
 		return
 	var mouse_motion: InputEventMouseMotion = event as InputEventMouseMotion
@@ -1350,26 +1614,20 @@ func _input(event: InputEvent) -> void:
 	charged_guard_mouse_motion_delta += screen_to_world.basis_xform(mouse_motion.relative)
 
 func _physics_process(delta: float) -> void:
+	_tick_ability_cooldowns(delta)
+	if rewind_active:
+		_advance_rewind_playback(delta)
+		return
+	_record_rewind_sample(delta)
+	_tick_world_slow(delta)
+	_sync_collision_sword_tick_order()
 	# Sustained Form III focus slows the world, but its sword/aim clock is
 	# compensated back to real-time. Brief ordinary clash hitstop remains felt.
 	var sword_control_delta: float = _experimental_sword_control_delta(delta)
-	experimental_bind_cooldown_left = maxf(0.0, experimental_bind_cooldown_left - sword_control_delta)
-	experimental_reentry_time_left = maxf(0.0, experimental_reentry_time_left - sword_control_delta)
-	if experimental_reentry_time_left <= 0.0 or not is_instance_valid(experimental_reentry_opponent):
-		_clear_experimental_reentry()
-	experimental_bind_contact_seen = false
-	if not is_experimental_bind_form() or get_combat_hand_setting("bind_enabled") < 0.5:
-		_release_experimental_bind("form changed")
-		_clear_experimental_reentry()
+	_dispatch_blade_operation(func() -> void: _tick_blade_response_timers(delta, sword_control_delta))
+	chakram_aim_trail_left = maxf(0.0, chakram_aim_trail_left - delta)
 	invulnerable = maxf(0.0, invulnerable - delta)
 	metronome_reversal_flash_left = maxf(0.0, metronome_reversal_flash_left - delta)
-	sword_fire_left = maxf(0.0, sword_fire_left - delta)
-	var active_recoil_return: float = get_combat_contact_setting("blade_recoil_return")
-	var recoil_return_rate: float = sword_hit_recoil_return_speed if combat_contact_preset == 1 else active_recoil_return
-	sword_hit_recoil_offset = move_toward(sword_hit_recoil_offset, 0.0, deg_to_rad(recoil_return_rate) * delta)
-	wall_recoil_cooldown = maxf(0.0, wall_recoil_cooldown - delta)
-	blade_freeze_left = maxf(0.0, blade_freeze_left - delta)
-	grip_authority_left = maxf(0.0, grip_authority_left - delta)
 	if dash_timer.is_stopped() and dash_charges < max_dash_charges:
 		dash_charges += 1
 		if dash_charges < max_dash_charges:
@@ -1380,18 +1638,6 @@ func _physics_process(delta: float) -> void:
 	if deflect_rank > 0 and deflect_charges < maximum_deflect_charges and deflect_recharge_left <= 0.0:
 		deflect_charges += 1
 		deflect_recharge_left = BonusConfig.deflect_recharge(deflect_rank)
-	clash_recovery_left = maxf(0.0, clash_recovery_left - delta)
-	blade_contact_flash_left = maxf(0.0, blade_contact_flash_left - delta)
-	chakram_aim_trail_left = maxf(0.0, chakram_aim_trail_left - delta)
-	_refresh_live_blade_slide_state()
-	slide_cling_left = maxf(0.0, slide_cling_left - delta)
-	if slide_cling_left <= 0.0 and preset_2_slide_opponent != null:
-		_end_live_blade_slide()
-	slide_audio_left = maxf(0.0, slide_audio_left - delta)
-	if slide_audio_left <= 0.0 and slide_audio_player != null and slide_audio_player.is_playing(): slide_audio_player.stop()
-	preset_2_slide_visual_left = maxf(0.0, preset_2_slide_visual_left - delta)
-	contact_spark_left = maxf(0.0, contact_spark_left - delta)
-	sword_event_left = maxf(0.0, sword_event_left - delta)
 	for enemy_id: int in enemy_rehit_cooldowns.keys():
 		enemy_rehit_cooldowns[enemy_id] = maxf(0.0, float(enemy_rehit_cooldowns[enemy_id]) - delta)
 	hit_stagger_left = maxf(0.0, hit_stagger_left - delta)
@@ -1461,11 +1707,12 @@ func _physics_process(delta: float) -> void:
 	if flow_trail_points.size() > flow_trail_length: flow_trail_points.pop_back()
 	queue_redraw()
 	if hit_stagger_left > 0.0:
-		_release_experimental_bind("player staggered")
+		_dispatch_blade_operation(func() -> void: _release_experimental_bind("player staggered"))
 		hit_knockback += grapple_acceleration * delta
 		velocity = hit_knockback
 		hit_knockback = hit_knockback.move_toward(Vector2.ZERO, 1800.0 * delta)
 		move_and_slide()
+		_dispatch_blade_operation(func() -> void: _maintain_staggered_blade())
 		queue_redraw()
 		return
 	flow_idle_time += delta
@@ -1485,8 +1732,7 @@ func _physics_process(delta: float) -> void:
 		velocity = velocity.move_toward(Vector2.ZERO, movement_deceleration * delta)
 		move_and_slide()
 	else:
-		# Bind is the sole player-facing sword form. Other profiles remain internal
-		# for development comparisons and persisted-ID compatibility only.
+		_handle_style_input()
 		_handle_dash_input()
 		_handle_chakram_input()
 		_handle_movement(delta, grapple_acceleration)
@@ -1504,11 +1750,21 @@ func _physics_process(delta: float) -> void:
 	# pointer's place on the screen.
 	charged_guard_gesture_cursor = get_viewport().get_mouse_position()
 	_update_charged_guard_entry_gesture(sword_control_delta)
+	_update_rewind_gesture(delta)
+	if rewind_active:
+		return
 	_update_charged_guard_gesture(sword_control_delta)
 	_update_charged_guard(sword_control_delta)
+<<<<<<< Updated upstream
 	_apply_experimental_bind_retention(sword_control_delta)
+=======
+	if not dualblade_equipped:
+		_apply_experimental_bind_retention(sword_control_delta)
+		_apply_flesh_bind_retention()
+>>>>>>> Stashed changes
 	_update_sword(sword_control_delta)
-	_finish_experimental_bind_frame(sword_control_delta)
+	_dispatch_blade_operation(func() -> void: _finish_experimental_bind_frame(sword_control_delta))
+	if dualblade_equipped: _update_dual_bind_focus()
 	_update_knight_sprite_hd()
 	queue_redraw()
 
@@ -1536,12 +1792,34 @@ func set_visual_style(mode: String) -> void:
 	if hd_feet_sprite != null: hd_feet_sprite.visible = false
 
 func set_equipped_sword(base_name: String) -> void:
+	var wants_double_ended: bool = base_name == ArmoryConfig.DOUBLE_ENDED_NAME
+	var wants_dual: bool = base_name == ArmoryConfig.DUALBLADE_NAME or wants_double_ended
+	var entering_twin: bool = wants_dual and not wants_double_ended and (not dualblade_equipped or double_ended_equipped)
+	if wants_dual != dualblade_equipped or wants_double_ended != double_ended_equipped:
+		_clear_dual_blades()
+		dualblade_equipped = wants_dual
+		double_ended_equipped = wants_double_ended
+		twin_stab_cycle = 0
+		twin_stab_cycle_started = false
+		if wants_dual: _seed_dual_blades()
+	var wants_greatsword: bool = base_name == ArmoryConfig.GREATSWORD_NAME
+	if wants_greatsword != greatsword_equipped:
+		_release_blade_shell() # shell shape set differs per weapon; rebuilt next update
+		greatsword_equipped = wants_greatsword
 	equipped_sword_id = base_name if BLADE_PROFILES.has(base_name) else "Basic Longsword"
+	combat_tuning_profile_id = base_name if base_name in LONGSWORD_SEEDED_TUNING_PROFILES else equipped_sword_id
 	blade_roll_target = blade_roll_target_for_travel(_blade_edge_side(), blade_travel_sign)
+	if entering_twin:
+		set_sword_form(SwordStyle.WINDUP_THRUST)
 	queue_redraw()
 
 func equipped_sword_texture() -> Texture2D:
+	if greatsword_equipped: return GREATSWORD_TEXTURE
 	return CURVED_SWORD_TEXTURE if equipped_sword_id == "Basic Curved Sword" else SWORD_TEXTURE
+
+## Fixed per-weapon damage property (data, not tuning). 1.0 for ordinary swords.
+func weapon_damage_multiplier() -> float:
+	return float(WEAPON_DAMAGE_MULTIPLIERS.get(ArmoryConfig.GREATSWORD_NAME if greatsword_equipped else combat_tuning_profile_id, 1.0))
 
 func set_equipped_armor(base_name: String) -> void:
 	equipped_armor_id = base_name if ARMOR_VISUALS.has(base_name) else "Basic Leather Armor"
@@ -1962,6 +2240,14 @@ func _throw_chakram() -> void:
 
 func _handle_chakram_input() -> void:
 	var down: bool = mobile_chakram_held if mobile_input_enabled else (_controller_button_pressed(CONTROLLER_CHAKRAM_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
+	if not mobile_input_enabled and input_mode != INPUT_MODE_CONTROLLER and _ability_ui_blocks_mouse_combat():
+		chakram_key_was_down = down
+		return
+	if primary_fire_owned_by_px:
+		# PX Mode owns the button while its charge is ON: never throw a chakram, and
+		# leave a clean edge behind so returning to OS mode can't fire a phantom.
+		chakram_key_was_down = down
+		return
 	if charged_guard_dual_click_held:
 		# The dual mouse-button Guard combo owns LMB while the pair is held: it must not also
 		# throw the chakram, and releasing half the combo must not leave a phantom press behind.
@@ -1989,28 +2275,43 @@ func notify_sword_contact() -> void:
 	pass
 
 func _handle_style_input() -> void:
-	if sword_style == SwordStyle.METRONOME_BIND:
-		sword_style = SwordStyle.METRONOME_BIND_B
 	var previous_down: bool = _controller_button_pressed(CONTROLLER_STYLE_PREVIOUS_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_Z)
 	var next_down: bool = _controller_button_pressed(CONTROLLER_STYLE_NEXT_BUTTON) if input_mode == INPUT_MODE_CONTROLLER else Input.is_physical_key_pressed(KEY_X)
 	if previous_down and not style_previous_was_down:
-		var current_style_index: int = STYLE_CYCLE_ORDER.find(int(sword_style))
-		var previous_style_index: int = posmod(current_style_index - 1, STYLE_CYCLE_ORDER.size())
-		sword_style = STYLE_CYCLE_ORDER[previous_style_index] as SwordStyle
-		if sword_style in [SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]:
-			moulinet_continuous_angle = sword_phase * 2.0 * moulinet_aim_direction_smoothed
-		hit_ids.clear()
-		style_changed.emit(_style_name())
-	if next_down and not style_next_was_down:
-		var current_style_index: int = STYLE_CYCLE_ORDER.find(int(sword_style))
-		var next_style_index: int = posmod(current_style_index + 1, STYLE_CYCLE_ORDER.size())
-		sword_style = STYLE_CYCLE_ORDER[next_style_index] as SwordStyle
-		if sword_style in [SwordStyle.MOULINET_3, SwordStyle.MOULINET_4]:
-			moulinet_continuous_angle = sword_phase * 2.0 * moulinet_aim_direction_smoothed
-		hit_ids.clear()
-		style_changed.emit(_style_name())
+		cycle_sword_form(-1)
+	elif next_down and not style_next_was_down:
+		cycle_sword_form(1)
 	style_previous_was_down = previous_down
 	style_next_was_down = next_down
+
+func cycle_sword_form(direction: int) -> void:
+	var index: int = STYLE_CYCLE_ORDER.find(int(sword_style))
+	set_sword_form(STYLE_CYCLE_ORDER[posmod(index + direction, STYLE_CYCLE_ORDER.size())] if index >= 0 else STYLE_CYCLE_ORDER[0])
+
+func set_sword_form(style: int) -> void:
+	if style not in STYLE_CYCLE_ORDER or style == int(sword_style):
+		return
+	# Drop old contact owners and geometry before the new form can sweep.
+	# Enemy rehit cooldowns are shared and deliberately survive switching.
+	_clear_dual_blades()
+	if dualblade_equipped:
+		_seed_dual_blades()
+	_release_charged_guard_hold()
+	sword_style = style as SwordStyle
+	sword_phase = PI * 0.5
+	swing_time = 0.0
+	twin_stab_cycle = 0
+	twin_stab_cycle_started = true
+	moulinet_continuous_angle = 0.0
+	moulinet_full8_reverse_cycle = false
+	authored_apex_hang_left = 0.0
+	authored_metronome_state = AuthoredMetronomeState.INACTIVE
+	hit_ids.clear()
+	style_changed.emit(_style_name())
+	queue_redraw()
+
+func _is_shared_motion_form() -> bool:
+	return sword_style in [SwordStyle.WINDUP_THRUST, SwordStyle.MOULINET, SwordStyle.MOULINET_3]
 
 func is_experimental_bind_form() -> bool:
 	return int(sword_style) in EXPERIMENTAL_BIND_STYLES
@@ -2026,10 +2327,10 @@ func experimental_overhead_debug_lines() -> PackedStringArray:
 	])
 
 func _is_windup_metronome_style() -> bool:
-	return sword_style == SwordStyle.METRONOME_WINDUP or is_experimental_bind_form()
+	return sword_style in [SwordStyle.METRONOME_WINDUP, SwordStyle.WINDUP_THRUST] or is_experimental_bind_form()
 
 func _is_metronome_style() -> bool:
-	return sword_style in [SwordStyle.METRONOME, SwordStyle.METRONOME_WINDUP] or is_experimental_bind_form()
+	return sword_style in [SwordStyle.METRONOME, SwordStyle.METRONOME_WINDUP, SwordStyle.WINDUP_THRUST] or is_experimental_bind_form()
 
 func set_metronome_visualizer_counts(value: int) -> void:
 	metronome_visualizer_counts = clampi(value, 1, 4)
@@ -2047,16 +2348,20 @@ func set_metronome_visualizer_palette(value: String) -> void:
 		metronome_visualizer.set_palette(metronome_visualizer_palette)
 
 func _style_name() -> String:
-	match sword_style:
+	return sword_form_name(int(sword_style))
+
+static func sword_form_name(style: int) -> String:
+	match style:
 		SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B: return "Form I: Bind"
-		SwordStyle.METRONOME_WINDUP: return "Form II: Metronome Wind-up"
-		SwordStyle.METRONOME: return "Form III: Metronome V"
-		SwordStyle.THRUST: return "Form V: Thrusting A"
-		SwordStyle.MOULINET: return "Form VI: Moulinet 1 (Full 8)"
-		SwordStyle.MOULINET_2: return "Form VII: Moulinet 2 (Single Lobe)"
-		SwordStyle.MOULINET_3: return "Form VIII: Moulinet 3 (Aim-Driven)"
-		SwordStyle.MOULINET_4: return "Form IX: Flattened Infinity"
-		SwordStyle.THRUST_METRONOME: return "Form X: Metronome Thrusts"
+		SwordStyle.WINDUP_THRUST: return "Form II: Thrust"
+		SwordStyle.MOULINET: return "Form III: Full Figure-8"
+		SwordStyle.MOULINET_3: return "Form IV: Aim-Driven"
+		SwordStyle.METRONOME_WINDUP: return "Legacy: Metronome Wind-up"
+		SwordStyle.METRONOME: return "Legacy: Metronome V"
+		SwordStyle.THRUST: return "Legacy: Thrusting A"
+		SwordStyle.MOULINET_2: return "Legacy: Single Lobe"
+		SwordStyle.MOULINET_4: return "Legacy: Flattened Infinity"
+		SwordStyle.THRUST_METRONOME: return "Legacy: Metronome Thrusts"
 		_: return "Unknown Form"
 
 func _is_elbow_style() -> bool:
@@ -2424,7 +2729,7 @@ func _current_sword_arc_degrees() -> float:
 	if combat_contact_preset == 3:
 		var min_arc_scale: float = get_combat_contact_setting("p3_min_arc_scale")
 		arc *= lerpf(min_arc_scale, 1.0, flow_ratio)
-	var active_phase: float = sword_phase if sword_phase != 0.0 or swing_time == 0.0 else swing_time * TAU * _sword_cycle_frequency()
+	var active_phase: float = _form_phase()
 	var phase_arc_bonus: float = absf(cos(active_phase)) * swing_phase_bonus
 	return arc * (1.0 + phase_arc_bonus)
 
@@ -2447,7 +2752,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 	var saved_preset: int = combat_contact_preset
 	combat_contact_preset = src_p
 	for setting_name: String in [
-		"slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction",
+		"slide_debug_enabled", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction",
 		"slide_speed", "slide_duration", "slide_travel", "slide_spread",
 		"clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger",
 		"clash_recovery", "clash_flow", "clash_contact_tolerance", "clash_angle_min",
@@ -2501,7 +2806,7 @@ func copy_preset_settings(source_preset: int, target_preset: int) -> void:
 				continue
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
-		for hand_key: String in CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS + CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS:
+		for hand_key: String in CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS + CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS + CombatSettingsConfig.THRUST_HAND_TUNING_KEYS:
 			if not copied_hand.has(hand_key):
 				copied_hand[hand_key] = get_combat_hand_setting(hand_key)
 		sword_style = saved_style
@@ -2525,13 +2830,32 @@ func _default_hand_ranges() -> Vector2:
 func get_combat_hand_setting_for_sword(sword_id: String, setting: String) -> float:
 	if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS:
 		return _get_shared_combat_hand_setting(setting)
-	var weapon_overrides: Dictionary = combat_weapon_hand_settings.get(sword_id, {}) as Dictionary
-	var values: Dictionary = weapon_overrides.get(_combat_hand_key(), {}) as Dictionary
+	return _resolve_weapon_hand_setting(sword_id, setting)
+
+## Profile value -> (seeded test profiles only) Basic Longsword value -> shared.
+func _resolve_weapon_hand_setting(profile_id: String, setting: String) -> float:
+	var key: String = _combat_hand_key()
+	# New public motion forms share the Longsword authority on every weapon.
+	# Preserve parked per-weapon profiles; do not copy or overwrite them.
+	if _is_shared_motion_form():
+		profile_id = TUNING_PROFILE_SEED_SOURCE
+	var weapon_overrides: Dictionary = combat_weapon_hand_settings.get(profile_id, {}) as Dictionary
+	var values: Dictionary = weapon_overrides.get(key, {}) as Dictionary
 	if values.has(setting):
 		return float(values[setting])
+	if sword_style == SwordStyle.WINDUP_THRUST:
+		var baseline: Dictionary = weapon_overrides.get(_canonical_bind_hand_key(), {}) as Dictionary
+		if baseline.has(setting):
+			return float(baseline[setting])
+	if profile_id in LONGSWORD_SEEDED_TUNING_PROFILES:
+		var seed_values: Dictionary = (combat_weapon_hand_settings.get(TUNING_PROFILE_SEED_SOURCE, {}) as Dictionary).get(key, {}) as Dictionary
+		if seed_values.has(setting):
+			return float(seed_values[setting])
 	return _get_shared_combat_hand_setting(setting)
 
 func set_combat_hand_setting_for_sword(sword_id: String, setting: String, value: float) -> void:
+	if _is_shared_motion_form():
+		sword_id = TUNING_PROFILE_SEED_SOURCE
 	if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS:
 		set_combat_hand_setting(setting, value)
 		return
@@ -2547,16 +2871,17 @@ func set_combat_hand_setting_for_sword(sword_id: String, setting: String, value:
 func get_combat_hand_setting(setting: String) -> float:
 	if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS:
 		return _get_shared_combat_hand_setting(setting)
-	var weapon_overrides: Dictionary = combat_weapon_hand_settings.get(equipped_sword_id, {}) as Dictionary
-	var values: Dictionary = weapon_overrides.get(_combat_hand_key(), {}) as Dictionary
-	if values.has(setting):
-		return float(values[setting])
-	return _get_shared_combat_hand_setting(setting)
+	return _resolve_weapon_hand_setting(active_combat_tuning_profile_id(), setting)
 
 func _get_shared_combat_hand_setting(setting: String) -> float:
 	var key: String = _canonical_bind_hand_key() if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS else _combat_hand_key()
 	var defaults: Vector2 = _default_hand_ranges()
 	var values: Dictionary = combat_hand_settings.get(key, {})
+	if sword_style == SwordStyle.WINDUP_THRUST:
+		# Start the new Thrust form from today's Bind movement tuning, read-only.
+		var baseline: Dictionary = (combat_hand_settings.get(_canonical_bind_hand_key(), {}) as Dictionary).duplicate(true)
+		baseline.merge(values, true)
+		values = baseline
 	var distinct: bool = combat_contact_preset >= 2
 	var is_metro: bool = _is_metronome_style()
 	match setting:
@@ -2596,6 +2921,11 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		"rotation": return float(values.get("rotation", 9.5 if (distinct and is_metro) else _style_default_rotation_speed()))
 		"arc": return float(values.get("arc", 105.0 if (distinct and is_metro) else _style_default_arc_degrees()))
 		"frequency": return float(values.get("frequency", 0.65 if (distinct and is_metro) else _style_default_swing_frequency()))
+		"thrust_coil_px": return float(values.get("thrust_coil_px", 10.0))
+		"thrust_extension_px": return float(values.get("thrust_extension_px", 20.0))
+		"thrust_windup_end": return float(values.get("thrust_windup_end", 0.40))
+		"thrust_peak": return float(values.get("thrust_peak", 0.50))
+		"thrust_recover_end": return float(values.get("thrust_recover_end", 0.80))
 		"thrusts_per_cycle": return float(clampi(roundi(float(values.get("thrusts_per_cycle", 7.0))), 2, 15))
 		"moulinet_aim_smoothing": return float(values.get("moulinet_aim_smoothing", 6.0))
 		"slide_sparks": return float(values.get("slide_sparks", 6.0))
@@ -2636,6 +2966,9 @@ func _get_shared_combat_hand_setting(setting: String) -> float:
 		_: return 0.0
 
 func set_combat_hand_setting(setting: String, value: float) -> void:
+	if _is_shared_motion_form():
+		set_combat_hand_setting_for_sword(TUNING_PROFILE_SEED_SOURCE, setting, value)
+		return
 	var key: String = _canonical_bind_hand_key() if is_experimental_bind_form() and setting in EXPERIMENTAL_BIND_SETTING_KEYS else _combat_hand_key()
 	if not combat_hand_settings.has(key): combat_hand_settings[key] = {}
 	var values: Dictionary = combat_hand_settings[key]
@@ -2804,6 +3137,9 @@ func _get_base_combat_contact_setting(setting: String) -> float:
 		"charged_guard_gestures_enabled": result = 0.0
 		"charged_guard_entry_g_enabled": result = 0.0
 		"charged_guard_entry_z_enabled": result = 0.0
+		"rewind_gesture_enabled": result = 1.0
+		"world_rewind_gesture_enabled": result = 1.0
+		"world_slow_gesture_enabled": result = 1.0
 		"charged_guard_pommel_entry_enabled": result = 1.0
 		"charged_guard_dual_click_entry_enabled": result = 1.0
 		"charged_guard_dual_click_hold_time": result = 0.20
@@ -2855,6 +3191,10 @@ func set_combat_contact_setting(setting: String, value: float) -> void:
 	var preset_key: String = str(combat_contact_preset)
 	if not combat_contact_settings.has(preset_key): combat_contact_settings[preset_key] = {}
 	(combat_contact_settings[preset_key] as Dictionary)[setting] = value
+	if setting in ["collision_sword_enabled", "hit_reaction_enabled"]:
+		_sync_collision_sword_tick_order()
+		if collision_sword_setting_on():
+			bone_hilt_push_pending = Vector2.ZERO
 
 func _update_combat_hand_radius(delta: float) -> void:
 	var target_radius: float = _mouse_controlled_hand_radius()
@@ -2862,14 +3202,171 @@ func _update_combat_hand_radius(delta: float) -> void:
 	var response_weight: float = 1.0 - pow(1.0 - response, delta * 60.0)
 	combat_hand_radius = lerpf(combat_hand_radius, target_radius, clampf(response_weight, 0.0, 1.0))
 
+func collision_sword_setting_on() -> bool:
+	return not sword_stowed and get_combat_contact_setting("collision_sword_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+
+func _sync_collision_sword_tick_order() -> void:
+	if collision_sword_setting_on() and not collision_sword_late_tick:
+		collision_sword_previous_priority = process_physics_priority
+		# Ordinary enemy physics uses priority zero. ON, sample their updated
+		# geometry, not last tick's weapon/body pose. Restore the original order OFF.
+		process_physics_priority = collision_sword_previous_priority + 100
+		collision_sword_late_tick = true
+	elif not collision_sword_setting_on() and collision_sword_late_tick:
+		process_physics_priority = collision_sword_previous_priority
+		collision_sword_late_tick = false
+
+## Consumers only READ the committed pose. The solver advances explicitly in
+## _update_sword, never from rendering, grapple queries, or contact callbacks.
 func _sword_transform() -> Dictionary:
-	var base_angle: float = aim_angle
+	if dualblade_equipped and active_blade_index < 0 and not dual_blade_states.is_empty():
+		var committed: Dictionary = dual_blade_states[0].values.get(&"dual_committed_pose", {})
+		if not committed.is_empty(): return committed.duplicate(true)
+	if collision_sword_setting_on() and not collision_sword_pose.is_empty():
+		return collision_sword_pose.duplicate()
+	if not collision_sword_setting_on():
+		_reset_collision_sword_pose()
+	return _sword_intent_transform()
+
+func _collision_sword_touched_weapon(enemy_id: int) -> bool:
+	if not collision_sword_setting_on():
+		return true
+	if collision_sword_solver != null:
+		for contact: Dictionary in collision_sword_solver.contacts:
+			if contact["kind"] == "blade" and int(contact["id"]) == -enemy_id:
+				return true
+	return false
+
+func _reset_collision_sword_pose() -> void:
+	if collision_sword_solver != null:
+		# A switch back to authored aiming must not turn the pose gap into a
+		# phantom high-speed hit sweep or a trail crossing the whole opponent.
+		previous_blade_samples.clear()
+		current_blade_samples.clear()
+		previous_blade_start = Vector2.ZERO
+		previous_blade_end = Vector2.ZERO
+		blade_trail_points.clear()
+		hilt_trail_points.clear()
+	collision_sword_solver = null
+	collision_sword_pose.clear()
+
+func _advance_collision_sword_pose() -> void:
+	if not collision_sword_setting_on():
+		_reset_collision_sword_pose()
+		return
+	_release_blade_shell()
+	bone_hilt_push_pending = Vector2.ZERO
+	bone_constraint_active = false
+	bone_constraint_has_last = false
+	var intent: Dictionary = _sword_intent_transform()
+	var target_angle: float = float(intent["angle"])
+	var target_hilt: Vector2 = (intent["start"] as Vector2) - Vector2.from_angle(target_angle) * _blade_hilt_inset()
+	var points: PackedVector2Array = _blade_polyline_samples(Vector2.ZERO, Vector2.RIGHT)
+	var obstacles: Array[Dictionary] = []
+	for node: Node in get_tree().get_nodes_in_group("enemies"):
+		var enemy: Enemy = node as Enemy
+		if enemy == null or not is_instance_valid(enemy) or enemy.health <= 0.0:
+			continue
+		# Collision Constrained Sword 2 uses the enemy's full body collider, not
+		# the reduced inner-bone core. Current enemy scenes share a CircleShape2D.
+		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
+			if shape_node.shape is CircleShape2D:
+				var circle: CircleShape2D = shape_node.shape as CircleShape2D
+				var obstacle: Dictionary = BDOSSwordSolver.circle_obstacle(enemy.get_instance_id(), "body", circle, _enemy_body_shape_transform(shape_node))
+				obstacles.append(obstacle)
+			elif not collision_sword_unsupported_shape_warned:
+				collision_sword_unsupported_shape_warned = true
+				push_warning("Collision Constrained Sword 2 currently supports circular enemy body shapes; skipped %s" % shape_node.get_path())
+		if enemy.moving_weapon_enabled and not enemy.disarmed and enemy.blade_length > 0.0:
+			var weapon: Dictionary = enemy._enemy_weapon_segment()
+			obstacles.append({"id": -enemy.get_instance_id(), "kind": "blade", "start": weapon["start"], "end": weapon["end"], "radius": BDOSSwordSolver.GEOMETRY_RADIUS})
+	if collision_sword_solver == null:
+		collision_sword_solver = BDOSSwordSolver.new()
+		# Enter from the last actual hit geometry, not a fresh authored pose that
+		# could already be across an obstacle. Convert its curve into hilt-local data.
+		if current_blade_samples.size() >= 2:
+			collision_sword_solver.hilt = current_blade_samples[0]
+			collision_sword_solver.angle = (previous_blade_end - previous_blade_start).angle()
+			for sample: Vector2 in current_blade_samples:
+				collision_sword_solver.local_blade.append((sample - current_blade_samples[0]).rotated(-collision_sword_solver.angle))
+			collision_sword_solver.initialized = true
+	# Hand-to-player reach is solved with the connected grip, not as a cosmetic
+	# blade offset. Impossible reach/contact combinations are flagged, never hidden
+	# by teleporting across an obstacle. No absorption spring in this first bench.
+	# The authored grip is a soft preference, not a shrinking tether each swing.
+	# Hand "max" is already world-pixel extension; "scale" only gears the input.
+	var reach: float = maxf(0.0, maxf(get_combat_hand_setting("min"), get_combat_hand_setting("max")))
+	var timing_on: bool = collision_sword_perf_debug or get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5
+	var resolve_start_usec: int = Time.get_ticks_usec() if timing_on else 0
+	collision_sword_solver.resolve(target_hilt, target_angle, points, obstacles, global_position, reach)
+	if timing_on:
+		_record_collision_sword_solver_cost(Time.get_ticks_usec() - resolve_start_usec, obstacles.size())
+	_apply_collision_sword_pushes()
+	collision_sword_pose = intent.duplicate()
+	collision_sword_pose["angle"] = collision_sword_solver.angle
+	collision_sword_pose["start"] = collision_sword_solver.hilt + Vector2.from_angle(collision_sword_solver.angle) * _blade_hilt_inset()
+	collision_sword_pose["samples"] = collision_sword_solver.world_points()
+	collision_sword_roll = blade_roll
+	var mid_offset: float = get_blade_shape_setting(equipped_sword_id, "mid_offset")
+	var tip_offset: float = get_blade_shape_setting(equipped_sword_id, "tip_offset")
+	if collision_sword_solver.local_blade.size() == 3:
+		if absf(mid_offset) > 0.001:
+			collision_sword_roll = collision_sword_solver.local_blade[1].y / mid_offset
+		elif absf(tip_offset) > 0.001:
+			collision_sword_roll = collision_sword_solver.local_blade[2].y / tip_offset
+	if (collision_sword_solver.unresolved_overlap or collision_sword_solver.unresolved_reach) and get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5:
+		print("[BDOS CONSTRAINT] incompatible geometry/hand reach; no safe solution this tick")
+
+## BDOS Collision Constrained Sword 2 two-way contact. For each body the solver is
+## actually pressing on, ask that enemy to yield along the contact normal so the
+## blade keeps sliding instead of sticking. Only the normal component pushes; the
+## tangential slide is untouched. Weapons and ground are never pushed. This is a
+## per-frame velocity ask (pressure/delta lives in the enemy's use of it), never a
+## pose write, and it exists only while the solver is on.
+func _apply_collision_sword_pushes() -> void:
+	if not collision_sword_setting_on() or collision_sword_solver == null:
+		return
+	for contact: Dictionary in collision_sword_solver.contacts:
+		if String(contact.get("kind", "")) != "body":
+			continue
+		var enemy: Enemy = instance_from_id(int(contact.get("id", 0))) as Enemy
+		if enemy == null or not is_instance_valid(enemy) or enemy.health <= 0.0:
+			continue
+		var pressure: float = float(contact.get("pressure", 0.0))
+		if pressure <= 0.0:
+			continue
+		# `normal` points from the obstacle toward the blade, so the push direction
+		# (away from the blade, into the body) is its negation.
+		var push_normal: Vector2 = -(contact.get("normal", Vector2.ZERO) as Vector2)
+		enemy.receive_collision_sword_push(push_normal, minf(pressure, COLLISION_SWORD_PUSH_PRESSURE_CAP))
+
+func _record_collision_sword_solver_cost(elapsed_usec: int, obstacle_count: int) -> void:
+	collision_sword_solve_calls += 1
+	collision_sword_solve_usec_total += elapsed_usec
+	collision_sword_solve_usec_max = maxi(collision_sword_solve_usec_max, elapsed_usec)
+	if collision_sword_solve_calls % 60 == 0:
+		var average: float = float(collision_sword_solve_usec_total) / float(collision_sword_solve_calls)
+		print("[BDOS SOLVER PERF] calls=%d total_us=%d avg_us=%.1f max_us=%d last_us=%d obstacles=%d substeps=%d blocked=%s time_scale=%.2f" % [collision_sword_solve_calls, collision_sword_solve_usec_total, average, collision_sword_solve_usec_max, elapsed_usec, obstacle_count, collision_sword_solver.substeps, str(collision_sword_solver.blocked), Engine.time_scale])
+
+func _sword_intent_transform() -> Dictionary:
+	var base_angle: float = aim_angle + (dual_response_aim_offset if active_blade_index >= 0 else 0.0)
 	var radius: float = combat_hand_radius
 	var arc: float = _current_sword_arc_degrees()
-	var raw_sine: float = sin(sword_phase if sword_phase != 0.0 or swing_time == 0.0 else swing_time * TAU * _sword_cycle_frequency())
+	var raw_sine: float = sin(_form_phase())
+	if TWIN_FORM2_TRIAL and dualblade_equipped and not double_ended_equipped:
+		return _apply_authored_metronome_pose(_calculate_form_thrust(base_angle, radius, arc, raw_sine))
+	if TWIN_FORM7_TRIAL and dualblade_equipped and not double_ended_equipped:
+		return _apply_authored_metronome_pose(_calculate_form_thrust_metronome(base_angle, radius, arc))
+	if TWIN_STABS_ONLY and dualblade_equipped and not double_ended_equipped:
+		# Keep the shared drive ticking for stabs and hit windows, but bypass
+		# the musical angular sweep. Guard and real contact reactions still apply.
+		return _apply_authored_metronome_pose({
+			"start": global_position + Vector2.from_angle(aim_angle) * radius,
+			"angle": base_angle + sword_hit_recoil_offset,
+		})
 
-	# --- PRESET 4: FORM EVOLUTION (Stage 1: A-Thrust -> Stage 2: Metronome V -> Stage 3: Moulinet ∞) ---
-	if combat_contact_preset == 4:
+	# Park legacy automatic evolution; an explicitly selected public form wins.
+	if combat_contact_preset == 4 and int(sword_style) not in STYLE_CYCLE_ORDER:
 		var blend_progress: float = clampf(p4_form_blend, 0.0, 1.0)
 		var s1_end: float = clampf(get_combat_contact_setting("p4_stage1_end") / 100.0, 0.1, 0.5)
 		var s2_end: float = clampf(get_combat_contact_setting("p4_stage2_end") / 100.0, s1_end + 0.1, 0.9)
@@ -2903,7 +3400,7 @@ func _sword_transform() -> Dictionary:
 
 	# --- INDIVIDUAL FORMS (Presets 1, 2, 3) ---
 	match sword_style:
-		SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B:
+		SwordStyle.METRONOME_WINDUP, SwordStyle.METRONOME_BIND, SwordStyle.METRONOME_BIND_B, SwordStyle.WINDUP_THRUST:
 			var t_windup: Dictionary = _calculate_form_metronome(base_angle, radius, arc, raw_sine)
 			if blade_freeze_left > 0.0:
 				t_windup["angle"] = frozen_blade_world_angle
@@ -2944,12 +3441,75 @@ func _sword_transform() -> Dictionary:
 				t_metro["angle"] = frozen_blade_world_angle
 			return _apply_authored_metronome_pose(t_metro)
 
+## One stab per edge-to-edge sweep, peaking at the centre (50%).
+## One blade owns each edge-to-edge sweep; swap at every reversal.
+## Extension is measured from the normal grip: -10px coil, +20px stab.
+func _twin_stab_extension(phase: float, blade_index: int) -> float:
+	var stabbing_blade: int = twin_stab_cycle % 2
+	if blade_index != stabbing_blade:
+		return 0.0
+	return _shared_thrust_extension(phase)
+
+## One weapon-independent wind-up/stab envelope. Twins only gate which hand owns it.
+func _shared_thrust_extension(phase: float) -> float:
+	var stroke: float = fposmod((phase - PI * 0.5) / PI, 1.0)
+	var coil: float = maxf(0.0, get_combat_hand_setting("thrust_coil_px"))
+	var extension: float = maxf(0.0, get_combat_hand_setting("thrust_extension_px"))
+	var windup_end: float = clampf(get_combat_hand_setting("thrust_windup_end"), 0.01, 0.97)
+	var peak: float = clampf(get_combat_hand_setting("thrust_peak"), windup_end + 0.01, 0.98)
+	var recover_end: float = clampf(get_combat_hand_setting("thrust_recover_end"), peak + 0.01, 1.0)
+	if stroke < windup_end:
+		return -coil * smoothstep(0.0, windup_end, stroke)
+	if stroke < peak:
+		return lerpf(-coil, extension, smoothstep(windup_end, peak, stroke))
+	if stroke < recover_end:
+		return extension * (1.0 - smoothstep(peak, recover_end, stroke))
+	return 0.0
+
 func _apply_authored_metronome_pose(transform_data: Dictionary) -> Dictionary:
 	if _authored_metronome_mode_applies():
 		var metronome_angle: float = float(transform_data["angle"])
-		transform_data["start"] = global_position + Vector2.RIGHT.rotated(aim_angle) * combat_hand_radius
+		var resting_hand: Vector2 = global_position + Vector2.RIGHT.rotated(aim_angle) * combat_hand_radius
+		if (TWIN_FORM2_TRIAL or TWIN_FORM7_TRIAL) and dualblade_equipped and not double_ended_equipped:
+			# The legacy form's moving hilt IS its stab. Do not flatten it to
+			# the authored metronome's stationary grip in the live GP2 pipeline.
+			transform_data["start"] = resting_hand.lerp(transform_data["start"] as Vector2, clampf(authored_metronome_swing_blend, 0.0, 1.0))
+		else:
+			transform_data["start"] = resting_hand
 		transform_data["angle"] = aim_angle + angle_difference(aim_angle, metronome_angle) * clampf(authored_metronome_swing_blend, 0.0, 1.0)
 	var resolved_pose: Dictionary = _apply_charged_guard_pose(transform_data)
+	var shared_thrust_axis: float = float(resolved_pose["angle"])
+	if dualblade_equipped and active_blade_index >= 0:
+		# Physical recoil is blade response, not musical arc energy. Preserve it
+		# even when the shared metronome has only just woken or is winding down.
+		if _authored_metronome_mode_applies():
+			resolved_pose["angle"] = float(resolved_pose["angle"]) + (sword_hit_recoil_offset + dual_response_aim_offset) * (1.0 - clampf(authored_metronome_swing_blend, 0.0, 1.0))
+		var double_ended_grip: Vector2 = resolved_pose["start"] as Vector2
+		if double_ended_equipped:
+			# Crosswise: the weapon axis is perpendicular to the swung pose; each
+			# end radiates from the shared grip centre (the hand point).
+			resolved_pose["angle"] = float(resolved_pose["angle"]) + (-PI * 0.5 if active_blade_index == 0 else PI * 0.5)
+		else:
+			var blade_side: float = -1.0 if active_blade_index == 0 else 1.0
+			var aim_direction: Vector2 = Vector2.from_angle(aim_angle)
+			resolved_pose["start"] = (resolved_pose["start"] as Vector2) + aim_direction.orthogonal() * blade_side * 25.0
+			resolved_pose["angle"] = float(resolved_pose["angle"]) - deg_to_rad(15.0) * blade_side
+		if blade_freeze_left > 0.0: resolved_pose["angle"] = frozen_blade_world_angle
+		if not dual_committed_pose.is_empty() and blade_freeze_left <= 0.0:
+			resolved_pose["angle"] = lerp_angle(float(dual_committed_pose["angle"]), float(resolved_pose["angle"]), dual_response_rate)
+		if double_ended_equipped:
+			resolved_pose["start"] = double_ended_grip + Vector2.from_angle(float(resolved_pose["angle"])) * _blade_hilt_inset()
+	if sword_style == SwordStyle.WINDUP_THRUST and not charged_guard_locked and charged_guard_gesture_state == ChargedGuardGesture.NONE and blade_freeze_left <= 0.0:
+		var thrust_blend: float = clampf(authored_metronome_swing_blend, 0.0, 1.0) if _authored_metronome_mode_applies() else 1.0
+		var stab_reach: float = _shared_thrust_extension(_form_phase())
+		if dualblade_equipped and not double_ended_equipped:
+			stab_reach = _twin_stab_extension(_form_phase(), active_blade_index)
+		# A double-ended weapon translates one shared grip, never spreads its ends.
+		var thrust_axis: float = shared_thrust_axis if double_ended_equipped else float(resolved_pose["angle"])
+		resolved_pose["start"] = (resolved_pose["start"] as Vector2) + Vector2.from_angle(thrust_axis) * stab_reach * thrust_blend
+	if collision_sword_setting_on():
+		# These are requests now. No bite/shell/glance may write over the solver.
+		return resolved_pose
 	return _apply_flesh_contact_pose(resolved_pose)
 
 ## Bone Slide Constraint. The bone core is HARD: the blade may never come nearer it than the core's
@@ -3000,11 +3560,11 @@ func _resolve_bone_constraint(hilt: Vector2, blade_angle: float) -> float:
 			continue
 		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
 			var core_center: Vector2 = _enemy_body_shape_transform(shape_node).origin
-			var reach_radius: float = _shape_outer_radius(shape_node) * core_fraction + BLADE_RADIUS
+			var reach_radius: float = _shape_outer_radius(shape_node) * core_fraction + _blade_radius()
 			var hilt_push: Vector2 = HitReaction.bone_core_hilt_push(hilt, core_center, reach_radius)
 			if hilt_push.length_squared() > bone_hilt_push_pending.length_squared():
 				bone_hilt_push_pending = hilt_push
-			var contact: Dictionary = HitReaction.bone_core_constraint(hilt, blade_angle, BLADE_LENGTH, core_center, reach_radius)
+			var contact: Dictionary = HitReaction.bone_core_constraint(hilt, blade_angle, _blade_length(), core_center, reach_radius)
 			if not bool(contact["contact"]):
 				continue
 			# The bone genuinely in the way wins: a hand already inside a core outranks any
@@ -3015,7 +3575,7 @@ func _resolve_bone_constraint(hilt: Vector2, blade_angle: float) -> float:
 				best_contact = contact
 			# Among several bones the one that BITES FIRST decides, because the blade may only travel
 			# as far as the strictest core allows -- so the least movement wins, not the deepest cut.
-			var allowed: float = HitReaction.bone_core_clip(previous_angle, blade_angle, hilt, BLADE_LENGTH, core_center, reach_radius)
+			var allowed: float = HitReaction.bone_core_clip(previous_angle, blade_angle, hilt, _blade_length(), core_center, reach_radius)
 			var bite: float = absf(angle_difference(allowed, previous_angle))
 			if bite < best_bite:
 				best_bite = bite
@@ -3105,7 +3665,7 @@ func _apply_flesh_contact_pose(transform_data: Dictionary) -> Dictionary:
 ## One question, asked everywhere the constraint needs it: is Bone Slide Constraint on, and is the
 ## Hit Reaction master behind it? OFF, every one of these paths is byte-identical to today.
 func bone_constraint_setting_on() -> bool:
-	return get_combat_contact_setting("blade_bone_constraint_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
+	return not collision_sword_setting_on() and get_combat_contact_setting("blade_bone_constraint_enabled") >= 0.5 and get_combat_contact_setting("hit_reaction_enabled") >= 0.5
 
 ## Queued hit knockback waits its turn. While the blade is still being driven into bone the impulse
 ## is held back, so the enemy cannot be shoved out of the contact the constraint needs in order to
@@ -3146,14 +3706,43 @@ func _create_blade_shell() -> PhysicsShell:
 	var shell: PhysicsShell = PhysicsShell.new()
 	shell.name = "BladeShell"
 	shell.configure_shell(PhysicsShell.BLADE_SHELL_LAYER, PhysicsShell.BONE_CORE_SHELL_LAYER)
+	if greatsword_equipped:
+		_build_traced_shell_chain(shell)
+		get_parent().add_child(shell)
+		return shell
 	var capsule: CapsuleShape2D = CapsuleShape2D.new()
-	capsule.radius = BLADE_RADIUS
-	capsule.height = maxf(BLADE_LENGTH, BLADE_RADIUS * 2.0 + 1.0)
+	capsule.radius = _blade_radius()
+	capsule.height = maxf(_blade_length(), _blade_radius() * 2.0 + 1.0)
 	var shape_node: CollisionShape2D = CollisionShape2D.new()
 	shape_node.shape = capsule
 	shell.add_child(shape_node)
 	get_parent().add_child(shell)
 	return shell
+
+## Traced greatsword shell: one capsule per traced segment in the shell's local
+## frame (origin = straight blade midpoint, +x = blade direction; see
+## _blade_shell_transform), radius = the segment's mean traced radius. Same
+## layers/mask/ownership as the ordinary shell. Built for the current
+## blade_roll sign; _update_blade_shell rebuilds when that sign flips.
+func _build_traced_shell_chain(shell: PhysicsShell) -> void:
+	for existing: Node in shell.get_children():
+		shell.remove_child(existing)
+		existing.queue_free()
+	var length: float = _blade_length()
+	var local: PackedVector2Array = _blade_polyline_samples(Vector2(-length * 0.5, 0.0), Vector2.RIGHT)
+	var radii: PackedFloat32Array = _blade_sample_radii()
+	for index: int in range(local.size() - 1):
+		var axis: Vector2 = local[index + 1] - local[index]
+		var radius: float = (radii[index] + radii[index + 1]) * 0.5
+		var capsule: CapsuleShape2D = CapsuleShape2D.new()
+		capsule.radius = radius
+		capsule.height = axis.length() + radius * 2.0
+		var shape_node: CollisionShape2D = CollisionShape2D.new()
+		shape_node.shape = capsule
+		# CapsuleShape2D's axis is local +Y; rotate it onto the segment.
+		shape_node.transform = Transform2D(axis.angle() - PI * 0.5, (local[index] + local[index + 1]) * 0.5)
+		shell.add_child(shape_node)
+	shell.set_meta("traced_roll_sign", signf(blade_roll) if blade_roll != 0.0 else 1.0)
 
 ## With the shell switches off there is nothing at all: no body, no shape, no collision pair.
 ## That is what makes the whole feature removable rather than merely disabled.
@@ -3178,7 +3767,7 @@ func _wall_probe(world_point: Vector2) -> Dictionary:
 	if space_state == null:
 		return {}
 	var probe: CircleShape2D = CircleShape2D.new()
-	probe.radius = BLADE_RADIUS
+	probe.radius = _blade_radius()
 	var query: PhysicsShapeQueryParameters2D = PhysicsShapeQueryParameters2D.new()
 	query.shape = probe
 	query.transform = Transform2D(0.0, world_point)
@@ -3199,6 +3788,9 @@ func _blade_wall_contact(from: Vector2, to: Vector2) -> Dictionary:
 	return {}
 
 func _update_blade_shell(segment_start: Vector2, segment_end: Vector2, delta: float) -> void:
+	if collision_sword_setting_on():
+		_release_blade_shell()
+		return
 	var shove_on: bool = get_combat_contact_setting("blade_shell_shove_enabled") >= 0.5
 	var deflect_on: bool = get_combat_contact_setting("blade_shell_deflect_enabled") >= 0.5
 	# Full Physical is the blunt mode: the sword itself becomes a real rigid body and nothing
@@ -3219,6 +3811,8 @@ func _update_blade_shell(segment_start: Vector2, segment_end: Vector2, delta: fl
 		return
 	blade_shell.collision_mask = PhysicsShell.BLADE_SHELL_MASK_WITH_WORLD if world_on else PhysicsShell.BONE_CORE_SHELL_LAYER
 	blade_shell.set_push_only(not two_way_on)
+	if greatsword_equipped and blade_roll != 0.0 and float(blade_shell.get_meta("traced_roll_sign", 1.0)) != signf(blade_roll):
+		_build_traced_shell_chain(blade_shell)
 	blade_shell.set_target(_blade_shell_transform(segment_start, segment_end))
 	if not two_way_on:
 		blade_shell_offset = Vector2.ZERO
@@ -3247,7 +3841,7 @@ func _engine_core_contact(world_point: Vector2) -> Dictionary:
 	if space_state == null:
 		return {}
 	var probe: CircleShape2D = CircleShape2D.new()
-	probe.radius = maxf(BLADE_RADIUS * 0.5, 2.0)
+	probe.radius = maxf(_blade_radius() * 0.5, 2.0)
 	var query: PhysicsShapeQueryParameters2D = PhysicsShapeQueryParameters2D.new()
 	query.shape = probe
 	query.transform = Transform2D(0.0, world_point)
@@ -3383,14 +3977,14 @@ func _thrust_retracted_tip_progress(south_pole: Vector2, north_pole: Vector2, lo
 	# Start with the hilt at the south pole and one complete sword already in
 	# front of it. This keeps a rigid weapon while reserving the rest of the
 	# meridian for the actual thrust.
-	if south_pole.distance_to(north_pole) <= BLADE_LENGTH:
+	if south_pole.distance_to(north_pole) <= _blade_length():
 		return 0.0
 	var low: float = 0.0
 	var high: float = 1.0
 	for _iteration: int in range(16):
 		var middle: float = (low + high) * 0.5
 		var point: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, middle)
-		if south_pole.distance_to(point) < BLADE_LENGTH:
+		if south_pole.distance_to(point) < _blade_length():
 			low = middle
 		else:
 			high = middle
@@ -3400,23 +3994,23 @@ func _thrust_hilt_for_tip(south_pole: Vector2, north_pole: Vector2, longitude: f
 	# Find the earlier point on this same longitude one sword-length behind the
 	# tip. The final normalization keeps the rendered/collision sword perfectly
 	# rigid despite the finite binary-search precision.
-	if south_pole.distance_to(tip) < BLADE_LENGTH:
+	if south_pole.distance_to(tip) < _blade_length():
 		var initial_tangent: Vector2 = south_pole.direction_to(_thrust_meridian_point(south_pole, north_pole, longitude, 0.001))
 		if initial_tangent == Vector2.ZERO:
 			initial_tangent = south_pole.direction_to(north_pole)
-		return tip - initial_tangent * BLADE_LENGTH
+		return tip - initial_tangent * _blade_length()
 	var low: float = 0.0
 	var high: float = tip_progress
 	for _iteration: int in range(16):
 		var middle: float = (low + high) * 0.5
 		var candidate: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, middle)
-		if candidate.distance_to(tip) > BLADE_LENGTH:
+		if candidate.distance_to(tip) > _blade_length():
 			low = middle
 		else:
 			high = middle
 	var meridian_hilt: Vector2 = _thrust_meridian_point(south_pole, north_pole, longitude, high)
 	var sword_direction: Vector2 = meridian_hilt.direction_to(tip)
-	return tip - sword_direction * BLADE_LENGTH
+	return tip - sword_direction * _blade_length()
 
 func _calculate_form_thrust(base_angle: float, radius: float, arc: float, _raw_sine: float) -> Dictionary:
 	# Form II maps the player and target reach to a globe's south and north poles.
@@ -3425,7 +4019,7 @@ func _calculate_form_thrust(base_angle: float, radius: float, arc: float, _raw_s
 	# tracks mouse proximity smoothly instead of jumping all over the screen.
 	var south_pole: Vector2 = global_position
 	var aim_dir: Vector2 = Vector2.RIGHT.rotated(base_angle)
-	var reach_distance: float = maxf(radius + BLADE_LENGTH, BLADE_LENGTH + 4.0)
+	var reach_distance: float = maxf(radius + _blade_length(), _blade_length() + 4.0)
 	var north_pole: Vector2 = south_pole + aim_dir * reach_distance
 
 	var count: int = maxi(2, int(get_combat_hand_setting("thrusts_per_cycle")))
@@ -3452,7 +4046,7 @@ func _calculate_form_thrust(base_angle: float, radius: float, arc: float, _raw_s
 	# The meridian bow can otherwise push the tip farther from the player than
 	# the configured hand reach. Keep the entire Form II envelope bounded while
 	# preserving the authored thrust path inside that envelope.
-	var maximum_tip_distance: float = radius + BLADE_LENGTH
+	var maximum_tip_distance: float = radius + _blade_length()
 	var tip_offset: Vector2 = south_pole.direction_to(tip_world) * maximum_tip_distance
 	if south_pole.distance_to(tip_world) > maximum_tip_distance:
 		tip_world = south_pole + tip_offset
@@ -3462,9 +4056,9 @@ func _calculate_form_thrust(base_angle: float, radius: float, arc: float, _raw_s
 		blade_direction = aim_dir
 	# Recoil rotates around the tip so convergence remains exact.
 	blade_direction = blade_direction.rotated(sword_hit_recoil_offset)
-	hilt_world = tip_world - blade_direction * BLADE_LENGTH
+	hilt_world = tip_world - blade_direction * _blade_length()
 	var active_blade_angle: float = blade_direction.angle()
-	var anchor: Vector2 = hilt_world + blade_direction * BLADE_HILT_INSET
+	var anchor: Vector2 = hilt_world + blade_direction * _blade_hilt_inset()
 	return {"start": anchor, "angle": active_blade_angle, "arc_degrees": arc}
 
 func _uses_hilt_trail() -> bool:
@@ -3479,7 +4073,7 @@ func _calculate_form_moulinet(base_angle: float, radius: float, arc: float) -> D
 	# then smoothly reverses and completes the next figure-8 with a -720° spin.
 	# Phase mapping: t = phase * 0.5 (period 4*PI), u = PI * (1 - cos(t))
 	var phase: float = _form_phase()
-	var t: float = fposmod(phase * 0.5, TAU)
+	var t: float = fposmod((phase + (TAU if moulinet_full8_reverse_cycle else 0.0)) * 0.5, TAU)
 	var u: float = PI * (1.0 - cos(t))
 
 	# Aim center follows the true hand radius.
@@ -3501,8 +4095,8 @@ func _calculate_form_moulinet(base_angle: float, radius: float, arc: float) -> D
 	# 2. Smooth ping-pong rotation: 0 -> +720° -> 0
 	var result_angle: float = base_angle + (2.0 * u) + sword_hit_recoil_offset
 
-	# start is the rendering pivot (start = hilt + dir * BLADE_HILT_INSET)
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
+	# start is the rendering pivot (start = hilt + dir * _blade_hilt_inset())
+	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * _blade_hilt_inset()
 	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
 
 func _calculate_form_moulinet_2(base_angle: float, radius: float, arc: float) -> Dictionary:
@@ -3537,7 +4131,7 @@ func _calculate_form_moulinet_2(base_angle: float, radius: float, arc: float) ->
 	var blade_rot: float = PI * (1.0 - cos(phi))
 	var result_angle: float = base_angle + blade_rot + sword_hit_recoil_offset
 
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
+	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * _blade_hilt_inset()
 	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
 
 func _calculate_form_moulinet_3(base_angle: float, radius: float, arc: float) -> Dictionary:
@@ -3573,7 +4167,7 @@ func _calculate_form_moulinet_3(base_angle: float, radius: float, arc: float) ->
 	var active_rot: float = moulinet_continuous_angle
 	var result_angle: float = base_angle + active_rot + sword_hit_recoil_offset
 
-	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
+	var anchor: Vector2 = hilt_world + Vector2.RIGHT.rotated(result_angle) * _blade_hilt_inset()
 	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
 
 func _calculate_form_moulinet_4(base_angle: float, radius: float, arc: float) -> Dictionary:
@@ -3595,7 +4189,7 @@ func _calculate_form_moulinet_4(base_angle: float, radius: float, arc: float) ->
 	var tangent: Vector2 = tangent_local.rotated(base_angle)
 	if tangent.length_squared() < 0.01: tangent = aim_dir
 	var result_angle: float = tangent.angle() + sword_hit_recoil_offset
-	var anchor: Vector2 = local_hilt + Vector2.RIGHT.rotated(result_angle) * BLADE_HILT_INSET
+	var anchor: Vector2 = local_hilt + Vector2.RIGHT.rotated(result_angle) * _blade_hilt_inset()
 	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
 
 func _calculate_form_thrust_metronome(base_angle: float, radius: float, arc: float) -> Dictionary:
@@ -3620,7 +4214,7 @@ func _calculate_form_thrust_metronome(base_angle: float, radius: float, arc: flo
 	var maximum_hilt_distance: float = maxf(minimum_hilt_distance + 8.0, radius + 18.0)
 	var hilt_distance: float = lerpf(maximum_hilt_distance, minimum_hilt_distance, stab_progress)
 	var hilt_world: Vector2 = global_position + blade_dir * hilt_distance
-	var anchor: Vector2 = hilt_world + blade_dir * BLADE_HILT_INSET
+	var anchor: Vector2 = hilt_world + blade_dir * _blade_hilt_inset()
 	return {"start": anchor, "angle": result_angle, "arc_degrees": arc}
 
 ## Default mid-point t used as the starting slider value for a sword whose
@@ -3665,7 +4259,17 @@ func set_blade_shape_setting(sword_id: String, key: String, value: float) -> voi
 ## live-tunable 3-point shape (see get_blade_shape_setting()). A straight
 ## profile (mid/tip offsets both 0) is still exactly collinear -- Basic
 ## Longsword's feel/hitbox is unchanged unless its sliders are touched.
-func _blade_polyline_samples(segment_start: Vector2, direction: Vector2, blade_length: float = BLADE_LENGTH) -> PackedVector2Array:
+func _blade_polyline_samples(segment_start: Vector2, direction: Vector2, blade_length: float = -1.0) -> PackedVector2Array:
+	if blade_length < 0.0: blade_length = _blade_length()
+	if greatsword_equipped:
+		# Traced spine replaces the 3-point slider shape. Art +x maps to -perpendicular
+		# (render rotation angle-PI/2); blade_roll mirrors exactly like the art scale.x.
+		var trace_perpendicular: Vector2 = direction.rotated(PI * 0.5)
+		var trace_scale: float = blade_length / GREATSWORD_ART_BLADE_PX
+		var traced: PackedVector2Array = PackedVector2Array()
+		for point: Dictionary in GREATSWORD_TRACE:
+			traced.append(segment_start + direction * (blade_length * float(point["t"])) - trace_perpendicular * (float(point["offset"]) * trace_scale * blade_roll))
+		return traced
 	var mid_t: float = clampf(get_blade_shape_setting(equipped_sword_id, "mid_t"), 0.01, 0.99)
 	# blade_roll multiplies both offsets -- see its declaration for why: this
 	# keeps the hit polyline perfectly in lockstep with the rendered art
@@ -3908,6 +4512,672 @@ static func charged_guard_charge_multiplier(near_body: bool, recent_authored_mot
 	if pommel_pull:
 		multiplier += maxf(0.0, pommel_pull_bonus)
 	return multiplier
+
+## --- Legacy ▽ recognizer (kept, no longer wired; rewind now reads the circle) --
+## A closed upside-down triangle in screen space (y-down): starts top-left, a straight top
+## edge to the top-right corner, a straight edge down to the lowest point, then a straight
+## edge back up to near the start. Closure is what separates it from an open V, and each
+## edge must be straight, which rejects scribbles, spirals (G) and Z.
+static func gesture_rewind_triangle_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	if path.size() < 12 or stroke_time <= 0.0 or stroke_time > REWIND_GESTURE_WINDOW:
+		return false
+	var bounds: Rect2 = gesture_bounds(path)
+	var width: float = bounds.size.x
+	var height: float = bounds.size.y
+	if width < CHARGED_GUARD_ENTRY_MIN_WIDTH or height < REWIND_GESTURE_MIN_HEIGHT:
+		return false
+	var start: Vector2 = path[0]
+	var finish: Vector2 = path[path.size() - 1]
+	if start.distance_to(finish) > maxf(width, height) * 0.28:
+		return false
+	if start.x > bounds.position.x + width * 0.35 or start.y > bounds.position.y + height * 0.3:
+		return false
+	var bottom_index: int = 0
+	for index: int in range(path.size()):
+		if path[index].y > path[bottom_index].y:
+			bottom_index = index
+	var corner_index: int = 0
+	var corner_score: float = -INF
+	for index: int in range(bottom_index + 1):
+		var score: float = path[index].x - path[index].y
+		if score > corner_score:
+			corner_score = score
+			corner_index = index
+	if corner_index < 2 or bottom_index <= corner_index + 2 or bottom_index >= path.size() - 3:
+		return false
+	var corner: Vector2 = path[corner_index]
+	var bottom: Vector2 = path[bottom_index]
+	if corner.x < bounds.end.x - width * 0.3 or corner.y > bounds.position.y + height * 0.3:
+		return false
+	if bottom.y < bounds.end.y - height * 0.05 or bottom.x < bounds.position.x + width * 0.2 or bottom.x > bounds.end.x - width * 0.2:
+		return false
+	for edge: PackedVector2Array in [gesture_subpath(path, 0, corner_index), gesture_subpath(path, corner_index, bottom_index), gesture_subpath(path, bottom_index, path.size() - 1)]:
+		if gesture_straightness(edge) < 0.8:
+			return false
+	return true
+
+## The rewind shape: a counter-clockwise circle in SCREEN space (y-down) started at its
+## top. From the top, CCW travel heads LEFT first, then down, right, and back up; with
+## y-down atan2 that is a NEGATIVE total angle sweep around the bounds centre. Clockwise
+## circles, partial arcs, scribbles (radius spread), small loops, and starts off the top
+## sector are all rejected. Uses the shared bounds/subpath helpers.
+static func gesture_rewind_circle_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	return gesture_directed_circle_qualified(path, stroke_time, false)
+
+## The WORLD SLOW shape: the proven Whirlwind loop recognizer (gesture_circle_qualified with the
+## CHARGED_GUARD_GESTURE_CIRCLE_* tuning -- rough loops, any start point, any size from 30 px
+## radius, ~0.56 turn minimum, 3 s window) restricted to a CLOCKWISE sweep (positive on y-down).
+## Nothing else is drawn clockwise (rewind circle and world spiral are both CCW), so the shape
+## itself needs no extra strictness. Whirlwind is code-gated off, so the two never compete.
+static func gesture_world_slow_circle_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	if gesture_orbit_sweep(path) <= 0.0:
+		return false
+	return gesture_circle_qualified(path, stroke_time, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_CLOSURE_FREE_SWEEP, CHARGED_GUARD_GESTURE_CIRCLE_MIN_RADIUS, CHARGED_GUARD_GESTURE_CIRCLE_MAX_CLOSURE, CHARGED_GUARD_GESTURE_CIRCLE_MAX_RADIUS_SPREAD, CHARGED_GUARD_GESTURE_CIRCLE_MIN_SAMPLES, CHARGED_GUARD_GESTURE_CIRCLE_WINDOW)
+
+## Shared circle recognizer. `clockwise` picks the sweep sign (false = CCW rewind, true = CW slow).
+static func gesture_directed_circle_qualified(path: PackedVector2Array, stroke_time: float, clockwise: bool) -> bool:
+	if path.size() < REWIND_CIRCLE_MIN_SAMPLES or stroke_time <= 0.0 or stroke_time > REWIND_GESTURE_WINDOW:
+		return false
+	var bounds: Rect2 = gesture_bounds(path)
+	var width: float = bounds.size.x
+	var height: float = bounds.size.y
+	if width < REWIND_CIRCLE_MIN_DIAMETER or height < REWIND_CIRCLE_MIN_DIAMETER:
+		return false
+	if width > height * REWIND_CIRCLE_MAX_ASPECT or height > width * REWIND_CIRCLE_MAX_ASPECT:
+		return false
+	# Centre = the stroke's mean point (robust to overshoot and an uneven loop).
+	var center: Vector2 = Vector2.ZERO
+	for point: Vector2 in path:
+		center += point
+	center /= float(path.size())
+	var start: Vector2 = path[0]
+	# Start sector: the upper part of the bounds, roughly over the centre.
+	if start.y > bounds.position.y + height * REWIND_CIRCLE_START_TOP_FRACTION or absf(start.x - bounds.get_center().x) > width * REWIND_CIRCLE_START_SIDE_FRACTION:
+		return false
+	var sweep: float = 0.0
+	var radius_min: float = INF
+	var radius_max: float = 0.0
+	var radius_sum: float = 0.0
+	var previous_angle: float = (start - center).angle()
+	for point: Vector2 in path:
+		var offset: Vector2 = point - center
+		var radius: float = offset.length()
+		radius_min = minf(radius_min, radius)
+		radius_max = maxf(radius_max, radius)
+		radius_sum += radius
+		var angle: float = offset.angle()
+		sweep += angle_difference(previous_angle, angle)
+		previous_angle = angle
+	var radius_mean: float = radius_sum / float(path.size())
+	if radius_mean <= 0.0 or (radius_max - radius_min) / radius_mean > REWIND_CIRCLE_MAX_RADIUS_SPREAD:
+		return false
+	# Roughly constant size: a tightening (spiral) stroke must not read as the circle.
+	var across: PackedFloat32Array = gesture_across_diameters(path, center)
+	if across.size() >= 1:
+		var tail: float = gesture_tail_across_diameter(path, center)
+		var smallest: float = minf(tail, across[across.size() - 1])
+		if smallest < across[0] * REWIND_CIRCLE_MIN_RADIUS_TREND:
+			return false
+	# CCW on a y-down screen is a negative sweep; clockwise is positive.
+	var directed: float = sweep if clockwise else -sweep
+	return directed >= REWIND_CIRCLE_MIN_SWEEP and directed <= REWIND_CIRCLE_MAX_SWEEP
+
+## The WORLD rewind shape: a counter-clockwise (negative y-down sweep) INWARD spiral, any start
+## angle. Sweep is measured around the stroke's bounds centre. Size is measured
+## centre-independently: at each quarter-turn mark, the chord to the point half a turn later
+## ("across-diameter"). Requires: CCW sweep >= 1.5 turns, first across-diameter >=
+## WORLD_REWIND_SPIRAL_MIN_DIAMETER, last <= 55 % of the first, no step exceeding the running
+## minimum by > 8 %, and at most a quarter of steps growing. Clockwise, outward, and
+## constant-radius strokes are rejected.
+static func gesture_world_rewind_spiral_qualified(path: PackedVector2Array, stroke_time: float) -> bool:
+	var count: int = path.size()
+	if count < WORLD_REWIND_SPIRAL_MIN_SAMPLES or stroke_time <= 0.0 or stroke_time > WORLD_REWIND_SPIRAL_WINDOW:
+		return false
+	var bounds: Rect2 = gesture_bounds(path)
+	if bounds.size.x < WORLD_REWIND_SPIRAL_MIN_DIAMETER or bounds.size.y < WORLD_REWIND_SPIRAL_MIN_DIAMETER:
+		return false
+	# Spiral centre: the stroke's mean point sits inside the tightening loops far better than the
+	# bounds centre (which the large first turn pulls outward), so turns are counted reliably.
+	var core: Vector2 = Vector2.ZERO
+	for point: Vector2 in path:
+		core += point
+	core /= float(count)
+	var across: PackedFloat32Array = gesture_across_diameters(path, core)
+	# CCW (negative sweep) of at least WORLD_REWIND_SPIRAL_MIN_SWEEP; needs >= 3 size samples.
+	if across.size() < 3 or gesture_signed_sweep(path, core) > -WORLD_REWIND_SPIRAL_MIN_SWEEP:
+		return false
+	var first: float = across[0]
+	if first < WORLD_REWIND_SPIRAL_MIN_DIAMETER:
+		return false
+	# Mostly monotonic: each quarter-turn's across-diameter may not grow by more than 8 % over
+	# the smallest one seen so far, and at most a quarter of the steps may grow at all.
+	var growths: int = 0
+	var smallest: float = first
+	for index: int in range(1, across.size()):
+		if across[index] > across[index - 1]:
+			growths += 1
+		if across[index] > smallest * WORLD_REWIND_SPIRAL_WINDOW_GROWTH:
+			return false
+		smallest = minf(smallest, across[index])
+	if growths * 4 > across.size() - 1:
+		return false
+	var final_size: float = minf(across[across.size() - 1], gesture_tail_across_diameter(path, core))
+	return final_size <= first * WORLD_REWIND_SPIRAL_MAX_FINAL_RATIO
+
+## Total signed angle swept around `center` (negative = counter-clockwise on a y-down screen).
+static func gesture_signed_sweep(path: PackedVector2Array, center: Vector2) -> float:
+	var sweep: float = 0.0
+	var previous_angle: float = (path[0] - center).angle()
+	for index: int in range(1, path.size()):
+		var angle: float = (path[index] - center).angle()
+		sweep += angle_difference(previous_angle, angle)
+		previous_angle = angle
+	return sweep
+
+## Centre-independent size series: at every quarter-turn mark k (by |sweep| around `center`),
+## the distance from that point to the point half a turn later. For a circle it stays ~constant;
+## for an inward spiral it shrinks steadily.
+static func gesture_across_diameters(path: PackedVector2Array, center: Vector2) -> PackedFloat32Array:
+	var marks: PackedInt32Array = PackedInt32Array([0])
+	var sweep: float = 0.0
+	var previous_angle: float = (path[0] - center).angle()
+	for index: int in range(1, path.size()):
+		var angle: float = (path[index] - center).angle()
+		sweep += angle_difference(previous_angle, angle)
+		previous_angle = angle
+		if absf(sweep) >= float(marks.size()) * PI * 0.5:
+			marks.append(index)
+	var result: PackedFloat32Array = PackedFloat32Array()
+	for mark: int in range(marks.size() - 2):
+		result.append(path[marks[mark]].distance_to(path[marks[mark + 2]]))
+	return result
+
+## Chord from the stroke's last point back to the point half a turn earlier (0 if none).
+static func gesture_tail_across_diameter(path: PackedVector2Array, center: Vector2) -> float:
+	var last: int = path.size() - 1
+	var sweep: float = 0.0
+	var previous_angle: float = (path[last] - center).angle()
+	for index: int in range(last - 1, -1, -1):
+		var angle: float = (path[index] - center).angle()
+		sweep += angle_difference(previous_angle, angle)
+		previous_angle = angle
+		if absf(sweep) >= PI:
+			return path[last].distance_to(path[index])
+	return 0.0
+
+## Canonical Charged Guard predicate for rewind: the blue charged guard is held (the same
+## locked + fully-charged state the Guard gesture layer arms on).
+func _rewind_guard_ready() -> bool:
+	return charged_guard_locked and charged_guard_fully_charged
+
+## Direct time abilities replace gesture activation; legacy recognizers stay opt-in.
+var time_ability_gestures_enabled: bool = false
+var ability_cooldowns: AbilityCooldowns = AbilityCooldowns.new()
+var ability_ui_mouse_capture: bool = false
+var rewind_charge_available: bool = true
+
+func time_ability_input_allowed() -> bool:
+	return is_inside_tree() and health > 0.0 and not training_menu_input_locked and is_physics_processing() and (not get_tree().paused or rewind_active)
+
+func use_time_ability(ability: String) -> bool:
+	if not time_ability_input_allowed():
+		return false
+	if ability == "rewind" and rewind_active:
+		var progress: float = clampf(rewind_playback_elapsed / rewind_playback_duration, 0.0, 1.0)
+		rewind_target_age = clampi(roundi(smoothstep(0.0, 1.0, progress) * float(rewind_target_age)), 0, rewind_target_age)
+		_finish_rewind()
+		return true
+	if ability == "slow" and WorldTime.slow_active():
+		stop_world_slow()
+		return true
+	if rewind_active or ability_cooldowns.left(ability) > 0.0:
+		return false
+	match ability:
+		"rewind":
+			if rewind_buffer.count < 2:
+				return false
+			return _begin_rewind(true)
+		"slow":
+			_consume_slow_charge()
+			_release_charged_guard_hold()
+			WorldTime.begin_slow()
+			_show_world_slow_tint(true)
+			return true
+	return false
+
+func stop_world_slow() -> void:
+	WorldTime.reset()
+	_show_world_slow_tint(false)
+
+func _tick_ability_cooldowns(delta: float) -> void:
+	if training_menu_input_locked or (get_tree().paused and not rewind_active):
+		return
+	ability_cooldowns.tick(delta / maxf(Engine.time_scale, 0.001))
+	_sync_time_ability_charges()
+
+func _sync_time_ability_charges() -> void:
+	var rewind_ready: bool = ability_cooldowns.left("rewind") <= 0.0
+	var slow_ready: bool = ability_cooldowns.left("slow") <= 0.0
+	if rewind_ready != rewind_charge_available:
+		rewind_charge_available = rewind_ready
+		rewind_charge_changed.emit(rewind_ready)
+	if slow_ready != slow_charge_available:
+		slow_charge_available = slow_ready
+		slow_charge_changed.emit(slow_ready)
+
+func refill_rewind_charge() -> void:
+	# Existing wave/area calls must not bypass an active timed cooldown.
+	if ability_cooldowns.left("rewind") > 0.0 or rewind_charge_available: return
+	rewind_charge_available = true
+	rewind_charge_changed.emit(true)
+
+func _consume_rewind_charge() -> void:
+	ability_cooldowns.start("rewind")
+	rewind_charge_available = false
+	rewind_charge_changed.emit(false)
+
+## Retained but unused: rewind no longer costs or requires Flow (once-per-wave charge instead).
+static func rewind_flow_sufficient(flow_value: float) -> bool:
+	return flow_value + 0.0001 >= FLOW_MAX * REWIND_FLOW_REQUIRED_RATIO
+
+## Whether a rewind could start right now (setting on, blue Charged Guard held, this wave's
+## charge unused, alive, unpaused, not already rewinding, two samples recorded). No Flow cost.
+func can_activate_rewind() -> bool:
+	return _can_begin_rewind("rewind_gesture_enabled")
+
+## World rewind (spiral) availability: its own toggle, otherwise identical to the circle and
+## sharing the same once-per-wave charge.
+func can_activate_world_rewind() -> bool:
+	return _can_begin_rewind("world_rewind_gesture_enabled")
+
+func _can_begin_rewind(toggle_key: String) -> bool:
+	if get_combat_contact_setting(toggle_key) < 0.5:
+		return false
+	if not _rewind_guard_ready() or not rewind_charge_available:
+		return false
+	if rewind_active or health <= 0.0 or not is_inside_tree() or get_tree().paused:
+		return false
+	return rewind_buffer.count >= 2
+
+## Records one player-only sample at ~30 Hz. Never while dead, paused, in a menu, or during
+## playback. Numeric storage is preallocated; ability cooldowns get a small snapshot.
+func _record_rewind_sample(delta: float) -> void:
+	if rewind_active or health <= 0.0 or training_menu_input_locked or (is_inside_tree() and get_tree().paused):
+		return
+	rewind_record_clock += delta
+	rewind_record_accumulator += delta
+	if rewind_buffer.count > 0 and rewind_record_accumulator < REWIND_SAMPLE_INTERVAL:
+		return
+	rewind_record_accumulator = 0.0
+	var dash_timer_left: float = 0.0 if dash_timer == null or dash_timer.is_stopped() else dash_timer.time_left
+	rewind_buffer.push(rewind_record_clock, global_position, velocity, health, aim_angle, sword_phase, combat_hand_radius, dash_charges, dash_timer_left, grapple_charges, grapple_cooldown_left)
+	rewind_buffer.ability_cooldown_snapshots[rewind_buffer.head] = ability_cooldowns.capture_rewindable()
+	# World rings share the player's clock and slot index (aligned timestamps).
+	if world_rewind_retire_enabled() and is_inside_tree():
+		world_rewind_recorder.record(get_tree(), rewind_record_clock, rewind_buffer.head)
+	elif is_inside_tree():
+		world_rewind_recorder.invalidate()
+		world_rewind_recorder.sweep_retired(get_tree(), rewind_record_clock)
+
+## World-rewind host contract (WorldRewindRecorder.retire_enabled): enemies/projectiles retire
+## instead of freeing only while the spiral is enabled and this player is actually recording.
+func world_rewind_retire_enabled() -> bool:
+	return (not time_ability_gestures_enabled or get_combat_contact_setting("world_rewind_gesture_enabled") >= 0.5) and health > 0.0 and rewind_buffer.count > 0
+
+## Stage 2: the chakram charge count rides the world rewind (persistent track), so a disc thrown
+## after the target (removed) or caught after it (revived in flight) keeps the hand count right.
+## Only the world restore applies it; the player-only circle never touches discs.
+func rewind_stride() -> int:
+	return 1
+
+func rewind_capture(data: PackedFloat32Array, offset: int) -> void:
+	data[offset] = float(chakram_charges)
+
+func rewind_restore(data: PackedFloat32Array, offset: int) -> void:
+	chakram_charges = clampi(int(roundi(data[offset])), 0, max_chakram_charges)
+
+func _clear_rewind_gesture_stroke() -> void:
+	rewind_gesture_path.clear()
+	rewind_gesture_stroke_time = 0.0
+	rewind_gesture_still = 0.0
+	world_rewind_spiral_path.clear()
+	world_rewind_spiral_time = 0.0
+	world_rewind_spiral_still = 0.0
+	rewind_circle_pending = false
+	world_slow_circle_pending = false
+
+## Reads the rewind circle from the same per-frame screen cursor the Guard gesture layer uses.
+## The same circle stroke also feeds the clockwise World Slow circle (mirror direction).
+func _update_rewind_gesture(delta: float) -> void:
+	if not time_ability_gestures_enabled:
+		_clear_rewind_gesture_stroke()
+		rewind_gesture_has_cursor = false
+		return
+	var circle_gestures_enabled: bool = get_combat_contact_setting("rewind_gesture_enabled") >= 0.5 or get_combat_contact_setting("world_slow_gesture_enabled") >= 0.5
+	if not circle_gestures_enabled or not _rewind_guard_ready() or mobile_input_enabled or input_mode == INPUT_MODE_CONTROLLER or training_menu_input_locked or rewind_active:
+		_clear_rewind_gesture_stroke()
+		rewind_gesture_has_cursor = false
+		return
+	if not rewind_gesture_has_cursor:
+		rewind_gesture_previous_cursor = charged_guard_gesture_cursor
+		rewind_gesture_has_cursor = true
+		return
+	var moved: float = charged_guard_gesture_cursor.distance_to(rewind_gesture_previous_cursor)
+	rewind_gesture_previous_cursor = charged_guard_gesture_cursor
+	if not rewind_gesture_path.is_empty():
+		rewind_gesture_stroke_time += delta
+	if not world_rewind_spiral_path.is_empty():
+		world_rewind_spiral_time += delta
+	if moved < CHARGED_GUARD_GESTURE_MOVE_EPSILON:
+		rewind_gesture_still += delta
+		world_rewind_spiral_still += delta
+		# A qualified circle fires once the stroke has settled and is not still tightening.
+		if rewind_circle_pending and rewind_gesture_still >= REWIND_CIRCLE_SETTLE_TIME:
+			_clear_rewind_gesture_stroke()
+			activate_rewind()
+			return
+		if world_slow_circle_pending and rewind_gesture_still >= REWIND_CIRCLE_SETTLE_TIME:
+			_clear_rewind_gesture_stroke()
+			activate_world_slow()
+			return
+		if rewind_gesture_still > REWIND_GESTURE_STILL_RESET and not rewind_circle_pending and not world_slow_circle_pending:
+			rewind_gesture_path.clear()
+			rewind_gesture_stroke_time = 0.0
+		if world_rewind_spiral_still > WORLD_REWIND_SPIRAL_STILL_RESET:
+			_clear_rewind_gesture_stroke()
+		return
+	rewind_gesture_still = 0.0
+	world_rewind_spiral_still = 0.0
+	if rewind_gesture_stroke_time > REWIND_GESTURE_WINDOW or rewind_gesture_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
+		# Circle-only reset: the spiral's longer stroke keeps running.
+		rewind_gesture_path.clear()
+		rewind_gesture_stroke_time = 0.0
+		rewind_circle_pending = false
+		world_slow_circle_pending = false
+	rewind_gesture_path.append(charged_guard_gesture_cursor)
+	charged_guard_gesture_trail_left = CHARGED_GUARD_GESTURE_TRAIL_FADE
+	# The world spiral keeps its own longer stroke over the same cursor feed, and wins outright.
+	if get_combat_contact_setting("world_rewind_gesture_enabled") >= 0.5:
+		if world_rewind_spiral_path.is_empty():
+			world_rewind_spiral_time = 0.0
+		if world_rewind_spiral_time > WORLD_REWIND_SPIRAL_WINDOW or world_rewind_spiral_path.size() >= CHARGED_GUARD_GESTURE_SAMPLE_LIMIT:
+			world_rewind_spiral_path.clear()
+			world_rewind_spiral_time = 0.0
+		world_rewind_spiral_path.append(charged_guard_gesture_cursor)
+		if gesture_world_rewind_spiral_qualified(world_rewind_spiral_path, world_rewind_spiral_time):
+			_clear_rewind_gesture_stroke()
+			activate_world_rewind()
+			return
+	else:
+		world_rewind_spiral_path.clear()
+	# The circle no longer fires mid-stroke: it arms, and fires only when the cursor settles
+	# (above). Continuing to draw (e.g. tightening into a spiral) keeps it waiting; if the
+	# stroke stops qualifying as a circle, the pending fire is dropped.
+	rewind_circle_pending = get_combat_contact_setting("rewind_gesture_enabled") >= 0.5 and gesture_rewind_circle_qualified(rewind_gesture_path, rewind_gesture_stroke_time)
+	# Mirror: a clockwise loop fires World Slow IMMEDIATELY (no settle wait -- the user found the
+	# 0.12 s stop-to-fire tripped them up). Safe because nothing else is drawn clockwise: the
+	# rewind circle and the world spiral are both counter-clockwise.
+	world_slow_circle_pending = false
+	if get_combat_contact_setting("world_slow_gesture_enabled") >= 0.5 and gesture_world_slow_circle_qualified(rewind_gesture_path, rewind_gesture_stroke_time):
+		_clear_rewind_gesture_stroke()
+		activate_world_slow()
+		return
+
+## World Slow entry (clockwise circle and rig key): enemies, enemy projectiles and the wave
+## clock run at WorldTime.WORLD_SLOW_SCALE for WORLD_SLOW_DURATION real seconds.
+func activate_world_slow() -> bool:
+	if not can_activate_world_slow():
+		return false
+	_consume_slow_charge()
+	_release_charged_guard_hold() # the guard is spent into the slow, like rewind
+	WorldTime.begin_slow()
+	_show_world_slow_tint(true)
+	if OS.is_debug_build():
+		print("[world-slow] START scale=%.2f duration=%.1fs" % [WorldTime.WORLD_SLOW_SCALE, WorldTime.WORLD_SLOW_DURATION])
+	return true
+
+func can_activate_world_slow() -> bool:
+	if get_combat_contact_setting("world_slow_gesture_enabled") < 0.5:
+		return false
+	if not _rewind_guard_ready() or not slow_charge_available or WorldTime.slow_active():
+		return false
+	return not rewind_active and health > 0.0 and is_inside_tree() and not get_tree().paused
+
+## Runtime-only (never saved): one World Slow per wave, separate from the rewind charge.
+var slow_charge_available: bool = true
+
+func refill_slow_charge() -> void:
+	if ability_cooldowns.left("slow") > 0.0 or slow_charge_available: return
+	slow_charge_available = true
+	slow_charge_changed.emit(true)
+
+func _consume_slow_charge() -> void:
+	ability_cooldowns.start("slow")
+	slow_charge_available = false
+	slow_charge_changed.emit(false)
+
+## Counts the slow down in REAL player seconds. Only runs from the player's live tick, so
+## world-rewind playback (tree paused, early return) freezes the countdown.
+func _tick_world_slow(delta: float) -> void:
+	if not WorldTime.slow_active():
+		return
+	var real_delta: float = delta / maxf(Engine.time_scale, 0.001)
+	if WorldTime.tick(real_delta):
+		_show_world_slow_tint(false)
+		if OS.is_debug_build(): print("[world-slow] END")
+	# The wash is steady: the earlier quickening pulse read as strobing and was removed.
+
+var world_slow_tint_layer: CanvasLayer = null
+
+func _show_world_slow_tint(visible_now: bool) -> void:
+	if not visible_now:
+		if world_slow_tint_layer != null:
+			world_slow_tint_layer.queue_free()
+			world_slow_tint_layer = null
+		return
+	if world_slow_tint_layer == null:
+		world_slow_tint_layer = CanvasLayer.new()
+		world_slow_tint_layer.name = "WorldSlowTint"
+		world_slow_tint_layer.layer = 49
+		world_slow_tint_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+		var rect: ColorRect = ColorRect.new()
+		rect.name = "CoolWash"
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		rect.color = Color(0.40, 0.44, 0.90, 0.22) # cool blue-violet, distinct from rewind sepia
+		world_slow_tint_layer.add_child(rect)
+		add_child(world_slow_tint_layer)
+
+func _exit_tree() -> void:
+	# The world clock is static: never let a freed player leave the world slowed.
+	if WorldTime.slow_active():
+		WorldTime.reset()
+
+## The single activation entry (gesture and rig debug key both call this).
+func activate_rewind() -> bool:
+	if not can_activate_rewind():
+		return false
+	return _begin_rewind(false)
+
+## World rewind entry (spiral gesture and rig key): player + enemies + enemy projectiles.
+func activate_world_rewind() -> bool:
+	if not can_activate_world_rewind():
+		return false
+	return _begin_rewind(true)
+
+func _begin_rewind(world: bool) -> bool:
+	rewind_target_age = rewind_buffer.oldest_index_within(REWIND_DURATION)
+	if world:
+		# Never across a wave boundary; < 2 samples after the barrier refuses (charge kept).
+		rewind_target_age = world_rewind_recorder.clamp_age_to_barrier(rewind_buffer, rewind_target_age)
+	if rewind_target_age <= 0:
+		return false
+	rewind_world_active = world
+	# The pair that may be held right now must be let go before it can early-stop.
+	rewind_early_stop_needs_release = true
+	_consume_rewind_charge() # once per wave; Flow is untouched
+	_release_charged_guard_hold() # the guard is spent into the rewind
+	rewind_active = true
+	rewind_playback_elapsed = 0.0
+	var rewound_span: float = rewind_buffer.times[rewind_buffer.head] - rewind_buffer.times[rewind_buffer.slot(rewind_target_age)]
+	rewind_playback_duration = maxf(0.1, rewound_span * REWIND_PLAYBACK_RATIO)
+	if grapple_controller != null: grapple_controller.cancel_and_latch(_grapple_button_pressed())
+	_dispatch_blade_operation(func() -> void: _release_experimental_bind("rewind"))
+	velocity = Vector2.ZERO
+	# World freeze uses the canonical tree pause. Only the Player subtree (and the tint
+	# layer it owns) keeps processing. Main/_input is paused, so Esc cannot open the menu.
+	rewind_previous_tree_paused = get_tree().paused
+	rewind_previous_process_mode = process_mode
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	get_tree().paused = true
+	_show_rewind_tint()
+	if OS.is_debug_build():
+		print("[rewind] START from=%s to=%s span=%.2fs samples=%d" % [global_position, rewind_buffer.positions[rewind_buffer.slot(rewind_target_age)], rewind_buffer.times[rewind_buffer.head] - rewind_buffer.times[rewind_buffer.slot(rewind_target_age)], rewind_target_age + 1])
+	return true
+
+func _show_rewind_tint() -> void:
+	if rewind_tint_layer == null:
+		rewind_tint_layer = CanvasLayer.new()
+		rewind_tint_layer.name = "RewindTint"
+		rewind_tint_layer.layer = 50
+		rewind_tint_layer.process_mode = Node.PROCESS_MODE_ALWAYS
+		var rect: ColorRect = ColorRect.new()
+		rect.name = "Sepia"
+		rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		var tint_material: ShaderMaterial = ShaderMaterial.new()
+		tint_material.shader = preload("res://shaders/rewind_tint.gdshader")
+		rect.material = tint_material
+		rewind_tint_layer.add_child(rect)
+		add_child(rewind_tint_layer)
+	rewind_tint_layer.visible = true
+
+## Backward playback in real time; returns while active so no input or movement runs.
+func _advance_rewind_playback(delta: float) -> void:
+	var real_delta: float = delta / maxf(Engine.time_scale, 0.001)
+	rewind_playback_elapsed += real_delta
+	invulnerable = maxf(invulnerable, 0.1)
+	var progress: float = clampf(rewind_playback_elapsed / rewind_playback_duration, 0.0, 1.0)
+	var age: float = smoothstep(0.0, 1.0, progress) * float(rewind_target_age)
+	global_position = rewind_buffer.position_at(age)
+	velocity = Vector2.ZERO
+	var lower: int = rewind_buffer.slot(floori(age))
+	aim_angle = rewind_buffer.aim_angles[lower]
+	if rewind_world_active:
+		var upper: int = rewind_buffer.slot(mini(floori(age) + 1, rewind_buffer.count - 1))
+		world_rewind_recorder.apply_playback(lower, upper, age - floorf(age))
+	var main_scene: Node = get_tree().current_scene
+	if main_scene != null and main_scene.has_method("_update_presentation_camera_follow"):
+		main_scene.call("_update_presentation_camera_follow", real_delta)
+	queue_redraw()
+	if progress < 1.0 and _rewind_early_stop_pressed():
+		# Early stop: restore everything to the sample nearest the displayed instant.
+		rewind_target_age = clampi(roundi(age), 0, rewind_target_age)
+		if OS.is_debug_build():
+			print("[rewind] EARLY STOP at age=%.2f samples (%.2fs back) world=%s" % [age, age * REWIND_SAMPLE_INTERVAL, rewind_world_active])
+		_finish_rewind()
+		return
+	if progress >= 1.0:
+		_finish_rewind()
+
+## The Guard enter/exit pair (LMB+RMB), read raw because Player keeps processing while the tree
+## is paused. Both buttons must be released after activation and then pressed together again.
+func _rewind_early_stop_pressed() -> bool:
+	if not time_ability_gestures_enabled:
+		return false # direct bar/key activation owns cancellation now
+	var pair_possible: bool = not mobile_input_enabled and input_mode != INPUT_MODE_CONTROLLER
+	return _rewind_early_stop_from_state(pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT), pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT))
+
+func _rewind_early_stop_from_state(left_down: bool, right_down: bool) -> bool:
+	if not left_down and not right_down:
+		rewind_early_stop_needs_release = false
+		return false
+	return left_down and right_down and not rewind_early_stop_needs_release
+
+func _finish_rewind() -> void:
+	var target: int = rewind_buffer.slot(rewind_target_age)
+	# Clear transient contact/bind/slide/trail state rather than restoring mid-contact.
+	prepare_for_map_transition()
+	global_position = rewind_buffer.positions[target]
+	velocity = rewind_buffer.velocities[target]
+	aim_angle = rewind_buffer.aim_angles[target]
+	sword_phase = rewind_buffer.sword_phases[target]
+	combat_hand_radius = rewind_buffer.hand_radii[target]
+	dash_charges = clampi(rewind_buffer.dash_charges[target], 0, max_dash_charges)
+	var timer_left: float = rewind_buffer.dash_timer_lefts[target]
+	if dash_timer != null:
+		if timer_left > 0.0: dash_timer.start(timer_left)
+		else: dash_timer.stop()
+	grapple_charges = rewind_buffer.grapple_charges[target]
+	grapple_cooldown_left = rewind_buffer.grapple_cooldowns[target]
+	# Negative status effects are cleared, never restored.
+	hit_stagger_left = 0.0
+	hit_knockback = Vector2.ZERO
+	charged_guard_mouse_motion_delta = Vector2.ZERO
+	# Health is restored through the same bar/signal path as healing and damage. Never revives:
+	# activation already required health > 0.
+	var restored_health: float = clampf(rewind_buffer.healths[target], 1.0, max_health)
+	if health > 0.0 and not is_equal_approx(restored_health, health):
+		health = restored_health
+		health_bar.value = health
+		health_bar.visible = health < max_health
+		health_changed.emit(health, max_health)
+	if rewind_tint_layer != null:
+		rewind_tint_layer.queue_free()
+		rewind_tint_layer = null
+	if rewind_world_active:
+		var world_result: Vector3i = world_rewind_recorder.restore(get_tree(), target)
+		if OS.is_debug_build():
+			print("[world-rewind] RESTORED entities=%d revived=%d removed=%d" % [world_result.x, world_result.y, world_result.z])
+	world_rewind_recorder.invalidate()
+	ability_cooldowns.restore_rewindable(rewind_buffer.ability_cooldown_snapshots[target])
+	_sync_time_ability_charges()
+	rewind_world_active = false
+	# The LMB+RMB pair that stopped playback must be released before it can toggle Guard again.
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT):
+		charged_guard_dual_click_needs_release = true
+		charged_guard_dual_click_hold_left = 0.0
+	rewind_active = false
+	get_tree().paused = rewind_previous_tree_paused
+	process_mode = rewind_previous_process_mode
+	var nudge: Vector2 = _rewind_safe_resume_offset()
+	global_position += nudge
+	invulnerable = maxf(invulnerable, 0.35)
+	rewind_buffer.clear()
+	rewind_record_accumulator = 0.0
+	_record_rewind_sample(0.0)
+	var main_scene: Node = get_tree().current_scene
+	if main_scene != null and main_scene.has_method("play_sfx"): main_scene.call("play_sfx", "glyph_bell", 0.6, 0.7)
+	if OS.is_debug_build():
+		print("[rewind] RESTORED pos=%s vel=%s health=%.1f dash=%d nudge=%s flow=%.1f paused=%s" % [global_position, velocity, health, dash_charges, nudge, flow, get_tree().paused])
+	rewind_finished.emit(global_position)
+
+## Collision-safe resume: if the restored spot overlaps a wall (the body's own mask), step
+## outward on a small spiral to the nearest clear spot.
+func _rewind_safe_resume_offset() -> Vector2:
+	if not is_inside_tree() or not test_move(global_transform, Vector2.ZERO):
+		return Vector2.ZERO
+	for ring: int in range(1, 9):
+		for direction_index: int in range(8):
+			var offset: Vector2 = Vector2.RIGHT.rotated(TAU * float(direction_index) / 8.0) * 8.0 * float(ring)
+			if not test_move(global_transform.translated(offset), Vector2.ZERO):
+				return offset
+	return Vector2.ZERO
+
+func _draw_rewind_ghosts() -> void:
+	if not rewind_active or rewind_buffer.count < 2:
+		return
+	var progress: float = clampf(rewind_playback_elapsed / rewind_playback_duration, 0.0, 1.0)
+	var current_age: float = smoothstep(0.0, 1.0, progress) * float(rewind_target_age)
+	var previous: Vector2 = rewind_buffer.position_at(0.0) - global_position
+	for ghost_index: int in range(REWIND_GHOST_COUNT + 1):
+		var ghost_age: float = current_age * float(ghost_index) / float(REWIND_GHOST_COUNT)
+		var point: Vector2 = rewind_buffer.position_at(ghost_age) - global_position
+		var alpha: float = 0.15 + 0.45 * float(ghost_index) / float(REWIND_GHOST_COUNT)
+		draw_line(previous, point, Color(0.55, 0.85, 1.0, alpha * 0.8), 3.0, true)
+		draw_circle(point + Vector2(0, -6), 13.0, Color(0.6, 0.85, 1.0, alpha * 0.45))
+		draw_circle(point + Vector2(0, -16), 6.5, Color(0.85, 0.95, 1.0, alpha * 0.6))
+		previous = point
 
 ## --- Charged Guard gesture recognition --------------------------------------
 
@@ -4176,6 +5446,8 @@ static func charged_guard_whirlwind_total_duration() -> float:
 ## True only while a stroke can actually be read: the blue charged state is held, the
 ## feature is on, and the input is a drawn pointer rather than a stick.
 func _charged_guard_gesture_armed() -> bool:
+	if not gestures_except_rewind_gate:
+		return false
 	if get_combat_contact_setting("charged_guard_gestures_enabled") < 0.5:
 		return false
 	if not charged_guard_locked or not charged_guard_fully_charged:
@@ -4234,6 +5506,8 @@ func _charged_guard_entry_ready() -> bool:
 	return not _authored_metronome_mode_applies() or authored_metronome_energy + 0.0001 >= clampf(get_combat_contact_setting("charged_guard_min_arc_energy"), 0.0, 100.0) / 100.0
 
 func _charged_guard_entry_armed() -> bool:
+	if not gestures_except_rewind_gate:
+		return false
 	if get_combat_contact_setting("charged_guard_entry_g_enabled") < 0.5 and get_combat_contact_setting("charged_guard_entry_z_enabled") < 0.5:
 		return false
 	return _charged_guard_entry_ready()
@@ -4246,6 +5520,11 @@ static func charged_guard_dual_click_progress(hold_elapsed: float, required_hold
 ## held it owns both buttons, so the chakram and the grapple do not also fire from the same
 ## press. Runs before the grapple and chakram input so the suppression flag is current.
 func _update_charged_guard_dual_click(delta: float) -> void:
+	if primary_fire_owned_by_px:
+		# No guard combo in PX Mode: LMB belongs to the charge. Reset through the
+		# state path so a held combo can't linger into OS Mode.
+		_update_charged_guard_dual_click_from_state(false, false, delta)
+		return
 	var pair_possible: bool = not mobile_input_enabled and input_mode != INPUT_MODE_CONTROLLER
 	var left_down: bool = pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 	var right_down: bool = pair_possible and Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
@@ -4257,11 +5536,24 @@ func _update_charged_guard_dual_click_from_state(left_down: bool, right_down: bo
 	var combo_enabled: bool = get_combat_contact_setting("charged_guard_dual_click_entry_enabled") >= 0.5 and get_combat_contact_setting("charged_guard_enabled") >= 0.5 and _is_metronome_style()
 	var both_down: bool = combo_enabled and left_down and right_down
 	charged_guard_dual_click_held = both_down
+	if not left_down and not right_down:
+		charged_guard_dual_click_needs_release = false
 	if both_down:
 		charged_guard_dual_click_join_left = 0.0
-		charged_guard_dual_click_hold_left += delta
-		if charged_guard_dual_click_hold_left >= maxf(0.0, get_combat_contact_setting("charged_guard_dual_click_hold_time")):
-			_try_charged_guard_dual_click_entry()
+		if charged_guard_dual_click_needs_release:
+			# The pair that just toggled Guard is still held: it must be let go before it acts again.
+			charged_guard_dual_click_hold_left = 0.0
+		else:
+			charged_guard_dual_click_hold_left += delta
+			if charged_guard_dual_click_hold_left >= maxf(0.0, get_combat_contact_setting("charged_guard_dual_click_hold_time")):
+				if charged_guard_locked:
+					# The same held pair that enters Guard is the deliberate way out of it,
+					# through the canonical release every other exit uses.
+					_release_charged_guard_hold()
+					charged_guard_dual_click_hold_left = 0.0
+					charged_guard_dual_click_needs_release = true
+				else:
+					_try_charged_guard_dual_click_entry()
 	else:
 		charged_guard_dual_click_hold_left = 0.0
 		# A lone right-button press starts the short pair-join window: the left button has that
@@ -4284,6 +5576,9 @@ func _try_charged_guard_dual_click_entry() -> void:
 	if not _charged_guard_entry_ready():
 		return
 	_activate_charged_guard_from_entry_gesture("dual_click")
+	if charged_guard_locked:
+		charged_guard_dual_click_hold_left = 0.0
+		charged_guard_dual_click_needs_release = true
 
 func _update_charged_guard_entry_gesture(delta: float) -> void:
 	if not _charged_guard_entry_armed():
@@ -4608,8 +5903,8 @@ func _log_charged_guard_acquisition(alignment: float, speed: float, phase_valid:
 	var half_stroke_sign: int = 1 if cos(sword_phase) >= 0.0 else -1
 	print("[guard] %s | half-stroke %+d window %s reset %s | raw_mouse %.1f px pommel_delta %+.2f px travel %.1f/%.1f px | alignment %.2f speed %.0f px/s intent %.3f s candidate_age %.3f s candidate %s shape %s%s" % ["acquiring" if event.is_empty() else event, half_stroke_sign, phase_valid, reversal_reset, raw_delta, pommel_delta, travel, required_travel, alignment, speed, intent, candidate_age, candidate, shape_valid, " LOCK" if event == "lock" else ""])
 
-## Ends a held guard cleanly, and is the only way out of one. A flick, the hold limit
-## running out and the feature being switched off all come through here, so no exit can leave
+## Ends a held guard cleanly, and is the only way out of one. The LMB+RMB pair, the hold limit
+## running out, the (gated) flick and the feature being switched off all come through here, so no exit can leave
 ## the charge, the candidate latch or the banked hold time behind on the sword.
 func _release_charged_guard_hold() -> void:
 	charged_guard_locked = false
@@ -4646,8 +5941,12 @@ func _update_charged_guard(delta: float) -> void:
 		# thrown away by a sideways jab, so a guard cannot be lost while it is being acquired.
 		var aim_distance: float = (virtual_aim_point - global_position).length()
 		var flick_speed: float = charged_guard_lateral_aim_speed(aim_direction, charged_guard_authored_aim_velocity)
-		if charged_guard_entry_grace_left <= 0.0 and charged_guard_motion_breaks(flick_speed, get_combat_contact_setting("charged_guard_break_speed"), _cursor_hand_reach_limit(), aim_distance):
-			if _charged_guard_gesture_armed() and charged_guard_gesture_active:
+		# Gated off by default: the LMB+RMB pair is the deliberate exit now, so the rewind-circle
+		# exemption below is only reachable if the flick break is re-enabled.
+		if charged_guard_flick_break_gate and charged_guard_entry_grace_left <= 0.0 and charged_guard_motion_breaks(flick_speed, get_combat_contact_setting("charged_guard_break_speed"), _cursor_hand_reach_limit(), aim_distance):
+			if rewind_gesture_path.size() >= 4 and _rewind_guard_ready() and rewind_charge_available and get_combat_contact_setting("rewind_gesture_enabled") >= 0.5:
+				pass # a rewind circle is being drawn; the hold limit still bounds the guard
+			elif _charged_guard_gesture_armed() and charged_guard_gesture_active:
 				# Let the stroke finish. A valid technique wins; an unrecognized flick
 				# releases Guard when the player brings that stroke to rest.
 				charged_guard_gesture_break_pending = true
@@ -4776,10 +6075,36 @@ static func low_health_hit_threshold_crossed(previous_health: float, current_hea
 	return previous_health > threshold and current_health <= threshold
 
 func _update_sword(delta: float) -> void:
+	if dualblade_equipped:
+		_update_dual_sword(delta)
+		return
+	# Ordinary weapons retain their exact ordering. The musical drive/reset is
+	# explicitly separate from contact response; never advance this whole method
+	# once per blade when adding a multi-blade capability.
+	if _update_inactive_sword_response(delta):
+		return
+	var previous_phase: float = sword_phase
+	var response_delta: float = _prepare_sword_contact_response(delta)
+	var drive: Dictionary = _advance_sword_drive(delta, response_delta, previous_phase, _legacy_sword_contact_ceiling(delta))
+	_advance_collision_sword_pose()
+	var transform_data: Dictionary = _sword_transform()
+	_finish_sword_drive(previous_phase, float(drive["sword_delta"]), float(drive["frequency"]), transform_data)
+	_resolve_sword_response(delta, transform_data)
+
+## Returns true when stowing/freeze consumed this blade's response. Kept out of
+## the shared drive so a future blocked blade cannot consume another's clock.
+func _update_inactive_sword_response(delta: float) -> bool:
 	# The bone-stop cooldown ticks every frame, even while sheathed or inside a
 	# clash/parry freeze, so a queued catch cannot outlive those early returns.
 	blade_bone_stop_cooldown_left = maxf(0.0, blade_bone_stop_cooldown_left - delta)
+<<<<<<< Updated upstream
 	if _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED:
+=======
+	bone_clash_cooldown_left = maxf(0.0, bone_clash_cooldown_left - delta)
+	if sword_stowed or (_authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED):
+		collision_sword_solver = null
+		collision_sword_pose.clear()
+>>>>>>> Stashed changes
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
 		blade_sink_contact_left = 0.0
@@ -4830,7 +6155,7 @@ func _update_sword(delta: float) -> void:
 		current_blade_samples.clear()
 		blade_trail_points.clear()
 		hilt_trail_points.clear()
-		return
+		return true
 	if blade_freeze_left > 0.0:
 		blade_flesh_overlap_active = false
 		blade_sink_strength_active = 0.0
@@ -4850,11 +6175,12 @@ func _update_sword(delta: float) -> void:
 		bone_hold_multiplier = 1.0
 		# Clash/parry weapon freeze remains independent of flesh-only effects.
 		# Player and hilt movement still matter. Real movement creates a slight tug/rip through the enemy.
+		_advance_collision_sword_pose()
 		var freeze_data: Dictionary = _sword_transform()
 		var f_angle: float = float(freeze_data["angle"])
 		var f_dir: Vector2 = Vector2.RIGHT.rotated(f_angle)
-		var f_start: Vector2 = (freeze_data["start"] as Vector2) - f_dir * BLADE_HILT_INSET
-		var f_end: Vector2 = f_start + f_dir * BLADE_LENGTH
+		var f_start: Vector2 = (freeze_data["start"] as Vector2) - f_dir * _blade_hilt_inset()
+		var f_end: Vector2 = f_start + f_dir * _blade_length()
 
 		# Compute real velocity generated by body/hilt motion during the bite, scaled by bite_velocity_transfer
 		var v_transfer: float = clampf(get_combat_contact_setting("bite_velocity_transfer"), 0.0, 2.0)
@@ -4869,16 +6195,20 @@ func _update_sword(delta: float) -> void:
 		_update_blade_roll_target(blade_velocity - velocity, f_dir, delta)
 		_update_blade_roll(delta)
 		previous_blade_samples = current_blade_samples if not current_blade_samples.is_empty() else _blade_polyline_samples(f_start, f_dir)
-		current_blade_samples = _blade_polyline_samples(f_start, f_dir)
+		current_blade_samples = freeze_data["samples"] as PackedVector2Array if collision_sword_setting_on() and freeze_data.has("samples") else _blade_polyline_samples(f_start, f_dir)
 		previous_blade_start = f_start
 		previous_blade_end = f_end
-		return
-	var previous_phase: float = sword_phase
+		return true
+	return false
+
+## Blade-local reaction integration, before the authored drive. This still
+## supplies the legacy single-blade cadence modifier; dual response must not
+## feed either blade's slowdown back into the shared musical clock.
+func _prepare_sword_contact_response(delta: float) -> float:
 	# Ease the core yield toward the contact target set by _check_sword_hits last
 	# frame, then clear the target so a frame without core contact releases it.
 	blade_core_yield_multiplier = HitReaction.advance_blade_core_yield(blade_core_yield_multiplier, blade_core_yield_pending, delta)
 	blade_core_yield_pending = 1.0
-	var swing_frequency: float = _sword_cycle_frequency()
 	var slide_multiplier: float = get_combat_contact_setting("slide_speed")
 	if is_experimental_bind_form() and experimental_bind_active:
 		slide_multiplier = clampf(get_combat_hand_setting("bind_sword_speed"), 0.05, 1.0)
@@ -4972,6 +6302,25 @@ func _update_sword(delta: float) -> void:
 	if blade_hard_bind_left > 0.0:
 		sword_delta = 0.0
 		blade_hard_bind_left = maxf(0.0, blade_hard_bind_left - delta)
+	return sword_delta
+
+## Ordinary one-blade Bind historically limits its cadence AFTER authored
+## acceleration. Keep that compatibility outside the shared drive. A future
+## multi-blade caller must advance the drive once without a contact ceiling,
+## and apply each blade's reaction only to that blade's resolved response.
+func _legacy_sword_contact_ceiling(delta: float) -> float:
+	if not is_experimental_bind_form() or not (experimental_bind_candidate or experimental_bind_active) or not has_live_blade_slide_contact():
+		return INF
+	var slide_multiplier: float = get_combat_contact_setting("slide_speed")
+	if experimental_bind_active:
+		slide_multiplier = clampf(get_combat_hand_setting("bind_sword_speed"), 0.05, 1.0)
+	return delta * slide_multiplier * blade_sink_multiplier
+
+## The one authoritative musical advance. Must run once, not once per blade.
+## The response delta argument preserves ordinary weapon cadence unchanged.
+func _advance_sword_drive(delta: float, response_delta: float, previous_phase: float, contact_ceiling: float = INF) -> Dictionary:
+	var sword_delta: float = response_delta
+	var swing_frequency: float = _sword_cycle_frequency()
 	if authored_apex_hang_left > 0.0:
 		authored_apex_hang_left = maxf(0.0, authored_apex_hang_left - delta)
 		sword_delta = 0.0
@@ -5013,20 +6362,24 @@ func _update_sword(delta: float) -> void:
 	# back above real time and swipe Form III through its opponent. During an owned
 	# candidate/bind, the configured speed is an actual ceiling. The musical phase
 	# remains continuous; it simply advances deliberately while the blades resist.
-	if is_experimental_bind_form() and (experimental_bind_candidate or experimental_bind_active) and has_live_blade_slide_contact():
-		var constrained_delta: float = delta * slide_multiplier * blade_sink_multiplier
-		sword_delta = minf(sword_delta, constrained_delta)
+	sword_delta = minf(sword_delta, contact_ceiling)
 	swing_time += sword_delta
-	sword_phase = wrapf(sword_phase + sword_delta * swing_frequency * TAU, 0.0, TAU)
+	var next_phase: float = sword_phase + sword_delta * swing_frequency * TAU
+	if sword_style == SwordStyle.MOULINET and floori(next_phase / TAU) % 2 != 0:
+		moulinet_full8_reverse_cycle = not moulinet_full8_reverse_cycle
+	sword_phase = wrapf(next_phase, 0.0, TAU)
 	# On the exact turn frame, carry the last visible counter-steer value across
 	# before resetting it. Smoothing toward a new input target here would jump
 	# the endpoint before the return stroke even begins.
 	if (cos(previous_phase) >= 0.0) == (cos(sword_phase) >= 0.0):
 		counter_steer_compression = lerpf(counter_steer_compression, counter_steer_target, clampf(delta * COUNTER_STEER_COMPRESSION_SMOOTH_RATE, 0.0, 1.0))
 
-	var transform_data: Dictionary = _sword_transform()
-	var current_angle: float = float(transform_data["angle"])
+	return {"sword_delta": sword_delta, "frequency": swing_frequency}
 
+## One shared stroke boundary owns hit allowance, bonuses and authored resets.
+## Resolve the pose before this stage, exactly as the ordinary path always did.
+func _finish_sword_drive(previous_phase: float, sword_delta: float, swing_frequency: float, transform_data: Dictionary) -> void:
+	var current_angle: float = float(transform_data["angle"])
 	# Keep Form I reversal timing unchanged. Form II resets once per actual stab.
 	# Preset 4 uses the dominant stage's cadence (thrust in the first half of its blend).
 	var thrust_cadence: bool = sword_style in [SwordStyle.THRUST, SwordStyle.THRUST_METRONOME]
@@ -5095,10 +6448,20 @@ func _update_sword(delta: float) -> void:
 			if backstep_impulse > 0.0 and current_stroke_progress >= backstep_timing and previous_stroke_progress < backstep_timing:
 				velocity -= travel_direction * backstep_impulse
 				windup_backstep_fired = true
+
+## Future multi-blade callers install state only around a response operation,
+## not around _update_sword or the shared drive/reset. Not enabled by gear yet.
+func _resolve_scoped_sword_response(state: SwordBladeState, delta: float, transform_data: Dictionary) -> void:
+	state.with_applied(self, func() -> void: _resolve_sword_response(delta, transform_data))
+
+## Blade-local committed geometry, wall response, velocity, trails and contacts.
+## This stage never advances phase or clears the shared hit allowance.
+func _resolve_sword_response(delta: float, transform_data: Dictionary) -> void:
+	var current_angle: float = float(transform_data["angle"])
 	var blade_anchor: Vector2 = transform_data["start"] as Vector2
 	var blade_direction: Vector2 = Vector2.RIGHT.rotated(current_angle)
-	var current_start: Vector2 = blade_anchor - blade_direction * BLADE_HILT_INSET
-	var current_end: Vector2 = current_start + blade_direction * BLADE_LENGTH
+	var current_start: Vector2 = blade_anchor - blade_direction * _blade_hilt_inset()
+	var current_end: Vector2 = current_start + blade_direction * _blade_length()
 	# Wall recoil — if the blade tip is inside a wall, kick it back like a parry.
 	var main_scene: Node = get_tree().current_scene
 	if wall_recoil_cooldown <= 0.0 and main_scene.has_method("get_terrain_wall_collision"):
@@ -5114,7 +6477,7 @@ func _update_sword(delta: float) -> void:
 	_update_blade_roll_target(blade_velocity - velocity, blade_direction, delta)
 	_update_blade_roll(delta)
 	previous_blade_samples = current_blade_samples if not current_blade_samples.is_empty() else _blade_polyline_samples(current_start, blade_direction)
-	current_blade_samples = _blade_polyline_samples(current_start, blade_direction)
+	current_blade_samples = transform_data["samples"] as PackedVector2Array if collision_sword_setting_on() and transform_data.has("samples") else _blade_polyline_samples(current_start, blade_direction)
 	previous_blade_start = current_start
 	previous_blade_end = current_end
 	# The tip trail must trace the sword's actual (possibly curved) tip, not
@@ -5240,8 +6603,8 @@ func _blade_shape_contact_position(shape_hit: Dictionary, blade_start: Vector2, 
 	if shape_node == null or shape == null:
 		return blade_start.lerp(blade_end, 0.5)
 	var blade_shape: CircleShape2D = CircleShape2D.new()
-	blade_shape.radius = BLADE_RADIUS
-	var sample_count: int = maxi(2, ceili(blade_start.distance_to(blade_end) / maxf(BLADE_RADIUS * 1.5, 1.0)))
+	blade_shape.radius = _blade_radius()
+	var sample_count: int = maxi(2, ceili(blade_start.distance_to(blade_end) / maxf(_blade_radius() * 1.5, 1.0)))
 	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
 	for sample_index: int in range(sample_count + 1):
 		var point: Vector2 = blade_start.lerp(blade_end, float(sample_index) / float(sample_count))
@@ -5260,17 +6623,20 @@ func _physical_normal_from_shapes(shape_hits: Array[Dictionary], contact_positio
 	var fallback: Vector2 = fallback_position.direction_to(contact_position)
 	return fallback.normalized() if fallback.length_squared() > 0.001 else Vector2.UP
 
-func _blade_overlaps_enemy_shape(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D) -> Dictionary:
+## radius_start/radius_end (>= 0) give a per-segment tapered blade radius
+## (traced greatsword); the default -1 keeps the single uniform radius.
+func _blade_overlaps_enemy_shape(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D, radius_start: float = -1.0, radius_end: float = -1.0) -> Dictionary:
 	if shape_node == null or shape == null:
 		return {"overlap": false, "normal": Vector2.ZERO}
 	var blade_shape: CircleShape2D = CircleShape2D.new()
-	blade_shape.radius = BLADE_RADIUS
-	return _swept_blade_shape_overlap(previous_start, previous_end, current_start, current_end, shape_node, shape, blade_shape)
+	blade_shape.radius = _blade_radius()
+	return _swept_blade_shape_overlap(previous_start, previous_end, current_start, current_end, shape_node, shape, blade_shape, radius_start, radius_end)
 
-func _swept_blade_shape_overlap(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D, blade_shape: CircleShape2D) -> Dictionary:
+func _swept_blade_shape_overlap(previous_start: Vector2, previous_end: Vector2, current_start: Vector2, current_end: Vector2, shape_node: CollisionShape2D, shape: Shape2D, blade_shape: CircleShape2D, radius_start: float = -1.0, radius_end: float = -1.0) -> Dictionary:
+	var tapered: bool = radius_start >= 0.0 and radius_end >= 0.0
 	var shape_transform: Transform2D = _enemy_body_shape_transform(shape_node)
 	var blade_length: float = maxf(previous_start.distance_to(previous_end), current_start.distance_to(current_end))
-	var sample_count: int = maxi(2, ceili(blade_length / maxf(BLADE_RADIUS * 1.5, 1.0)))
+	var sample_count: int = maxi(2, ceili(blade_length / maxf(_blade_radius() * 1.5, 1.0)))
 	var best_distance: float = INF
 	var best_position: Vector2 = current_start.lerp(current_end, 0.5)
 	for sweep_index: int in range(SwordInteractionResolver.SWEEP_SAMPLES):
@@ -5279,6 +6645,7 @@ func _swept_blade_shape_overlap(previous_start: Vector2, previous_end: Vector2, 
 		var sweep_end: Vector2 = previous_end.lerp(current_end, sweep_ratio)
 		for sample_index: int in range(sample_count + 1):
 			var sample_position: Vector2 = sweep_start.lerp(sweep_end, float(sample_index) / float(sample_count))
+			if tapered: blade_shape.radius = lerpf(radius_start, radius_end, float(sample_index) / float(sample_count))
 			var sample_transform: Transform2D = Transform2D(0.0, sample_position)
 			if shape.collide(shape_transform, blade_shape, sample_transform):
 				var segment_ratio: float = float(sample_index) / float(sample_count)
@@ -5289,16 +6656,33 @@ func _swept_blade_shape_overlap(previous_start: Vector2, previous_end: Vector2, 
 			if separation < best_distance:
 				best_distance = separation
 				best_position = sample_position
-	var contact_limit: float = blade_shape.radius * 1.5
+	var contact_limit: float = (maxf(radius_start, radius_end) if tapered else blade_shape.radius) * 1.5
 	return {"overlap": best_distance <= contact_limit, "normal": _shape_surface_normal(shape_node, shape, best_position, current_end - current_start), "position": best_position, "blade_fraction": _closest_path_fraction(best_position, PackedVector2Array([current_start, current_end]))}
 
 func _draw_blade_bone_debug_shapes() -> void:
+	if collision_sword_setting_on() and collision_sword_solver != null:
+		var resolved: PackedVector2Array = collision_sword_solver.world_points()
+		for index: int in range(resolved.size() - 1):
+			draw_line(resolved[index] - global_position, resolved[index + 1] - global_position, Color(0.2, 1.0, 0.4, 0.9), BDOSSwordSolver.GEOMETRY_RADIUS * 2.0)
+		var intent: Dictionary = _sword_intent_transform()
+		var intended_angle: float = float(intent["angle"])
+		var intended_hilt: Vector2 = (intent["start"] as Vector2) - Vector2.from_angle(intended_angle) * _blade_hilt_inset()
+		var intended: PackedVector2Array = _blade_polyline_samples(intended_hilt, Vector2.from_angle(intended_angle))
+		for index: int in range(intended.size() - 1):
+			draw_line(intended[index] - global_position, intended[index + 1] - global_position, Color(0.2, 0.8, 1.0, 0.4), 1.0)
+		for contact: Dictionary in collision_sword_solver.contacts:
+			var point: Vector2 = (contact["point"] as Vector2) - global_position
+			draw_circle(point, 3.0, Color.YELLOW)
+			draw_line(point, point + (contact["normal"] as Vector2) * 16.0, Color.YELLOW, 2.0)
 	for node: Node in get_tree().get_nodes_in_group("enemies"):
 		var enemy: Node2D = node as Node2D
 		if enemy == null or not is_instance_valid(enemy):
 			continue
-		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
 		for shape_node: CollisionShape2D in _enemy_body_collision_shapes(enemy):
+			if collision_sword_setting_on():
+				_draw_debug_enemy_collision_shape(enemy, shape_node.shape, null, _enemy_body_shape_transform(shape_node))
+				continue
+			var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
 			var inner_shape: Shape2D = _scaled_enemy_shape(shape_node.shape, core_fraction)
 			if inner_shape == null:
 				continue
@@ -5311,6 +6695,10 @@ func _draw_debug_enemy_collision_shape(_enemy: Node2D, outer_shape: Shape2D, inn
 	var outer_color: Color = Color(1.0, 0.32, 0.16, 0.78)
 	var inner_color: Color = Color(0.3, 0.9, 1.0, 0.95)
 	draw_set_transform(relative_transform.origin, angle, shape_scale)
+	if inner_shape == null:
+		_draw_debug_shape_outline(outer_shape, outer_color)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	if outer_shape is CircleShape2D and inner_shape is CircleShape2D:
 		var outer_circle: CircleShape2D = outer_shape as CircleShape2D
 		var core_circle: CircleShape2D = inner_shape as CircleShape2D
@@ -5337,6 +6725,19 @@ func _draw_debug_enemy_collision_shape(_enemy: Node2D, outer_shape: Shape2D, inn
 		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
 		draw_arc(Vector2.ZERO, fallback_radius * core_fraction, 0.0, TAU, 48, inner_color, 2.0, true)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_debug_shape_outline(shape: Shape2D, color: Color) -> void:
+	if shape is CircleShape2D:
+		var circle: CircleShape2D = shape as CircleShape2D
+		draw_arc(Vector2.ZERO, circle.radius, 0.0, TAU, 48, color, 1.5, true)
+	elif shape is RectangleShape2D:
+		var rectangle: RectangleShape2D = shape as RectangleShape2D
+		draw_rect(Rect2(-rectangle.size * 0.5, rectangle.size), color, false, 1.5, true)
+	elif shape is CapsuleShape2D:
+		var capsule: CapsuleShape2D = shape as CapsuleShape2D
+		_draw_debug_capsule_outline(capsule.radius, capsule.height, color)
+	elif shape is ConvexPolygonShape2D:
+		_draw_debug_polygon_outline((shape as ConvexPolygonShape2D).points, color)
 
 func _draw_debug_capsule_outline(radius: float, height: float, color: Color) -> void:
 	var cap_center: float = maxf(0.0, height * 0.5 - radius)
@@ -5374,7 +6775,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var projectile: EnemyProjectile = projectile_node as EnemyProjectile
 		if projectile == null or not is_instance_valid(projectile): continue
 		var projectile_visible: bool = not main_scene.has_method("has_terrain_line_of_sight") or main_scene.has_terrain_line_of_sight(global_position, projectile.global_position, 2.0)
-		if projectile_visible and can_deflect_projectile() and _distance_to_blade_polyline(projectile.global_position, current_blade_samples) <= BLADE_RADIUS + 14.0:
+		if projectile_visible and can_deflect_projectile() and _distance_to_blade_polyline(projectile.global_position, current_blade_samples) <= _blade_contact_radius_at(projectile.global_position, current_blade_samples) + 14.0:
 			if projectile.deflect():
 				_set_sword_event("PROJECTILE", projectile.global_position)
 				var projectile_main: Node = get_tree().current_scene
@@ -5440,15 +6841,18 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				_end_live_blade_slide()
 		if enemy.has_method("is_shield_blocking") and enemy.is_shield_blocking(seg_start, seg_end, parry_forgiveness):
 			if enemy.has_method("shield_parry"): enemy.shield_parry(blade_velocity)
-			_trigger_parry(enemy.global_position)
+			# The shield is a wall, not a soft parry: a hard clash that knocks the player back
+			# off it and pins them (and the sword) for a beat makes the block read.
+			_trigger_shield_clash((seg_start + seg_end) * 0.5)
 			if _stop_charged_guard_thrust_on_contact(): return
 			continue
-		if enemy.has_method("try_blade_slide") and enemy.try_blade_slide(seg_start, seg_end, blade_velocity, combat_contact_preset):
+		var resolved_weapon_contact: bool = _collision_sword_touched_weapon(id)
+		if resolved_weapon_contact and enemy.has_method("try_blade_slide") and enemy.try_blade_slide(seg_start, seg_end, blade_velocity, combat_contact_preset):
 			var slide_point: Vector2 = enemy.call("get_slide_contact_global") as Vector2 if enemy.has_method("get_slide_contact_global") else enemy.global_position
 			_trigger_blade_slide(slide_point, enemy)
 			if _stop_charged_guard_thrust_on_contact(): return
 			continue
-		if enemy.has_method("is_blade_blocking") and enemy.is_blade_blocking(seg_start, seg_end, parry_forgiveness):
+		if resolved_weapon_contact and enemy.has_method("is_blade_blocking") and enemy.is_blade_blocking(seg_start, seg_end, parry_forgiveness):
 			var directional_parry: bool = true
 			if (combat_contact_preset >= 2 or ParryRules.USE_DIRECTIONAL_PARRY_TEST) and enemy.has_method("get_blade_direction"):
 				directional_parry = ParryRules.classify_weapon_interception(blade_velocity, enemy.get_blade_direction())
@@ -5475,7 +6879,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 			continue
 		# Generic contact is the fallback classification, not an extra effect layered
 		# under a Slide, Clash, or Parry from the same blade collision.
-		if enemy.has_method("is_blade_contact") and enemy.is_blade_contact(seg_start, seg_end):
+		if resolved_weapon_contact and enemy.has_method("is_blade_contact") and enemy.is_blade_contact(seg_start, seg_end):
 			if blade_contact_flash_left <= 0.0:
 				_trigger_blade_contact(enemy.global_position)
 			if _stop_charged_guard_thrust_on_contact(): return
@@ -5491,12 +6895,16 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var flesh_blade_fraction: float = 0.5
 		var best_flesh_surface_distance: float = INF
 		var core_fraction: float = HitReaction.inner_bone_fraction(get_combat_contact_setting("blade_bone_core_size_percent"))
+		# Traced greatsword: this segment's own tapered radius; -1 = uniform for ordinary weapons.
+		var seg_radii: PackedFloat32Array = _blade_sample_radii()
+		var seg_radius_start: float = seg_radii[seg_index] if seg_radii.size() == current_blade_samples.size() else -1.0
+		var seg_radius_end: float = seg_radii[seg_index + 1] if seg_radii.size() == current_blade_samples.size() else -1.0
 		for collision_shape: CollisionShape2D in available_shapes:
 			var outer_collision_shape: Shape2D = collision_shape.shape
 			var scaled_core: Shape2D = _scaled_enemy_shape(outer_collision_shape, core_fraction)
 			if scaled_core == null:
 				continue
-			var shape_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, outer_collision_shape)
+			var shape_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, outer_collision_shape, seg_radius_start, seg_radius_end)
 			if bool(shape_hit["overlap"]):
 				var surface_distance: float = _shape_separation_distance(collision_shape, outer_collision_shape, shape_hit["position"] as Vector2)
 				if surface_distance < best_flesh_surface_distance:
@@ -5506,7 +6914,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 					flesh_blade_fraction = float(shape_hit["blade_fraction"])
 				flesh_shapes.clear()
 				flesh_shapes.append({"shape": outer_collision_shape, "node": collision_shape, "transform": _enemy_body_shape_transform(collision_shape)})
-			var core_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, scaled_core)
+			var core_hit: Dictionary = _blade_overlaps_enemy_shape(prev_seg_start, prev_seg_end, seg_start, seg_end, collision_shape, scaled_core, seg_radius_start, seg_radius_end)
 			if bool(core_hit["overlap"]):
 				core_contact_normal = core_hit["normal"] as Vector2
 				core_shapes.append({"normal": core_hit["normal"], "shape": scaled_core, "node": collision_shape, "transform": _enemy_body_shape_transform(collision_shape)})
@@ -5533,7 +6941,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		# Hilt Bash is classified by the actual contact position along the whole
 		# (possibly curved) blade, not by distance from the player's body center.
 		var whole_blade_fraction: float = _blade_path_fraction_for_segment(current_blade_samples, seg_index, contact.blade_position)
-		var hilt_contact: bool = whole_blade_fraction <= hilt_bash_blade_fraction and not thrust_contact
+		var hilt_contact: bool = whole_blade_fraction <= _hilt_zone_fraction() and not thrust_contact
 		if hilt_contact:
 			if get_combat_contact_setting("hilt_bash_enabled") >= 0.5:
 				if float(enemy_rehit_cooldowns.get(id, 0.0)) <= 0.0:
@@ -5722,7 +7130,7 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 				# A committed Guard thrust must land at least base sword damage. The
 				# normal settings cannot tune this special down into an invisible hit.
 				total_damage_multiplier = charged_guard_thrust_damage_multiplier(total_damage_multiplier)
-			var dealt_damage: float = sword_damage * total_damage_multiplier
+			var dealt_damage: float = sword_damage * total_damage_multiplier * weapon_damage_multiplier()
 			var reaction_on: bool = get_combat_contact_setting("hit_reaction_enabled") >= 0.5
 			var impact_impulse: Vector2 = impact_direction * (140.0 + contact.impact_quality * 220.0) * forte_knockback
 			var immediate_impulse: Vector2 = impact_impulse
@@ -5763,12 +7171,13 @@ func _check_sword_hits(_start: Vector2, _end: Vector2, delta: float) -> void:
 		var chakram_seg_start: Vector2 = chakram_segment[0]
 		var chakram_seg_end: Vector2 = chakram_segment[1]
 		var chakram_contact_distance: float = _distance_to_segment(active_chakram.global_position, chakram_seg_start, chakram_seg_end)
-		if chakram_contact_distance <= BLADE_RADIUS + 24.0:
+		var chakram_blade_radius: float = _blade_contact_radius_at(active_chakram.global_position, current_blade_samples)
+		if chakram_contact_distance <= chakram_blade_radius + 24.0:
 			var successful_bat: bool = active_chakram.hit_by_player_sword(chakram_seg_start, blade_velocity, sword_to_chakram_weight, inherited_chakram_weight, min_chakram_bat_speed, max_chakram_bat_speed)
 			if successful_bat:
 				_set_sword_event("CHAKRAM", active_chakram.global_position)
 				_trigger_chakram_bat(active_chakram, active_chakram.global_position)
-		elif chakram_contact_distance > BLADE_RADIUS + 34.0:
+		elif chakram_contact_distance > chakram_blade_radius + 34.0:
 			active_chakram.release_sword_contact()
 	blade_flesh_overlap_active = flesh_overlap_this_frame
 	# Body Block: the whole silhouette refuses the blade, not just its core. The swing is held
@@ -6035,7 +7444,7 @@ func _trigger_blade_contact(point: Vector2) -> void:
 	if main_scene.has_method("spawn_tuned_combat_presentation"): main_scene.spawn_tuned_combat_presentation(point, contact_direction, impact_strength, get_combat_contact_setting("contact_zoom"), get_combat_contact_setting("contact_zoom_duration"))
 
 func _experimental_sword_control_delta(delta: float) -> float:
-	if not experimental_bind_active:
+	if not any_blade_bound():
 		return delta
 	# CombatPresentationFX applies this exact sustained scale. Dividing only by
 	# the authored bind scale keeps aim/metronome responsive while leaving brief
@@ -6311,6 +7720,7 @@ func _activate_experimental_bind() -> void:
 	_update_experimental_bind_focus()
 
 func _update_experimental_bind_focus() -> void:
+	if dualblade_equipped: return # Aggregated once after both response scopes.
 	if not experimental_bind_active or not is_inside_tree():
 		return
 	var main_scene: Node = get_tree().current_scene
@@ -6393,7 +7803,7 @@ func _release_experimental_bind(reason: String) -> void:
 	experimental_bind_release_reason = reason
 	_emit_combat_debug_event("BIND RELEASE", {"reason": reason, "was_stable": experimental_bind_active})
 	experimental_bind_cooldown_left = maxf(experimental_bind_cooldown_left, get_combat_hand_setting("bind_rebind_cooldown"))
-	if experimental_bind_active and is_inside_tree():
+	if experimental_bind_active and is_inside_tree() and not dualblade_equipped:
 		var main_scene: Node = get_tree().current_scene
 		if main_scene != null and main_scene.has_method("set_experimental_bind_focus"):
 			main_scene.call("set_experimental_bind_focus", false, experimental_bind_contact_point, 1.0, 0.0, 0.0, clampf(get_combat_hand_setting("bind_focus_response"), 1.0, 20.0))
@@ -6430,6 +7840,11 @@ func _play_slide_scrape_audio(relative_speed: float) -> void:
 	slide_audio_player.play(start_pos)
 
 func has_live_blade_slide_contact(opponent: Enemy = null) -> bool:
+	if dualblade_equipped and active_blade_index < 0:
+		for state: SwordBladeState in dual_blade_states:
+			var slide_owner: Enemy = state.values[&"preset_2_slide_opponent"] as Enemy
+			if float(state.values[&"slide_cling_left"]) > 0.0 and is_instance_valid(slide_owner) and (opponent == null or slide_owner == opponent): return true
+		return false
 	if slide_cling_left <= 0.0 or not is_instance_valid(preset_2_slide_opponent):
 		return false
 	return opponent == null or opponent == preset_2_slide_opponent
@@ -6480,7 +7895,7 @@ func _trigger_blade_slide(point: Vector2, opponent: Node2D = null) -> void:
 		var blade_anchor: Vector2 = transform_data["start"] as Vector2
 		var blade_angle: float = float(transform_data["angle"])
 		var blade_dir: Vector2 = Vector2.RIGHT.rotated(blade_angle)
-		preset_2_slide_distance_on_blade = clampf((point - blade_anchor).dot(blade_dir), 12.0, BLADE_LENGTH)
+		preset_2_slide_distance_on_blade = clampf((point - blade_anchor).dot(blade_dir), 12.0, _blade_length())
 	_set_sword_event("SLIDE", point)
 	sword_slide_count += 1
 	print("Sword slide detected #", sword_slide_count)
@@ -6571,6 +7986,56 @@ func _trigger_clash(point: Vector2) -> void:
 		frozen_blade_world_angle = float((_sword_transform())["angle"])
 		blade_freeze_left = freeze_dur
 
+<<<<<<< Updated upstream
+=======
+## Shield Clash. The shield contact reuses the clash sparks, hitstop, shake and clang, then knocks
+## the player back and applies only a brief player stun. Do not freeze or pin the sword: it resumes
+## its ordinary pose updates as soon as the short stun expires.
+func _trigger_shield_clash(point: Vector2) -> void:
+	notify_sword_contact()
+	_set_sword_event("CLASH", point)
+	_start_contact_sparks(point, int(get_combat_hand_setting("clash_sparks")), Color(1.0, 0.65, 0.15), blade_velocity)
+	if debug_print_sword_events: print("Sword event: SHIELD CLASH at ", point)
+	var main_scene: Node = get_tree().current_scene if is_inside_tree() else null
+	var recoil_direction: Vector2 = global_position.direction_to(point)
+	if recoil_direction.length_squared() <= 0.0001:
+		recoil_direction = -_current_aim_direction()
+	if main_scene != null:
+		if main_scene.has_method("request_hitstop"): main_scene.request_hitstop(SHIELD_CLASH_HITSTOP)
+		var clash_impact: float = get_combat_contact_setting("clash_impact")
+		if int(get_combat_hand_setting("clash_sparks")) > 0 and main_scene.has_method("spawn_impact_fx"):
+			main_scene.spawn_impact_fx(point, clash_impact, ImpactFX.ImpactType.CLASH)
+		if main_scene.has_method("request_screen_shake"):
+			main_scene.request_screen_shake(get_combat_contact_setting("clash_shake_strength"), get_combat_contact_setting("clash_shake_duration"), recoil_direction)
+		if main_scene.has_method("play_combat_clip"): main_scene.call("play_combat_clip", "parry_clash")
+	# Recoil and briefly stagger only the player. Do not freeze the blade or add a separate
+	# sword-recovery lockout; the blade resumes its ordinary pose updates after the short stun.
+	hit_knockback = -recoil_direction * SHIELD_CLASH_KNOCKBACK
+	hit_stagger_left = maxf(hit_stagger_left, SHIELD_CLASH_STUN_DURATION)
+	lose_flow(get_combat_contact_setting("clash_flow"))
+	queue_redraw()
+
+## Bone Clash: fire the clash presentation at a bone catch -- a clash-weight halt, a shake and the
+## clash clang -- plus only the lightest knockback, so a solid strike is felt without being punished.
+## No pose is written here: it is hitstop, shake and sound only.
+func _trigger_bone_clash(point: Vector2) -> void:
+	_set_sword_event("BONE CLASH", point, 0.2)
+	var main_scene: Node = get_tree().current_scene
+	var away: Vector2 = global_position.direction_to(point)
+	if away.length_squared() <= 0.001:
+		away = Vector2.RIGHT
+	if main_scene == null:
+		return
+	if main_scene.has_method("request_hitstop"):
+		main_scene.request_hitstop(BONE_CLASH_HITSTOP)
+	# The lightest possible nudge, so the solid hit is felt but good aim is never punished.
+	velocity -= away * BONE_CLASH_KNOCKBACK
+	if main_scene.has_method("request_screen_shake"):
+		main_scene.request_screen_shake(BONE_CLASH_SHAKE_STRENGTH, BONE_CLASH_SHAKE_DURATION, away)
+	if main_scene.has_method("play_combat_clip"):
+		main_scene.call("play_combat_clip", "parry_clash")
+
+>>>>>>> Stashed changes
 func _trigger_chakram_bat(batted_chakram: Chakram, point: Vector2) -> void:
 	report_tutorial_action("chakram_batted", batted_chakram)
 	var main_scene: Node = get_tree().current_scene
@@ -6607,7 +8072,7 @@ func lose_flow(amount: float) -> void:
 	flow_changed.emit(flow, 100.0)
 
 func take_damage(amount: float, knockback_force: Vector2 = Vector2.ZERO, attacker: Node2D = null) -> void:
-	if invulnerable > 0.0 or health <= 0.0: return
+	if rewind_active or invulnerable > 0.0 or health <= 0.0: return
 	hit_stagger_left = hit_stagger_time
 	hit_knockback = knockback_force if knockback_force != Vector2.ZERO else -_current_aim_direction() * hit_knockback_strength
 	_emit_frost_nova(attacker)
@@ -6659,6 +8124,8 @@ func collect_chakram(collected_chakram: Chakram) -> void:
 	if is_instance_valid(collected_chakram):
 		if grapple_controller != null: grapple_controller.release_if_target(collected_chakram)
 		collected_chakram.collect()
+		# A retired (rewind-kept) disc never exits the tree, so drop it from the active list here.
+		_on_chakram_exited(collected_chakram)
 		chakram_charges = mini(max_chakram_charges, chakram_charges + 1)
 
 func set_transition_facing(direction: float) -> void:
@@ -6666,6 +8133,10 @@ func set_transition_facing(direction: float) -> void:
 	queue_redraw()
 
 func prepare_for_map_transition() -> void:
+	if dualblade_equipped:
+		_clear_dual_blades()
+		_seed_dual_blades()
+	_reset_collision_sword_pose()
 	if grapple_controller != null: grapple_controller.cancel_and_latch(_grapple_button_pressed())
 	velocity = Vector2.ZERO
 	hit_knockback = Vector2.ZERO
@@ -6968,6 +8439,7 @@ func _draw() -> void:
 	var authored_metronome_sheathed: bool = _authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED
 	if not authored_metronome_sheathed:
 		_draw_metronome_indicator_base()
+	_draw_rewind_ghosts()
 	_draw_chakram_aim_trail()
 	_draw_dash_aim_preview()
 	if get_combat_contact_setting("blade_bone_debug_enabled") >= 0.5:
@@ -7201,49 +8673,57 @@ func _draw() -> void:
 		draw_circle(Vector2.ZERO, nova_radius, Color(0.2, 0.75, 1.0, nova_alpha * 0.16))
 		draw_arc(Vector2.ZERO, nova_radius, 0.0, TAU, 64, Color(0.35, 0.85, 1.0, nova_alpha * 0.9), 5.0, true)
 		draw_arc(Vector2.ZERO, maxf(8.0, nova_radius - 10.0), 0.0, TAU, 64, Color(0.7, 0.95, 1.0, nova_alpha * 0.35), 2.0, true)
-	# Both sword trails breathe with arc energy while the metronome is in play, and draw at
-	# their historical brightness in every other style. One multiplier, one authority.
-	var trail_visibility: float = _sword_trail_visibility_scale()
-	var hilt_points_count: int = hilt_trail_points.size()
-	for index: int in range(hilt_points_count - 1):
-		var h_start: Vector2 = hilt_trail_points[index] - global_position
-		var h_end: Vector2 = hilt_trail_points[index + 1] - global_position
-		var h_alpha: float = 0.55 * (1.0 - float(index) / float(hilt_points_count)) * trail_visibility
-		draw_line(h_start, h_end, Color(1.0, 0.65, 0.1, h_alpha), 3.0, true)
-	var trail_points_count: int = blade_trail_points.size()
-	for index: int in range(trail_points_count - 1):
-		var trail_start: Vector2 = blade_trail_points[index] - global_position
-		var trail_end: Vector2 = blade_trail_points[index + 1] - global_position
-		var trail_alpha: float = 0.45 * (1.0 - float(index) / float(trail_points_count)) * trail_visibility
-		var trail_thickness: float = maxf(2.0, 5.5 - float(index) * (4.0 / float(trail_points_count)))
-		draw_line(trail_start, trail_end, Color(1.0, 0.16, 0.08, trail_alpha), trail_thickness, true)
-	var data: Dictionary = _sword_transform()
-	var start: Vector2 = (data["start"] as Vector2) - global_position
-	var sword_angle: float = float(data["angle"])
-	# HD uses the same proven Classic sword artwork and dimensions. The player
-	# body can change visual profile without changing the weapon's readable scale.
-	var texture_center: Vector2 = start + Vector2.RIGHT.rotated(sword_angle) * (BLADE_LENGTH * 0.34)
-	# blade_roll (see its declaration) both mirrors and width-scales the
-	# rendered blade in lockstep with the hit polyline -- a negative local-X
-	# scale is a horizontal mirror, and its magnitude shrinking toward 0
-	# right as it crosses zero is what sells the "rolling edge-on" look
-	# instead of an instant pop.
-	draw_set_transform(texture_center, sword_angle - PI * 0.5, Vector2(0.055 * blade_roll, 0.055))
-	# Negative rect height flips the V axis -- the one-line fix for a sword
-	# whose source art has hilt/tip reversed, no PNG editing required.
-	var sword_flipped: bool = bool(SWORD_TEXTURE_FLIP_Y.get(equipped_sword_id, false))
-	var sword_rect: Rect2 = Rect2(-512.0, 768.0, 1024.0, -1536.0) if sword_flipped else Rect2(-512.0, -768.0, 1024.0, 1536.0)
-	if player_sword_visual != null:
-		player_sword_visual.call("set_sword_pose", equipped_sword_texture(), texture_center, sword_angle - PI * 0.5, Vector2(0.055 * blade_roll, 0.055), sword_rect, authored_metronome_sheathe_alpha)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	if sword_fire_left > 0.0 and not authored_metronome_sheathed:
-		var fire_fade: float = clampf(sword_fire_left / maxf(sword_fire_duration, 0.001), 0.0, 1.0)
-		var flame_blade_samples: PackedVector2Array = current_blade_samples
-		if flame_blade_samples.size() < 2:
-			var blade_direction: Vector2 = Vector2.RIGHT.rotated(sword_angle)
-			var blade_hilt: Vector2 = global_position + start - blade_direction * BLADE_HILT_INSET
-			flame_blade_samples = _blade_polyline_samples(blade_hilt, blade_direction)
-		_draw_hd_sword_fire(flame_blade_samples, fire_fade)
+	if dualblade_equipped:
+		_draw_dual_swords()
+	else:
+		# Both sword trails breathe with arc energy while the metronome is in play, and draw at
+		# their historical brightness in every other style. One multiplier, one authority.
+		var trail_visibility: float = _sword_trail_visibility_scale()
+		var hilt_points_count: int = hilt_trail_points.size()
+		for index: int in range(hilt_points_count - 1):
+			var h_start: Vector2 = hilt_trail_points[index] - global_position
+			var h_end: Vector2 = hilt_trail_points[index + 1] - global_position
+			var h_alpha: float = 0.55 * (1.0 - float(index) / float(hilt_points_count)) * trail_visibility
+			draw_line(h_start, h_end, Color(1.0, 0.65, 0.1, h_alpha), 3.0, true)
+		var trail_points_count: int = blade_trail_points.size()
+		for index: int in range(trail_points_count - 1):
+			var trail_start: Vector2 = blade_trail_points[index] - global_position
+			var trail_end: Vector2 = blade_trail_points[index + 1] - global_position
+			var trail_alpha: float = 0.45 * (1.0 - float(index) / float(trail_points_count)) * trail_visibility
+			var trail_thickness: float = maxf(2.0, 5.5 - float(index) * (4.0 / float(trail_points_count)))
+			draw_line(trail_start, trail_end, Color(1.0, 0.16, 0.08, trail_alpha), trail_thickness, true)
+		var data: Dictionary = _sword_transform()
+		var start: Vector2 = (data["start"] as Vector2) - global_position
+		var sword_angle: float = float(data["angle"])
+		# HD uses the same proven Classic sword artwork and dimensions. The player
+		# body can change visual profile without changing the weapon's readable scale.
+		var texture_center: Vector2 = start + Vector2.RIGHT.rotated(sword_angle) * (_blade_length() * 0.34)
+		# blade_roll (see its declaration) both mirrors and width-scales the
+		# rendered blade in lockstep with the hit polyline -- a negative local-X
+		# scale is a horizontal mirror, and its magnitude shrinking toward 0
+		# right as it crosses zero is what sells the "rolling edge-on" look
+		# instead of an instant pop.
+		var visible_blade_roll: float = collision_sword_roll if collision_sword_setting_on() and not collision_sword_pose.is_empty() else blade_roll
+		if greatsword_equipped and player_sword_visual != null:
+			# Art guard point sits exactly on the polyline start; same art->world scale as the trace.
+			var greatsword_scale: float = _greatsword_art_scale()
+			player_sword_visual.call("set_sword_pose", GREATSWORD_TEXTURE, start, sword_angle - PI * 0.5, Vector2(greatsword_scale * visible_blade_roll, greatsword_scale), Rect2(-GREATSWORD_ART_GUARD.x, -GREATSWORD_ART_GUARD.y, 1024.0, 1536.0), authored_metronome_sheathe_alpha)
+		draw_set_transform(texture_center, sword_angle - PI * 0.5, Vector2(0.055 * visible_blade_roll, 0.055))
+		# Negative rect height flips the V axis -- the one-line fix for a sword
+		# whose source art has hilt/tip reversed, no PNG editing required.
+		var sword_flipped: bool = bool(SWORD_TEXTURE_FLIP_Y.get(equipped_sword_id, false))
+		var sword_rect: Rect2 = Rect2(-512.0, 768.0, 1024.0, -1536.0) if sword_flipped else Rect2(-512.0, -768.0, 1024.0, 1536.0)
+		if player_sword_visual != null and not greatsword_equipped:
+			player_sword_visual.call("set_sword_pose", equipped_sword_texture(), texture_center, sword_angle - PI * 0.5, Vector2(0.055 * visible_blade_roll, 0.055), sword_rect, authored_metronome_sheathe_alpha)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		if sword_fire_left > 0.0 and not authored_metronome_sheathed:
+			var fire_fade: float = clampf(sword_fire_left / maxf(sword_fire_duration, 0.001), 0.0, 1.0)
+			var flame_blade_samples: PackedVector2Array = current_blade_samples
+			if flame_blade_samples.size() < 2:
+				var blade_direction: Vector2 = Vector2.RIGHT.rotated(sword_angle)
+				var blade_hilt: Vector2 = global_position + start - blade_direction * _blade_hilt_inset()
+				flame_blade_samples = _blade_polyline_samples(blade_hilt, blade_direction)
+			_draw_hd_sword_fire(flame_blade_samples, fire_fade)
 	# The gesture trail: what the player is drawing, drawn. Recognition is measured on the
 	# cursor's own screen positions, so the trail comes from those same points, projected
 	# back through the live camera. The stroke therefore stays exactly where the cursor
@@ -7261,6 +8741,8 @@ func _draw() -> void:
 		var trail_lit: Color = trail_blue.lerp(FlowColorUtils.CHARGE_WHITE_TONE, trail_flash * 0.75)
 		var screen_to_local: Transform2D = get_viewport().get_canvas_transform().affine_inverse()
 		var drawn_gesture_path: PackedVector2Array = charged_guard_entry_path if drawing_entry else charged_guard_gesture_path
+		if drawn_gesture_path.is_empty() and not rewind_gesture_path.is_empty():
+			drawn_gesture_path = rewind_gesture_path
 		var trail_count: int = drawn_gesture_path.size()
 		if charged_guard_gesture_trail_left > 0.0 and trail_count > 1:
 			for trail_index: int in range(trail_count - 1):
@@ -7292,4 +8774,246 @@ func _draw() -> void:
 			draw_circle(spark_position, 1.4 + 1.6 * spark_life, spark_color)
 	# Draw last so the gold needle remains visible over the sword and crowded combat.
 	if not authored_metronome_sheathed:
-		_draw_metronome_indicator_needle(sword_angle)
+		_draw_metronome_indicator_needle(float(_sword_transform()["angle"]))
+
+## Geometry capability is independent of the shared tuning/profile identity.
+func _draw_dual_swords() -> void:
+	const visual_script = preload("res://scripts/player_sword_visual.gd")
+	var poses: Array[visual_script.Pose] = []
+	for state: SwordBladeState in dual_blade_states:
+		var pose: Dictionary = state.values.get(&"dual_committed_pose", {})
+		if pose.is_empty(): continue
+		var angle: float = float(pose["angle"])
+		var start: Vector2 = (pose["start"] as Vector2) - global_position
+		var roll: float = float(state.values[&"collision_sword_roll"]) if collision_sword_setting_on() else float(state.values[&"blade_roll"])
+		if double_ended_equipped:
+			# One rigid art piece split at its grip centre: each end draws its own
+			# half (original PNG untouched, AtlasTexture region) along its own
+			# committed angle, so per-end contact response is visible.
+			poses.append(visual_script.Pose.new(_double_ended_half_texture(), start, angle - PI * 0.5, Vector2(DOUBLE_ENDED_ART_SCALE * roll, DOUBLE_ENDED_ART_SCALE), Rect2(-512, 0, 1024, 1536.0 - DOUBLE_ENDED_ART_CENTER_Y), authored_metronome_sheathe_alpha))
+		else:
+			poses.append(visual_script.Pose.new(equipped_sword_texture(), start + Vector2.from_angle(angle) * (_blade_length() * 0.34), angle - PI * 0.5, Vector2(0.055 * 0.9 * roll, 0.055 * 0.5), Rect2(-512, -768, 1024, 1536), authored_metronome_sheathe_alpha))
+		for field: StringName in [&"blade_trail_points", &"hilt_trail_points"]:
+			var points: Array = state.values[field]
+			for index: int in range(points.size() - 1):
+				var alpha: float = 0.45 * (1.0 - float(index) / float(points.size())) * _sword_trail_visibility_scale()
+				draw_line((points[index] as Vector2) - global_position, (points[index + 1] as Vector2) - global_position, Color(1.0, 0.3, 0.1, alpha), 2.0, true)
+		if float(state.values[&"sword_fire_left"]) > 0.0:
+			_draw_hd_sword_fire(state.values[&"current_blade_samples"], clampf(float(state.values[&"sword_fire_left"]) / maxf(sword_fire_duration, 0.001), 0.0, 1.0))
+	if player_sword_visual != null: player_sword_visual.set_sword_poses(poses)
+
+func _blade_length() -> float:
+	if double_ended_equipped: return DOUBLE_ENDED_END_LENGTH
+	if greatsword_equipped: return BLADE_LENGTH * GREATSWORD_LENGTH_RATIO
+	return BLADE_LENGTH * (0.5 if dualblade_equipped else 1.0)
+
+func _blade_hilt_inset() -> float:
+	# Pivot sits on the grip centre: the segment starts at the hand point.
+	if double_ended_equipped: return 0.0
+	# Greatsword: guard face -> traced grip centre, measured from the art.
+	if greatsword_equipped: return (GREATSWORD_ART_GUARD.y - GREATSWORD_ART_GRIP_CENTER_Y) * _greatsword_art_scale()
+	return BLADE_HILT_INSET * (0.5 if dualblade_equipped else 1.0)
+
+## Existing Hilt Bash classification boundary along the whole segment. For the
+## double-ended weapon the segment begins at the grip centre, so the handle zone
+## is exactly the grip + guard span measured from the art.
+var _double_ended_half_atlas: AtlasTexture = null
+## Lower half of the symmetric art (grip centre -> tip), drawn outward per end.
+func _double_ended_half_texture() -> Texture2D:
+	if _double_ended_half_atlas == null:
+		_double_ended_half_atlas = AtlasTexture.new()
+		_double_ended_half_atlas.atlas = DOUBLE_ENDED_TEXTURE
+		_double_ended_half_atlas.region = Rect2(0.0, DOUBLE_ENDED_ART_CENTER_Y, 1024.0, 1536.0 - DOUBLE_ENDED_ART_CENTER_Y)
+	return _double_ended_half_atlas
+
+func _hilt_zone_fraction() -> float:
+	if double_ended_equipped: return DOUBLE_ENDED_HANDLE_HALF / DOUBLE_ENDED_END_LENGTH
+	return hilt_bash_blade_fraction
+
+func _blade_radius() -> float:
+	# Greatsword uniform fallback (wall/core probes, bone constraint) = widest traced half-width.
+	if greatsword_equipped: return _greatsword_max_radius()
+	return BLADE_RADIUS * (0.9 if dualblade_equipped else 1.0)
+
+## World px per art px for the greatsword (traced blade span -> 1.2x Longsword).
+func _greatsword_art_scale() -> float:
+	return BLADE_LENGTH * GREATSWORD_LENGTH_RATIO / GREATSWORD_ART_BLADE_PX
+
+func _greatsword_max_radius() -> float:
+	var widest: float = 0.0
+	for point: Dictionary in GREATSWORD_TRACE: widest = maxf(widest, float(point["half_width"]))
+	return widest * _greatsword_art_scale()
+
+## Optional per-sample hit radius matching _blade_polyline_samples() order.
+## EMPTY for every ordinary weapon => callers keep the single uniform radius.
+func _blade_sample_radii() -> PackedFloat32Array:
+	var radii: PackedFloat32Array = PackedFloat32Array()
+	if not greatsword_equipped: return radii
+	var art_scale: float = _greatsword_art_scale()
+	for point: Dictionary in GREATSWORD_TRACE:
+		radii.append(maxf(float(point["half_width"]) * art_scale, BDOSSwordSolver.GEOMETRY_RADIUS))
+	return radii
+
+## Interpolated local radius on segment index at factor (0..1); uniform otherwise.
+func _blade_radius_on_segment(segment_index: int, factor: float) -> float:
+	var radii: PackedFloat32Array = _blade_sample_radii()
+	if radii.size() < 2: return _blade_radius()
+	var index: int = clampi(segment_index, 0, radii.size() - 2)
+	return lerpf(radii[index], radii[index + 1], clampf(factor, 0.0, 1.0))
+
+## Local blade radius at the polyline point nearest point (uniform for ordinary weapons).
+func _blade_contact_radius_at(point: Vector2, samples: PackedVector2Array) -> float:
+	var radii: PackedFloat32Array = _blade_sample_radii()
+	if radii.size() != samples.size() or samples.size() < 2: return _blade_radius()
+	var nearest: Array = _closest_blade_segment(point, samples)
+	var a: Vector2 = nearest[0]
+	var axis: Vector2 = (nearest[1] as Vector2) - a
+	var factor: float = clampf((point - a).dot(axis) / axis.length_squared(), 0.0, 1.0) if axis.length_squared() > 0.001 else 0.0
+	return _blade_radius_on_segment(int(nearest[2]), factor)
+
+## True when point lies inside the (variable-width) blade on any segment.
+func _point_inside_blade(point: Vector2, samples: PackedVector2Array, extra: float = 0.0) -> bool:
+	for index: int in range(samples.size() - 1):
+		var axis: Vector2 = samples[index + 1] - samples[index]
+		var factor: float = clampf((point - samples[index]).dot(axis) / axis.length_squared(), 0.0, 1.0) if axis.length_squared() > 0.001 else 0.0
+		if point.distance_to(samples[index] + axis * factor) <= _blade_radius_on_segment(index, factor) + extra:
+			return true
+	return false
+
+func _clear_dual_blades() -> void:
+	_dispatch_blade_operation(func() -> void:
+		_release_experimental_bind("weapon changed")
+		_end_live_blade_slide()
+		_release_blade_shell()
+		if is_instance_valid(slide_audio_player): slide_audio_player.queue_free()
+		slide_audio_player = null
+	)
+	dual_blade_states.clear()
+	var clean: Player = Player.new()
+	var state: SwordBladeState = SwordBladeState.new()
+	state.capture(clean)
+	state.apply(self)
+	clean.free()
+
+func _seed_dual_blades() -> void:
+	var clean: Player = Player.new()
+	for index: int in range(2):
+		var state: SwordBladeState = SwordBladeState.new()
+		state.capture(clean)
+		dual_blade_states.append(state)
+	clean.free()
+
+## Only synchronous response operations may run inside this scope. Shared aim,
+## phase, hand radius, drive, Guard and enemy allowance are never restored here.
+func _dispatch_blade_operation(operation: Callable) -> void:
+	if not dualblade_equipped or active_blade_index >= 0:
+		operation.call()
+		return
+	for index: int in range(dual_blade_states.size()):
+		active_blade_index = index
+		dual_blade_states[index].with_applied(self, operation)
+	active_blade_index = -1
+	if not dual_blade_states.is_empty(): dual_blade_states[0].apply(self)
+
+func _update_dual_bind_focus() -> void:
+	if not is_inside_tree(): return
+	var point: Vector2 = Vector2.ZERO
+	var count: int = 0
+	for state: SwordBladeState in dual_blade_states:
+		if bool(state.values[&"experimental_bind_active"]):
+			point += state.values[&"experimental_bind_contact_point"] as Vector2
+			count += 1
+	var main_scene: Node = get_tree().current_scene
+	if main_scene != null and main_scene.has_method("set_experimental_bind_focus"):
+		main_scene.call("set_experimental_bind_focus", count > 0, point / float(maxi(count, 1)), clampf(get_combat_hand_setting("bind_focus_time_scale"), 0.2, 1.0) if count > 0 else 1.0, clampf(get_combat_hand_setting("bind_focus_zoom"), 0.0, 0.30) if count > 0 else 0.0, clampf(get_combat_hand_setting("bind_focus_bias"), 0.0, 1.0), clampf(get_combat_hand_setting("bind_focus_response"), 1.0, 20.0))
+
+func any_blade_bound() -> bool:
+	if not dualblade_equipped or active_blade_index >= 0: return experimental_bind_active
+	for state: SwordBladeState in dual_blade_states:
+		if bool(state.values.get(&"experimental_bind_active", false)): return true
+	return false
+
+func _update_dual_sword(delta: float) -> void:
+	# One authored intention, NO contact ceiling. Both blades read the shared
+	# clock in lockstep; hit allowance stays on the shared boundary.
+	if sword_stowed or (_authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED):
+		_dispatch_blade_operation(func() -> void:
+			_update_inactive_sword_response(delta)
+			dual_committed_pose.clear()
+		)
+		return
+	var previous_phase: float = sword_phase
+	var drive: Dictionary = _advance_sword_drive(delta, delta, previous_phase)
+	# Swap ownership at BOTH outer edges, while the stab envelope is at rest.
+	# Centre crossings (including phase wrap) must never change the stabber.
+	var unwrapped_phase: float = sword_phase + (TAU if sword_phase < previous_phase else 0.0)
+	var crossed_edges: int = floori((unwrapped_phase - PI * 0.5) / PI) - floori((previous_phase - PI * 0.5) / PI)
+	if not double_ended_equipped and crossed_edges > 0:
+		twin_stab_cycle += crossed_edges
+		twin_stab_cycle_started = true
+	_finish_sword_drive(previous_phase, float(drive["sword_delta"]), float(drive["frequency"]), _sword_intent_transform())
+	_dispatch_blade_operation(func() -> void:
+		# Retention can dent THIS blade's aim, never the shared input authority.
+		var shared_aim: float = aim_angle
+		var shared_elbow: float = elbow_angle
+		_apply_experimental_bind_retention(delta)
+		_apply_flesh_bind_retention()
+		dual_response_aim_offset = angle_difference(shared_aim, aim_angle)
+		aim_angle = shared_aim
+		elbow_angle = shared_elbow
+		if _update_inactive_sword_response(delta):
+			dual_committed_pose = _sword_transform()
+			return
+		var response_delta: float = _prepare_sword_contact_response(delta)
+		dual_response_rate = clampf(response_delta / maxf(delta, 0.0001), 0.0, 1.0)
+		if is_experimental_bind_form() and (experimental_bind_candidate or experimental_bind_active):
+			dual_response_rate = minf(dual_response_rate, clampf(get_combat_hand_setting("bind_sword_speed"), 0.05, 1.0))
+		_advance_collision_sword_pose()
+		var pose: Dictionary = _sword_transform()
+		_resolve_sword_response(delta, pose)
+		dual_committed_pose = pose.duplicate(true)
+	)
+
+func _tick_blade_response_timers(delta: float, sword_control_delta: float) -> void:
+	if slide_audio_player == null and is_inside_tree(): _setup_slide_audio_player()
+	experimental_bind_cooldown_left = maxf(0.0, experimental_bind_cooldown_left - sword_control_delta)
+	experimental_reentry_time_left = maxf(0.0, experimental_reentry_time_left - sword_control_delta)
+	if experimental_reentry_time_left <= 0.0 or not is_instance_valid(experimental_reentry_opponent):
+		_clear_experimental_reentry()
+	experimental_bind_contact_seen = false
+	if not is_experimental_bind_form() or get_combat_hand_setting("bind_enabled") < 0.5:
+		_release_experimental_bind("form changed")
+		_clear_experimental_reentry()
+	sword_fire_left = maxf(0.0, sword_fire_left - delta)
+	var active_recoil_return: float = get_combat_contact_setting("blade_recoil_return")
+	var recoil_return_rate: float = sword_hit_recoil_return_speed if combat_contact_preset == 1 else active_recoil_return
+	sword_hit_recoil_offset = move_toward(sword_hit_recoil_offset, 0.0, deg_to_rad(recoil_return_rate) * delta)
+	wall_recoil_cooldown = maxf(0.0, wall_recoil_cooldown - delta)
+	blade_freeze_left = maxf(0.0, blade_freeze_left - delta)
+	grip_authority_left = maxf(0.0, grip_authority_left - delta)
+	clash_recovery_left = maxf(0.0, clash_recovery_left - delta)
+	blade_contact_flash_left = maxf(0.0, blade_contact_flash_left - delta)
+	_refresh_live_blade_slide_state()
+	slide_cling_left = maxf(0.0, slide_cling_left - delta)
+	if slide_cling_left <= 0.0 and preset_2_slide_opponent != null:
+		_end_live_blade_slide()
+	slide_audio_left = maxf(0.0, slide_audio_left - delta)
+	if slide_audio_left <= 0.0 and slide_audio_player != null and slide_audio_player.is_playing(): slide_audio_player.stop()
+	preset_2_slide_visual_left = maxf(0.0, preset_2_slide_visual_left - delta)
+	contact_spark_left = maxf(0.0, contact_spark_left - delta)
+	sword_event_left = maxf(0.0, sword_event_left - delta)
+
+func _maintain_staggered_blade() -> void:
+	if not collision_sword_setting_on() or (_authored_metronome_mode_applies() and authored_metronome_state == AuthoredMetronomeState.SHEATHED): return
+	# Stagger suppresses offense, not contact/reach maintenance. Do not run
+	# _update_sword or its damage pass, nor sweep the whole stagger on recovery.
+	_advance_collision_sword_pose()
+	current_blade_samples = collision_sword_solver.world_points()
+	previous_blade_samples = current_blade_samples.duplicate()
+	previous_blade_start = collision_sword_solver.hilt
+	previous_blade_end = previous_blade_start + Vector2.from_angle(collision_sword_solver.angle) * _blade_length()
+	blade_velocity = Vector2.ZERO
+	blade_trail_points.clear()
+	hilt_trail_points.clear()
+
+	if dualblade_equipped: dual_committed_pose = _sword_transform()

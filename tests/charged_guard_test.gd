@@ -8,7 +8,30 @@ func _new_player() -> Player:
 	player.set_physics_process(false)
 	player.combat_contact_preset = 2
 	player.sword_style = Player.SwordStyle.METRONOME
+	# The Guard / G / Z gestures are disabled by Player.GESTURES_EXCEPT_REWIND_ENABLED (false).
+	# These tests opt the dormant code back in so it stays covered for re-enabling; the gated
+	# default is asserted in test_gesture_gate_off_disables_guard_and_entry_gestures below.
+	Player.gestures_except_rewind_gate = true
+	# The flick break is gated off by default; legacy flick tests opt it back in explicitly.
+	Player.charged_guard_flick_break_gate = Player.CHARGED_GUARD_FLICK_BREAK_ENABLED
 	return player
+
+func test_gesture_gate_off_disables_guard_and_entry_gestures() -> void:
+	var player: Player = _blue_guard_player()
+	Player.gestures_except_rewind_gate = Player.GESTURES_EXCEPT_REWIND_ENABLED
+	assert(not Player.GESTURES_EXCEPT_REWIND_ENABLED, "Shipped default: only the rewind gesture is live (set the flag true to re-enable).")
+	player.set_combat_contact_setting("charged_guard_entry_g_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_entry_z_enabled", 1.0)
+	assert(not player._charged_guard_gesture_armed(), "Guard thrust/V-slash/whirlwind never read while gated, even with the switch ON.")
+	_draw_straight_stroke(player, Vector2(400.0, 300.0), Vector2(0.0, 16.0), 16)
+	for _frame: int in range(8):
+		player._update_charged_guard_gesture(1.0 / 60.0)
+	assert(player.charged_guard_gesture_state == Player.ChargedGuardGesture.NONE and player.charged_guard_locked, "A gated stroke fires nothing and keeps the guard.")
+	player.charged_guard_locked = false
+	player.charged_guard_fully_charged = false
+	assert(not player._charged_guard_entry_armed(), "G/Z entry never arms while gated, even with both switches ON.")
+	Player.gestures_except_rewind_gate = true
+	player.free()
 
 func test_sword_stays_above_body_while_flow_afterimages_stay_behind() -> void:
 	var player: Player = _new_player()
@@ -55,6 +78,7 @@ func test_driving_the_pommel_against_the_swing_banks_a_guard_then_locks() -> voi
 	assert(player.charged_guard_locked, "The qualified counter-drive should catch Guard without a separate pose hold.")
 	# And the flick breaks it again: it is the exit the player reaches for, and it has to be
 	# lateral -- across the aim, not along it -- to count.
+	Player.charged_guard_flick_break_gate = true
 	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 2000.0
 	player._update_charged_guard(1.0 / 60.0)
 	assert(not player.charged_guard_locked, "A hard sideways flick must break a held guard.")
@@ -448,7 +472,7 @@ func test_apex_duration_has_preset_default_and_persistence_key() -> void:
 func test_training_ui_has_guard_tab_and_collapsed_core_section() -> void:
 	var menu: BackyardTrainingMenu = BackyardTrainingMenu.new()
 	add_child(menu)
-	var tabs: TabContainer = menu.get_node("Panel/TrainingTabs") as TabContainer
+	var tabs: TabContainer = menu.get_node("Panel/TunerRoot/TrainingTabs") as TabContainer
 	var guard_tab_found: bool = false
 	for tab: Node in tabs.get_children():
 		if tab.name == "Charged Guard":
@@ -805,6 +829,7 @@ func test_gesture_feature_off_leaves_the_guard_and_the_aim_untouched() -> void:
 
 func test_a_hard_sideways_flick_breaks_a_held_guard() -> void:
 	var player: Player = _blue_guard_player()
+	Player.charged_guard_flick_break_gate = true
 	# The flick is the exit the player reaches for, read as lateral speed -- across the aim, not
 	# along it -- so a straight drawn stroke can never look like one.
 	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 1500.0
@@ -1085,6 +1110,7 @@ func test_slow_circle_uses_its_three_second_window_in_the_live_recorder() -> voi
 
 func test_fast_circle_finishes_before_a_sideways_flick_can_break_guard() -> void:
 	var player: Player = _blue_guard_player()
+	Player.charged_guard_flick_break_gate = true
 	_aim_right(player)
 	player.charged_guard_gesture_cursor = Vector2(760.0, 400.0)
 	player._update_charged_guard_gesture(1.0 / 60.0)
@@ -1102,6 +1128,7 @@ func test_fast_circle_finishes_before_a_sideways_flick_can_break_guard() -> void
 
 func test_unrecognized_hard_flick_releases_guard_after_the_stroke_settles() -> void:
 	var player: Player = _blue_guard_player()
+	Player.charged_guard_flick_break_gate = true
 	player.charged_guard_gesture_cursor = Vector2(700.0, 400.0)
 	player._update_charged_guard_gesture(1.0 / 60.0)
 	player.charged_guard_gesture_cursor += Vector2(0.0, 30.0)
@@ -1396,4 +1423,61 @@ func test_a_lone_left_press_never_blocks_the_chakram() -> void:
 	player.chakram_key_was_down = true
 	player._handle_chakram_input()
 	assert(not player.active_chakrams.is_empty(), "A lone left tap must still throw the chakram.")
+	player.free()
+
+func _dual_click_guard_player() -> Player:
+	var player: Player = _new_player()
+	player.set_combat_contact_setting("charged_guard_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_position_charge_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_entry_enabled", 1.0)
+	player.set_combat_contact_setting("charged_guard_dual_click_hold_time", 0.20)
+	return player
+
+func _hold_pair(player: Player, frames: int, left: bool = true, right: bool = true) -> void:
+	for _frame: int in range(frames):
+		player._update_charged_guard_dual_click_from_state(left, right, 1.0 / 60.0)
+
+func test_fast_flick_no_longer_breaks_guard_by_default() -> void:
+	var player: Player = _blue_guard_player()
+	assert(not Player.charged_guard_flick_break_gate, "The flick break must ship gated off.")
+	player.charged_guard_authored_aim_velocity = Vector2.DOWN * 2000.0
+	for _frame: int in range(5):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(player.charged_guard_locked, "A hard sideways flick must no longer break Guard.")
+	player.free()
+
+func test_dual_click_in_guard_exits_through_canonical_release() -> void:
+	var player: Player = _dual_click_guard_player()
+	_hold_pair(player, 14)
+	assert(player.charged_guard_locked, "The pair enters Guard.")
+	_hold_pair(player, 30)
+	assert(player.charged_guard_locked, "Keeping the entry pair held must not bounce straight back out.")
+	_hold_pair(player, 1, false, false)
+	_hold_pair(player, 14)
+	assert(not player.charged_guard_locked and not player.charged_guard_fully_charged, "A fresh held pair inside Guard exits it.")
+	assert(player.charged_guard_reacquire_block_left > 0.0 and is_zero_approx(player.charged_guard_hold_time), "The exit runs the canonical release (reacquire block, hold time cleared).")
+	player.charged_guard_reacquire_block_left = 0.0
+	_hold_pair(player, 30)
+	assert(not player.charged_guard_locked, "Keeping the exit pair held must not re-enter Guard.")
+	_hold_pair(player, 1, false, false)
+	_hold_pair(player, 14)
+	assert(player.charged_guard_locked, "After releasing both buttons, the pair can enter again.")
+	player.free()
+
+func test_single_button_in_guard_never_exits() -> void:
+	var player: Player = _dual_click_guard_player()
+	_hold_pair(player, 14)
+	_hold_pair(player, 1, false, false)
+	_hold_pair(player, 40, true, false)
+	_hold_pair(player, 1, false, false)
+	_hold_pair(player, 40, false, true)
+	assert(player.charged_guard_locked, "A lone LMB or RMB inside Guard must not exit it.")
+	player.free()
+
+func test_hold_limit_still_releases_guard() -> void:
+	var player: Player = _blue_guard_player()
+	player.set_combat_contact_setting("charged_guard_hold_limit", 1.0)
+	for _frame: int in range(70):
+		player._update_charged_guard(1.0 / 60.0)
+	assert(not player.charged_guard_locked, "The hold limit must still release Guard.")
 	player.free()

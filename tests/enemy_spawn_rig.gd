@@ -18,12 +18,14 @@ class_name EnemySpawnRig extends Node
 ##   L           force a status line             space     damage every spawn a little
 
 const TYPE_ORDER: Array[String] = [
-	"turkey", "goblin", "archer_goblin", "sword_goblin", "bug", "wolf", "ogre"
+	"turkey", "goblin", "archer_goblin", "goblin_bomber", "goblin_shaman", "sword_goblin", "bug", "wolf", "ogre"
 ]
 const ENEMY_SCENES: Dictionary = {
 	"turkey": WaveSpawner.TURKEY_SCENE,
 	"goblin": WaveSpawner.GOBLIN_SCENE,
 	"archer_goblin": WaveSpawner.ARCHER_GOBLIN_SCENE,
+	"goblin_bomber": WaveSpawner.GOBLIN_BOMBER_SCENE,
+	"goblin_shaman": WaveSpawner.GOBLIN_SHAMAN_SCENE,
 	"sword_goblin": WaveSpawner.SWORD_GOBLIN_SCENE,
 	"bug": WaveSpawner.BUG_SCENE,
 	"wolf": WaveSpawner.WOLF_SCENE,
@@ -35,7 +37,7 @@ const STATUS_INTERVAL: float = 2.5
 const MAX_READY_FRAMES: int = 120
 
 @export_group("Spawn")
-## turkey, goblin, archer_goblin, sword_goblin, bug, wolf, ogre, "random", or "zungar".
+## turkey, goblin, archer_goblin, goblin_bomber, goblin_shaman, sword_goblin, bug, wolf, ogre, "random", or "zungar".
 @export var enemy_type: String = "turkey"
 ## How many of that enemy to spawn up front.
 @export var spawn_count: int = 3

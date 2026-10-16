@@ -5,17 +5,9 @@ class_name ChasmStage extends Node2D
 ## remain authoritative without duplicating their coordinates in code.
 const BOUNDARY_ORDER: Array[String] = [
 	"Top",
-	"RightTopSlope",
-	"RightUpper",
-	"RightMiddle",
-	"RightLower",
-	"RightBottom",
+	"Right",
 	"Bottom",
-	"LeftBottom",
-	"LeftLower",
-	"LeftMiddle",
-	"LeftUpper",
-	"TopLeftSlope",
+	"Left",
 ]
 
 @export var arena_rect: Rect2 = Rect2(0.0, 0.0, 1280.0, 720.0)
@@ -25,10 +17,28 @@ const BOUNDARY_ORDER: Array[String] = [
 var _all_boundary_segments: Array[PackedVector2Array] = []
 var _runtime_closures: Array[CollisionShape2D] = []
 
+var perimeter: ChasmPerimeter
+
 func _ready() -> void:
 	_rebuild_runtime_boundary_closures()
+	perimeter = ChasmPerimeter.new()
+	perimeter.name = "ChasmPerimeter"
+	add_child(perimeter)
+	perimeter.build(self)
+
+@onready var population: ChasmPopulation = $ChasmPopulation
+
+func regenerate(entrance: Vector2 = Vector2(0, 360)) -> void:
+	population.entry_position = entrance
+	population.populate()
+
+func get_playable_rect() -> Rect2:
+	var top: CollisionShape2D = $ChasmBounds/Top
+	return arena_rect.grow(-(top.shape as RectangleShape2D).size.y * 0.5)
 
 func set_collision_enabled(enabled: bool) -> void:
+	if not enabled and population != null:
+		population.clear_population()
 	var bounds: StaticBody2D = get_node_or_null("ChasmBounds") as StaticBody2D
 	if bounds != null:
 		bounds.collision_layer = 4 if enabled else 0
@@ -37,8 +47,11 @@ func get_spawn_rect() -> Rect2:
 	return arena_rect
 
 func is_spawn_position_valid(candidate_position: Vector2, clearance: float = 52.0) -> bool:
-	if not arena_rect.has_point(candidate_position):
+	if not get_playable_rect().grow(-maxf(clearance, spawn_boundary_clearance)).has_point(candidate_position):
 		return false
+	if population != null:
+		for bounds: Rect2 in population.get_blocking_bounds():
+			if bounds.grow(clearance).has_point(candidate_position): return false
 	var boundary_polygon: PackedVector2Array = get_boundary_polygon()
 	if boundary_polygon.size() < 3 or not _point_in_polygon(candidate_position, boundary_polygon):
 		return false

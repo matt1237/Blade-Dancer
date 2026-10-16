@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://tests/kaji_plant_breeze_preview.tscn" id="1"]
+
+[node name="KajiPlantBreezeEvidence" instance=ExtResource("1")]
+record_evidence = true

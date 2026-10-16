@@ -11,6 +11,9 @@ func _configure_concrete_enemy() -> void:
 	remnant_color = Color("8f473f")
 	death_sound_category = "wolf_death"
 
+func _is_knockback_immune() -> bool:
+	return _charge_commitment_active()
+
 func _run_concrete_ai(delta: float) -> void:
 	_charger(delta)
 
