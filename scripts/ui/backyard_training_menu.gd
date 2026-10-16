@@ -38,6 +38,17 @@ var grapple_status_label: Label = null
 var experimental_bind_section: VBoxContainer = null
 var experimental_bind_status: Label = null
 var weapon_collision_zones_button: Button = null
+## PX Mode is the door into the standalone physics-sword lab. This tab owns only
+## the OS/PX switch and the PX prototype's own save; the engine itself is wired
+## in separately, so nothing here can touch the authored sword or combat presets.
+var px_mode_buttons: Dictionary = {}
+var px_mode_status: Label = null
+## The PX tab set (shown only in PX Mode) and its live controls.
+var px_tabs: TabContainer = null
+var px_controls: Dictionary = {}
+var _px_settings: Dictionary = {}
+## The "Last saved" readout on the PX Global section.
+var px_saved_label: Label = null
 
 var last_hand_key: String = ""
 var last_contact_key: String = ""
@@ -81,6 +92,16 @@ func _build_ui() -> void:
 	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(panel)
 
+	# One shared gateway sits at the very top of the tools: OS MODE / PX MODE.
+	# Under it are two whole tab sets — the game's own (OS) and the PX physics
+	# tuner — and switching the mode swaps which set is shown. Nothing else about
+	# the tools changes, and no OS control is ever edited from PX Mode.
+	var root_box: VBoxContainer = VBoxContainer.new()
+	root_box.name = "TunerRoot"
+	root_box.add_theme_constant_override("separation", 6)
+	panel.add_child(root_box)
+	root_box.add_child(_build_mode_header())
+
 	training_tabs = TabContainer.new()
 	training_tabs.name = "TrainingTabs"
 	training_tabs.focus_mode = Control.FOCUS_NONE
@@ -88,8 +109,19 @@ func _build_ui() -> void:
 	# Hidden combat controls must not force the forest side dock to their width.
 	training_tabs.use_hidden_tabs_for_min_size = false
 	training_tabs.clip_tabs = true
-	training_tabs.set_anchors_preset(Control.PRESET_FULL_RECT)
-	panel.add_child(training_tabs)
+	training_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	training_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_box.add_child(training_tabs)
+
+	px_tabs = TabContainer.new()
+	px_tabs.name = "PXTabs"
+	px_tabs.focus_mode = Control.FOCUS_NONE
+	px_tabs.tab_focus_mode = Control.FOCUS_NONE
+	px_tabs.clip_tabs = true
+	px_tabs.visible = false
+	px_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	px_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_box.add_child(px_tabs)
 
 	_build_layout_tab(training_tabs)
 	_build_enemy_tab(training_tabs)
@@ -103,7 +135,11 @@ func _build_ui() -> void:
 	_build_visualizer_tab(training_tabs)
 	_build_global_presets_tab(training_tabs)
 	_build_forest_visuals_tab(training_tabs)
+	_build_px_tuner(px_tabs)
 	training_tabs.tab_changed.connect(_on_training_tab_changed)
+	px_tabs.tab_changed.connect(_on_training_tab_changed)
+	# Adopt the saved mode immediately, so reopening the tools shows the right set.
+	_refresh_px_mode_ui()
 
 func _build_layout_tab(tabs: TabContainer) -> void:
 	var layout_tab: VBoxContainer = VBoxContainer.new()
@@ -177,8 +213,6 @@ func _on_training_tab_changed(_index: int) -> void:
 	# Reapply after containers invalidate their previous minimum size.
 	_apply_training_layout.call_deferred()
 
-<<<<<<< Updated upstream
-=======
 ## The shared gateway that sits at the very top of BOTH tuner sets. It only chooses
 ## the mode; it never edits a setting itself.
 func _build_mode_header() -> Control:
@@ -817,7 +851,6 @@ func _refresh_px_mode_ui() -> void:
 	if px_tabs != null:
 		px_tabs.visible = px_on
 
->>>>>>> Stashed changes
 ## Returns a viewport-safe panel rectangle. The separate toggle sits directly
 ## above it, and the combined toggle+panel assembly is centered as one unit.
 ## Explicit top-left geometry avoids container minimum-size changes growing a
@@ -1393,6 +1426,8 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	# always start collapsed and their open state is deliberately never persisted.
 	_create_contact_slider(box, "hit_reaction_enabled", "HIT REACTION — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Master switch for presentation, core-resistance, and sink effects in this tab.", "OFF: only the dedicated knockback-direction option below remains active.", "ON: enabled presentation and blade-contact effects may react to enemy hits.", "Damage, hitstop, and shield/blade contact rules remain unchanged."))
 	_create_contact_slider(box, "sword_knockback_away_enabled", "Sword Knockback Away from Player — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Choose the direction of sword-hit gameplay knockback only.", "OFF: retain the existing impact-normal knockback direction.", "ON: push sword-hit enemies directly away from the player.", "Independent of the Hit Reaction master switch. Does not affect hilt bash, chakram, dash, or other knockback sources."))
+	_create_contact_slider(box, "contact_recoil_delay_enabled", "Recoil Delay — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Hold a flesh hit's separation -- the enemy's knockback and your own recoil push -- for a beat so the contact is felt before anything moves.", "OFF (0): a flesh hit separates on the frame it lands, exactly as it does today.", "ON (1): the enemy's knockback and your own recoil push wait for Recoil Delay Time, so the blade stays against the body for a beat.", "Pure timing: damage, stagger, blood, hitstop and the sword's own kick all stay immediate -- only the separation is held. Independent of the Physics Shells switches, and works with them all off."))
+	_create_contact_slider(box, "contact_recoil_delay", "Recoil Delay Time", 0.0, 0.5, 0.01, " s", _form_three_feel_tip("How long a flesh hit's separation is held before the enemy is knocked back and your own recoil push lands.", "Near 0 s: the separation is almost instant -- the smallest useful beat.", "A longer hold: the blade lingers against the body for a clear moment before anything moves.", "Default 0.00 s, so the feature ships inert. Tuned in 0.01 s steps. The Recoil Delay switch above must be ON (1) for it to bite. This is not hitstop -- it delays the knockback, it does not freeze the fight."))
 	# Grouped detail: five dropdown sections, attached after the shared switches.
 	var sink_box: VBoxContainer = _create_section_header(box, "Blade Sink")
 	var physical_box: VBoxContainer = _create_section_header(box, "Blade Physical Reaction")
@@ -1412,6 +1447,7 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(physical_box, "blade_bone_slide_strength", "Bone Slide Effect Strength", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale how hard the slide's catch holds the swing and how hard it drags the enemy.", "0% — the Bone Slide switch does nothing at all.", "100% — the full authored slide: the swing is dragged to 35% while the catch is live and the enemy is pulled along at 70%.", "Default 100%. Tuned in 1% steps. One dial scales the hold and the drag together; how long a catch clings and how far a loose blade must travel to re-arm stay fixed in code. Needs Bone Slide ON above."))
 	_create_contact_slider(physical_box, "blade_bone_bind_enabled", "Bone Bind — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Earn a short lock on the bone when the blade stays on it.", "OFF: a core catch is only ever a slide — the blade never locks.", "ON: holding the blade on the core for a beat earns a bind, which holds the swing harder than a slide, drags the enemy harder, and survives a short gap before it lets go.", "Deliberately weaker than a real blade Bind, and always bounded: the lock expires after 1.2 s and a break in contact ends it, so it can never pin the blade. If Bone Slide is also on, whichever is holding harder that frame wins — the two never stack. Set Bone Bind Effect Strength below to taste."))
 	_create_contact_slider(physical_box, "blade_bone_bind_strength", "Bone Bind Effect Strength", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale how hard the bind's lock holds the swing and drags the enemy.", "0% — the Bone Bind switch does nothing at all.", "100% — the full authored lock: the swing is held at 22% and the enemy is dragged at 45%, a step harder than Bone Slide's 35% and 70%.", "Default 100%. The lock is already the weakened one — a real blade Bind pins its bound sword at 18%, so Bone Bind sits a step weaker than that and a step harder than a slide. Tuned in 1% steps. The capture time, the release grace and the 1.2 s ceiling stay fixed in code. Needs Bone Bind ON above."))
+	_create_contact_slider(physical_box, "blade_flesh_bind_enabled", "Flesh Bind — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Grip the flesh: the deeper the blade is buried the heavier the swing goes, the harder the blade is to turn, and the more the enemy body shoves you — and it drags the enemy with it.", "OFF (0): flesh only takes its bite — a brief hold at most, and the swing never gets heavier for being deep.", "ON (1): the blade catches in the meat. Sink in and the swing sags under the grip, the buried blade fights being turned, and the body pushes into you; rip the blade back out and it all lets go at once.", "The grip captures the instant the blade meets flesh and sheds fast, so a deep catch is escaped by withdrawing, never by pushing through — you want to rip it out. Three effects ride the one grip: the swing rate, a hinge that resists turning the buried blade (hardest when you turn it deeper, only lightly when you pull it out), and a push from the body's own closing motion. The swing cadence and a small, clamped aim dent are all that change — the hit model is untouched — and both release the moment you withdraw. Needs the Hit Reaction master on. Its own channel, so it composes with Bone Slide and Bone Bind instead of replacing them."))
 	_create_contact_slider(physical_box, "blade_physical_reaction_strength", "Blade Physical Reaction Strength", 0.0, 100.0, 5.0, "%", _form_three_feel_tip("How strongly the live swing slows while the blade drives into the inner core.", "The blade barely resists, cutting through quickly.", "At 100%, the swing advances at roughly 75% of its normal rate in the core; always far gentler than a Bind.", "The core size is tuned separately above. The bite and the core yield both ease in and ease back out, so the blade never feels stuck or magnetic."))
 	_create_contact_slider(physical_box, "blade_core_yield_percent", "Core Yield Amount", 0.0, 100.0, 1.0, "%", _form_three_feel_tip("Scale the gentle, continuous swing-rate cut while the blade is driving into the inner core.", "Less — the core barely slows the swing.", "More — the core resists the swing more strongly; 100% is the strongest allowed cut.", "Default 60%. This is the soft resistance beneath the Bone Stop; it always eases in and back out, so it never pins the blade. Tuned in 1% steps."))
 	_create_contact_slider(physical_box, "blade_bone_debug_enabled", "Bone Boundary Debug — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Show the outer flesh collision (orange) and centered inner bone boundary (cyan) for enemies.", "No collision boundary overlays.", "Draw the actual outer shape and its currently sized inner shape.", "Diagnostic view only; does not affect contact or gameplay."))
@@ -1445,6 +1481,7 @@ func _build_hit_reaction_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(shells_box, "blade_body_surface_enabled", "Blade Meets Bodies — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Let a body take a proper bite, then refuse to let the blade burrow through it, and be shoved aside by the body's own movement.", "OFF: the blade sinks as deep as the swing drives it, and an enemy walking into a held sword passes straight through it.", "ON: the blade still bites into flesh -- then the body refuses to let it go deeper. The drawn blade is pushed back out to the body's surface, and an enemy moving into the blade shoves it aside instead of passing through it.", "This is the switch that makes enemies feel solid without breaking cutting, which is why it bites first and stops second: a body that never yielded would fight the bite, the bone stop and the whole core model. It needs only Hit Reaction on, and is deliberately independent of Bone Slide and of every shell switch, so it works with everything else off. It moves the drawn pose only -- damage and the hit geometry are never touched."))
 	_create_contact_slider(shells_box, "blade_bone_constraint_enabled", "Bone Slide Constraint — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Solve the bone core as a real constraint instead of asking physics to fake it: motion into the core is rejected, motion along it is kept, and the blade turns about your hand.", "OFF: bone is handled the old way -- the blade can be drawn through the core and only cadence reacts.", "ON: the core refuses entry. Whatever part of the swing is driving into bone is cancelled and the rest carries the blade around the bone about the authored hilt, so a cut walks along it and clears. A square thrust has no tangent to resolve into, so it stops on the bone instead.", "This is the architecture test, and it owns the blade angle while ON: the bone glance, the wall glance and the shell angle all stand down so nothing fights the solver, and enemy gameplay knockback and your own hit recoil are queued until the blade clears rather than shoving the enemy out of the contact on frame one. Damage, blood, hitstop, audio and cosmetic recoil all stay immediate. Recomputes from live geometry every frame, so a free swing is unchanged and nothing becomes magnetic. Needs Hit Reaction on. Best turned ON with the shells and the fixed Bone Glance OFF."))
 	_create_contact_slider(shells_box, "blade_hard_clash_enabled", "Hard Contact Clash — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Make a hard shape unenterable and stop the blade on it with the same weight a clash carries, instead of letting it ease through.", "OFF: the blade is held out of hard shapes but touching one has the weight of a nudge -- no clang, no stop.", "ON: the sword is stopped dead on the surface the instant it reaches a wall or an enemy's bone core, with a clash-weight hold and the clash presentation, then binds and slides along the surface. Entering a hard shape becomes impossible.", "Hard means hard: the level and the bone core. Flesh still takes its bite, so cutting is untouched -- the bone core itself is what refuses. This is visual and cadence only: the hit model is unchanged, so the bone stop, core yield and bone slide all still fire exactly as before, which is what lets the blade be refused without the bone rules dying. Needs Hit Reaction on; works with every shell switch off."))
+	_create_contact_slider(shells_box, "bone_clash_enabled", "Bone Clash — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Catch the bone core and feel it land: a clash-weight halt, a shake and the clash clang, like a rock or a parry.", "OFF (0): catching the core is weight only -- a soft slow and a halt, with no spectacle.", "ON (1): the catch also reads as a solid strike -- it stops, shakes and clangs like a hard clash.", "Presentation only: no pose is written and the cut model, damage and blood rolls are untouched. It adds only the lightest knockback, so hitting bone never punishes good aim. Needs the Hit Reaction master on. Independent of every other shell switch."))
 	_create_contact_slider(shells_box, "full_physical_enabled", "Full Physical — OFF / ON", 0.0, 1.0, 1.0, "", _form_three_feel_tip("Stop approximating: make the sword itself a rigid body, and every enemy's whole collision outline a real solid for it to meet.", "OFF: the blade is posed entirely by the swing, and an enemy is a maths line plus only whichever shells you switched on above.", "ON: the sword is a physical object that contacts genuinely knock, turn and bounce, and every enemy is solid at the outline you can actually see instead of only at its core.", "The blunt switch. The ceiling is loosened far beyond Deflection's safe 10 px and 20 degrees -- out to 40 px and 30 degrees -- so the blade is knocked and turned hard, but it can never leave your hand: an unclamped sword spends its life 190 px away from the player, which is a flying sword rather than a heavy one. Hits can differ from swing to swing, because physics is not deterministic by design. Your existing feel settings still drive the swing the body is pulled toward. Enemies are sprung back to their authored place, so they rock and recover rather than being carried off, and their AI is untouched. Turn this and all four switches above off and no body of this kind exists anywhere."))
 
 func _build_combat_tab(tabs: TabContainer) -> void:
@@ -1784,6 +1821,7 @@ func _build_combat_tab(tabs: TabContainer) -> void:
 	_create_contact_slider(strike_section, "grip_authority_duration", "Grip Authority Duration", 0.0, 0.40, 0.01, " s", "Window immediately after a strike where your wrist has high authority to redirect.")
 	_create_contact_slider(strike_section, "grip_turn_speed_mult", "Grip Turn Speed Multiplier", 1.0, 4.0, 0.1, "×", "Multiplier applied to max turn speed during the Grip Authority window.")
 	_create_contact_slider(strike_section, "blade_roll_speed", "Blade Roll Speed (Edge Flip)", 1.0, 20.0, 0.5, " /s", "How fast every weapon rolls to keep its edge leading actual travel. Higher = snappier flip. Symmetric weapons may show little visual change, but use the same universal rollover logic.")
+	_create_contact_slider(strike_section, "blade_roll_cooldown", "Blade Roll Cooldown", 0.0, 2.0, 0.05, " s", "Minimum time between edge-flip rollovers. 0 = off (the blade flips as fast as travel demands, exactly as before). Higher = after a flip the blade must wait before it can roll back the other way, so a jittery reversal cannot spin it back and forth. A flip blocked by the timer is deferred, never lost.")
 
 	var hilt_section: VBoxContainer = _create_section_header(box, "HILT BASH & POINT-BLANK (Per Preset)")
 	_create_contact_slider(hilt_section, "hilt_bash_enabled", "Hilt Bash Enabled (0 = Off, 1 = On)", 0.0, 1.0, 1.0, "", "Master switch. Set to 0 to restore ignored hilt contact; set to 1 to enable bash, shove, stun, and dizzy stars.")

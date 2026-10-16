@@ -28,3 +28,6 @@ BladeDancerWeb/
 
 # Local gameplay capture
 blade_dancer_capture.ogv*
+
+# Generated exports and build audit artifacts (keep local, not in Git)
+/builds/

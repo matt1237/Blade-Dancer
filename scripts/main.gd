@@ -27,6 +27,14 @@ const GEM_JAM_SCENE: PackedScene = preload("res://scenes/minigames/gem_jam.tscn"
 ## from Adventure — it replaced the earlier procedural height-field prototype,
 ## which remains in the project only as a standalone reference scene.
 const RESONANCE_RUSH_SCENE: PackedScene = preload("res://scenes/minigames/resonance_rush/rush_track_world_proof.tscn")
+## PX mode — the standalone physics-motor sword lab. Deliberately decoupled:
+## the game only launches it; the lab shares no runtime code with the game.
+const PX_MODE_SCENE: PackedScene = preload("res://blade_dancer_px/tools/px_sword_lab.tscn")
+## Blade Dancer PX — the playable standalone physics-sword prototype.
+const PX_PROTO_SCENE: PackedScene = preload("res://blade_dancer_px/scenes/px_game.tscn")
+## PX in-world: the standalone physics sword, brought into the REAL game behind
+## PX Mode. Self-contained — it never writes the authored sword's transform.
+const PX_INWORLD_SCRIPT: Script = preload("res://blade_dancer_px/scripts/px_inworld.gd")
 
 @export_category("Checkpoint Campfires")
 ## Every this many cleared waves, offer a safe campfire before continuing.
@@ -169,6 +177,13 @@ var sword_smithing_instance: SwordSmithingGame = null
 var grindstone_instance: GrindstoneGame = null
 var gem_jam_instance: GemJamGame = null
 var resonance_rush_instance: ResonanceRushGame = null
+var px_mode_instance: Node2D = null
+var px_mode_restore_pause: bool = false
+var px_proto_instance: Node2D = null
+var px_proto_container: SubViewportContainer = null
+var px_proto_restore_pause: bool = false
+## The in-world physics sword, present only while PX Mode is on.
+var px_inworld: Node = null
 var run_elapsed_seconds: float = 0.0
 var flow_75_seconds: float = 0.0
 var run_damage_dealt: float = 0.0
@@ -288,6 +303,9 @@ func _ready() -> void:
 	_apply_forest_visual_settings()
 	set_forest_time_phase(active_forest_time_phase)
 	_create_backyard_training_menu()
+	# Honour a saved PX Mode choice on launch.
+	if bool(BDPXGlobal.load_settings().get("px_mode", false)):
+		set_px_mode.call_deferred(true)
 	# Combat diagnostics remain available through Player's concise console log.
 	# Do not mount the former player-facing Combat Tracker panel.
 	screen_shake_rest_position = position
@@ -332,6 +350,8 @@ func _ready() -> void:
 	end_run_hub.connect("travel_home_requested", Callable(self, "_travel_home"))
 	end_run_hub.connect("adventure_zone_requested", Callable(self, "_on_adventure_zone_requested"))
 	end_run_hub.connect("resonance_rush_requested", Callable(self, "_on_resonance_rush_requested"))
+	end_run_hub.connect("px_mode_requested", Callable(self, "_on_px_mode_requested"))
+	end_run_hub.connect("px_proto_requested", Callable(self, "_on_px_proto_requested"))
 	end_run_hub.connect("save_requested", Callable(self, "_save_note_from_hub"))
 	end_run_hub.connect("load_requested", Callable(self, "_load_from_hub"))
 	home_menu.connect("progression_changed", Callable(self, "_on_home_progression_changed"))
@@ -387,6 +407,39 @@ func _create_backyard_training_menu() -> void:
 	backyard_training_menu = BACKYARD_TRAINING_MENU_SCRIPT.new() as BackyardTrainingMenu
 	backyard_training_menu.main = self
 	$CanvasLayer.add_child(backyard_training_menu)
+
+## PX Mode: bring the standalone physics sword online in the REAL game, or stand
+## it down. Fully reversible — the node reads the public aim and damages enemies
+## through their own take_damage(), and it never writes the authored sword.
+func set_px_mode(on: bool) -> void:
+	if on:
+		_enable_px_world()
+	else:
+		_disable_px_world()
+
+func _enable_px_world() -> void:
+	if is_instance_valid(px_inworld):
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	var node: Node2D = PX_INWORLD_SCRIPT.new() as Node2D
+	node.name = "PXInWorld"
+	node.position = Vector2.ZERO
+	node.call("setup", player)
+	add_child(node)
+	px_inworld = node
+
+func _disable_px_world() -> void:
+	if is_instance_valid(px_inworld):
+		if px_inworld.has_method("shutdown"):
+			px_inworld.call("shutdown")
+		px_inworld.queue_free()
+	px_inworld = null
+
+## Push live PX tuner values from the Training Tools gateway onto the in-world sword.
+func apply_px_settings(settings: Dictionary) -> void:
+	if is_instance_valid(px_inworld) and px_inworld.has_method("apply_settings"):
+		px_inworld.call("apply_settings", settings)
 
 func set_backyard_training_layout(layout_id: String) -> void:
 	var normalized_layout: String = layout_id.to_lower()
@@ -1669,12 +1722,8 @@ func _materialize_combat_settings() -> Dictionary:
 	var hand_keys: Array[String] = ["windup_profile", "windup_fraction", "recovery_fraction", "windup_speed", "strike_speed", "recovery_speed", "forward_impulse", "forward_impulse_timing", "backstep_impulse", "backstep_impulse_timing", "action_commitment_strength", "action_commitment_start", "action_commitment_end", "mouse_drag", "rotation", "max_turn_speed", "strike_commitment", "swing_commitment", "swing_commitment_duration", "tempo_assist_enabled", "directional_arc_opening_enabled", "authored_step_enabled", "swing_gesture_gearing_degrees", "radial_response", "scale", "min", "max", "arc", "frequency", "thrusts_per_cycle", "moulinet_aim_smoothing", "slide_sparks", "clash_sparks", "parry_sparks", "bind_enabled", "bind_capture_time", "bind_contact_tolerance", "bind_pressure_min", "bind_retention_strength", "bind_sword_speed", "bind_release_grace", "bind_max_duration", "bind_rebind_cooldown", "bind_focus_time_scale", "bind_focus_zoom", "bind_focus_bias", "bind_focus_response", "bind_scrape_interval", "bind_disengage_min_time", "bind_disengage_min_travel", "bind_disengage_fraction_delta", "bind_disengage_endpoint", "bind_disengage_leverage", "bind_reentry_window", "bind_reentry_min_speed", "bind_reentry_inward_speed", "bind_reentry_damage", "bind_reentry_stagger", "bind_beat_pressure", "bind_beat_spike", "bind_beat_leverage", "bind_beat_stagger", "bind_beat_recoil", "bind_failed_beat_recoil", "bind_debug"]
 	hand_keys.append_array(CombatSettingsConfig.COUNTER_STEER_HAND_TUNING_KEYS)
 	hand_keys.append_array(CombatSettingsConfig.STROKE_ASSIST_HAND_TUNING_KEYS)
-<<<<<<< Updated upstream
-	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "farmable_hitstop", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
-=======
 	hand_keys.append_array(CombatSettingsConfig.THRUST_HAND_TUNING_KEYS)
 	var contact_keys: Array[String] = ["flesh_hitstop_min", "flesh_hitstop_max", "flesh_stagger_min", "flesh_stagger_max", "flesh_shake_strength", "flesh_shake_duration", "flesh_zoom", "flesh_zoom_duration", "flesh_recoil", "flesh_impact", "contact_hitstop", "contact_shake_strength", "contact_shake_duration", "contact_zoom", "contact_zoom_duration", "contact_impact", "slide_contact_tolerance", "slide_angle", "slide_cling", "slide_friction", "slide_speed", "slide_duration", "slide_travel", "slide_spread", "slide_hitstop", "slide_shake_strength", "slide_shake_duration", "slide_zoom", "slide_zoom_duration", "slide_impact", "clash_contact_tolerance", "clash_angle_min", "clash_angle_max", "clash_cooldown", "clash_player_recoil", "clash_enemy_recoil", "clash_hitstop", "clash_stagger", "clash_recovery", "clash_flow", "clash_shake_strength", "clash_shake_duration", "clash_zoom", "clash_zoom_duration", "clash_impact", "parry_contact_tolerance", "parry_rotation_speed", "parry_cooldown", "parry_player_recoil", "parry_enemy_recoil", "parry_hitstop", "parry_stagger", "parry_recovery", "parry_shake_strength", "parry_shake_duration", "parry_zoom", "parry_zoom_duration", "parry_focus", "parry_focus_duration", "parry_impact", "blade_freeze_duration", "bite_velocity_transfer", "blade_recoil_degrees", "blade_recoil_return", "rebound_flow_boost", "grip_authority_duration", "grip_turn_speed_mult", "apex_hang_time", "apex_hang_duration", "blade_roll_speed", "blade_roll_cooldown", "hilt_bash_enabled", "hilt_bash_knockback", "hilt_bash_stun", "hilt_bash_damage", "farmable_hitstop", "p3_min_arc_scale", "p3_min_speed_scale", "p3_min_turn_scale", "p4_stage1_end", "p4_stage2_end", "form_blend_smoothing", "charged_guard_enabled"]
->>>>>>> Stashed changes
 	for hit_reaction_key: String in HitReaction.DEFAULTS.keys():
 		contact_keys.append(hit_reaction_key)
 	contact_keys.append_array(CombatSettingsConfig.CHARGED_GUARD_TUNING_KEYS)
@@ -2645,8 +2694,6 @@ func _on_resonance_rush_closed() -> void:
 	end_run_hub.visible = true
 	end_run_hub.call("show_tab", 3)
 
-<<<<<<< Updated upstream
-=======
 func _on_px_mode_requested() -> void:
 	if is_instance_valid(px_mode_instance): return
 	end_run_hub.visible = false
@@ -2715,7 +2762,6 @@ func _on_px_proto_closed() -> void:
 	end_run_hub.visible = true
 	end_run_hub.call("show_tab", 3)
 
->>>>>>> Stashed changes
 func _on_cauldron_catch_requested() -> void:
 	if is_instance_valid(cauldron_catch_instance): return
 	if is_instance_valid(home_menu):

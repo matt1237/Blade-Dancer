@@ -26,6 +26,13 @@ const DEFAULTS: Dictionary = {
 	## enemy in 1% steps. Ships at 100%: the effect is already the weakened one, so the
 	## switch reads as a real bind next to Bone Slide out of the box.
 	"blade_bone_bind_strength": 100.0,
+	## Surfaced as "Flesh Bind". OFF, flesh only takes its bite and slows the swing for a beat
+	## (Blade Sink). ON, the blade gripping the meat becomes a real hold: the deeper it is buried
+	## the heavier the swing goes and the enemy is dragged with it. The grip captures the instant
+	## the blade meets flesh and sheds fast when the blade pulls out, so a deep catch is escaped by
+	## ripping the blade back out, never by pushing through. Needs the Hit Reaction master; its own
+	## channel, so it composes with the bone holds.
+	"blade_flesh_bind_enabled": 0.0,
 	## --- Physics shells: an engine-driven contact layer beneath the authored pose. ---
 	## Surfaced as "Real Contact Normals". OFF keeps the hand-rolled geometric core test.
 	## ON asks the physics space itself for the true contact -- real normal, real point and
@@ -87,8 +94,6 @@ const DEFAULTS: Dictionary = {
 	## blade-angle authority, so the bone glance, the wall glance and the shell angle stand down
 	## rather than competing with it.
 	"blade_bone_constraint_enabled": 0.0,
-<<<<<<< Updated upstream
-=======
 	## BDOS geometric movement authority. Resolved hand/blade pose persists across
 	## ticks; actual enemy body and opposing-blade contact reject inward motion and permit slide.
 	## Supersedes legacy pose offsets and the blade shell while ON. No PX dependency.
@@ -109,7 +114,6 @@ const DEFAULTS: Dictionary = {
 	## untouched -- and it adds only the lightest knockback, so hitting bone never punishes good aim.
 	## Needs the Hit Reaction master; independent of every other shell switch.
 	"bone_clash_enabled": 0.0,
->>>>>>> Stashed changes
 	"blade_sink_enabled": 0.0,
 	"blade_sink_strength": 45.0,
 	"blade_sink_depth_percent": 70.0,
@@ -432,6 +436,19 @@ static func blade_sink_time_multiplier(master_enabled: bool, sink_enabled: bool,
 static func advance_blade_sink(current: float, target: float, delta: float) -> float:
 	var smoothing: float = BLADE_SINK_CONTACT_SMOOTHING if target < current else BLADE_SINK_RELEASE_SMOOTHING
 	return lerpf(current, target, clampf(maxf(delta, 0.0) * smoothing, 0.0, 1.0))
+
+## Flesh Bind's grip captures the instant the blade meets flesh -- no candidate delay like the
+## weapon bind -- so the throttle bites at once, and then sheds fast when the blade pulls out.
+## Ripping free is how the swing comes back, so only the release is rate-limited: the caller's
+## delta shapes the shed, never the capture.
+const FLESH_BIND_RELEASE_RATE: float = 22.0
+static func advance_flesh_bind_grip(current: float, target_depth: float, delta: float) -> float:
+	var target: float = clampf(target_depth, 0.0, 1.0)
+	if target >= current:
+		return target
+	if delta <= 0.0:
+		return current
+	return move_toward(current, target, FLESH_BIND_RELEASE_RATE * maxf(delta, 0.0))
 
 ## Option A: the bone stop nests INSIDE the Sword Stickiness hold budget rather
 ## than adding to it, so a core catch can never stack with the flesh tail into one

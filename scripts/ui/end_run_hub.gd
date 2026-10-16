@@ -7,6 +7,8 @@ signal adventure_zone_requested(zone_id: String)
 signal save_requested(note: String)
 signal load_requested()
 signal resonance_rush_requested()
+signal px_mode_requested()
+signal px_proto_requested()
 signal tab_changed(tab: int)
 
 enum Tab { RUN_REVIEW, SCOREBOARD, HOME, ADVENTURE, SAVE_LOAD, TOWN }
@@ -235,8 +237,6 @@ func _create_resonance_rush_button() -> void:
 	resonance_rush_button.pressed.connect(func() -> void: resonance_rush_requested.emit())
 	adventure_card.add_child(resonance_rush_button)
 
-<<<<<<< Updated upstream
-=======
 func _create_px_mode_button() -> void:
 	# PX mode is the isolated physics-motor sword lab. This button only OPENS
 	# it — the lab shares no game code, so the coupling is a doorway, not a
@@ -308,7 +308,6 @@ func _create_chasm_test_2_button() -> void:
 	town.position = Vector2(76, 318)
 	town.size = Vector2(504, 52)
 
->>>>>>> Stashed changes
 func _create_tutorial_forest_glow() -> void:
 	tutorial_glow = TUTORIAL_GLOW_SCRIPT.new() as TutorialButtonGlow
 	tutorial_glow.name = "TutorialForestGlow"
@@ -332,14 +331,11 @@ func _ready() -> void:
 	travel_home_button.pressed.connect(func() -> void: travel_home_requested.emit())
 	forest_button.pressed.connect(func() -> void: adventure_zone_requested.emit("forest"))
 	_create_backyard_button()
-<<<<<<< Updated upstream
-=======
 	_create_px_mode_button()
 	_create_px_proto_button()
 	_create_chasm_test_button()
 	_create_town_menu()
 	_create_chasm_test_2_button()
->>>>>>> Stashed changes
 	show_tab(Tab.RUN_REVIEW)
 
 func open_to_run_review(review_bbcode: String, scoreboard_text: String) -> void:
